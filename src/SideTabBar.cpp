@@ -1,11 +1,19 @@
 #include "SideTabBar.h"
+#include "SessionsPanel.h"
+
+#include <QSettings>
+#include <QShowEvent>
+#include <QSplitter>
 
 #include <QHBoxLayout>
+#include <QList>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QStackedWidget>
 #include <QStyleOption>
 #include <QStylePainter>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <climits>
 
@@ -24,6 +32,38 @@ void SideTabBar::setFixedTabWidth(int width)
     updateGeometry();
 }
 
+QString SideTabBar::fittedLabel(const QFontMetrics &metrics,
+                                 const QString &text, int width)
+{
+    // Only elide on real overflow: hint/paint rounding must never cost
+    // characters when the label fits.
+    if (metrics.horizontalAdvance(text) <= width) {
+        return text;
+    }
+    return metrics.elidedText(text, Qt::ElideRight, width);
+}
+
+void SideTabBar::setTopMode(bool on)
+{
+    if (m_topMode == on) {
+        return;
+    }
+    m_topMode = on;
+    updateGeometry();
+    update();
+}
+
+void SideTabBar::resizeEvent(QResizeEvent *event)
+{
+    QTabBar::resizeEvent(event);
+    // Tabs fill a dragged strip: track the bar width (side mode only;
+    // top tabs size to content). Guarded, so it settles immediately.
+    if (!m_topMode && event->size().width() != m_fixedWidth) {
+        m_fixedWidth = event->size().width();
+        updateGeometry();
+    }
+}
+
 QSize SideTabBar::tabSizeHint(int index) const
 {
     // All tabs share the emphasized label style; only the selected tab's
@@ -31,6 +71,13 @@ QSize SideTabBar::tabSizeHint(int index) const
     QFont labelFont = font();
     labelFont.setBold(true);
     labelFont.setPointSize(labelFont.pointSize() + 1);
+    if (m_topMode) {
+        // Top tabs size to content, single line; the bar scrolls on overflow.
+        const QFontMetrics metrics(labelFont);
+        const int textWidth = metrics.horizontalAdvance(tabText(index));
+        return QSize(textWidth + kPad * 2 + kCloseSize + kPad,
+                     qMax(metrics.height() + kPad * 2, kCloseSize + kPad * 2));
+    }
     const int textWidth = m_fixedWidth - kPad * 2 - kCloseSize - kPad;
     const QRect bounds = QFontMetrics(labelFont).boundingRect(
         QRect(0, 0, qMax(textWidth, 32), INT_MAX),
@@ -50,14 +97,22 @@ QSize SideTabBar::minimumSizeHint() const
 {
     // Stock QTabBar::minimumSizeHint() floors the strip well above content
     // (scroll-button reserve), which parks the + button mid-column. Floor
-    // at the tallest single tab instead; overflow scrolls from there.
+    // at a single tab instead; overflow scrolls from there.
     QSize hint = sizeHint();
+    int widest = 0;
     int tallest = 0;
     for (int i = 0; i < count(); ++i) {
-        tallest = qMax(tallest, tabSizeHint(i).height());
+        const QSize tabHint = tabSizeHint(i);
+        widest = qMax(widest, tabHint.width());
+        tallest = qMax(tallest, tabHint.height());
     }
     if (tallest > 0) {
         hint.setHeight(tallest);
+    }
+    if (m_topMode && widest > 0) {
+        hint.setWidth(widest);
+    } else if (!m_topMode) {
+        hint.setWidth(80); // floor only; the strip drags wider freely
     }
     return hint;
 }
@@ -93,7 +148,16 @@ void SideTabBar::paintEvent(QPaintEvent * /*event*/)
         if (selected) {
             p.setPen(selectedFg);
         }
-        p.drawText(textRect, Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignVCenter, tabText(i));
+        if (m_topMode) {
+            p.drawText(textRect,
+                       Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
+                       fittedLabel(p.fontMetrics(), tabText(i),
+                                   textRect.width()));
+        } else {
+            p.drawText(textRect,
+                       Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignVCenter,
+                       tabText(i));
+        }
         p.restore();
 
         QStyleOption closeOpt;
@@ -130,27 +194,20 @@ SideTabWidget::SideTabWidget(QWidget *parent)
     m_bar->setShape(QTabBar::RoundedWest);
     m_bar->setMovable(true);
     m_stack = new QStackedWidget(this);
+    m_left = new QWidget(this);
+    m_left->setObjectName(QStringLiteral("leftPanel"));
+    m_left->setMinimumWidth(80);
+    m_barRow = new QWidget(this);
+    m_content = new QWidget(this);
+    m_sessions = new SessionsPanel(m_left);
+    m_sessions->setMinimumWidth(50);
 
-    auto *addButton = new QPushButton(QStringLiteral("+"), this);
-    addButton->setToolTip(tr("New tab (Ctrl+T)"));
-    addButton->setFixedHeight(32);
-    addButton->setFlat(true);
-    connect(addButton, &QPushButton::clicked, this, &SideTabWidget::newTabRequested);
+    m_addButton = new QPushButton(QStringLiteral("+"), this);
+    m_addButton->setToolTip(tr("New tab (Ctrl+T)"));
+    m_addButton->setFlat(true);
+    connect(m_addButton, &QPushButton::clicked, this, &SideTabWidget::newTabRequested);
 
-    auto *left = new QWidget(this);
-    left->setFixedWidth(180);
-    auto *leftLayout = new QVBoxLayout(left);
-    leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->setSpacing(4);
-    leftLayout->addWidget(m_bar);
-    leftLayout->addWidget(addButton);
-    leftLayout->addStretch(1);
-
-    auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    layout->addWidget(left);
-    layout->addWidget(m_stack, 1);
+    applyLayout();
 
     connect(m_bar, &QTabBar::currentChanged, this, [this](int index) {
         m_stack->setCurrentIndex(index);
@@ -185,19 +242,17 @@ void SideTabWidget::removeTab(int index)
 
 void SideTabWidget::relayout()
 {
-    // Invalidate bottom-up: the outer layout alone reuses the left
-    // panel's cached hint, which is exactly the one-frame lag.
+    // Invalidate bottom-up: the outer layout alone reuses cached child
+    // hints, which used to move the strip a frame late on add/remove.
     m_bar->updateGeometry();
-    if (QWidget *left = m_bar->parentWidget()) {
-        left->updateGeometry();
-        if (left->layout()) {
-            left->layout()->invalidate();
-            left->layout()->activate();
+    for (QWidget *w = m_bar; w; w = w->parentWidget()) {
+        if (w->layout()) {
+            w->layout()->invalidate();
+            w->layout()->activate();
         }
-    }
-    if (layout()) {
-        layout()->invalidate();
-        layout()->activate();
+        if (w == this) {
+            break;
+        }
     }
 }
 
@@ -234,4 +289,206 @@ int SideTabWidget::indexOf(QWidget *page) const
 QString SideTabWidget::tabText(int index) const
 {
     return m_bar->tabText(index);
+}
+
+SessionsPanel *SideTabWidget::sessionsPanel() const
+{
+    return m_sessions;
+}
+
+void SideTabWidget::updateLeftVisibility(bool sessionsVisible)
+{
+    // Side mode always needs the column (it holds the tabs). Top mode
+    // only needs it for sessions: hide the whole column when they are off.
+    m_sessions->setVisible(sessionsVisible);
+    m_left->setVisible(sessionsVisible || !m_topMode);
+    relayout();
+}
+
+void SideTabWidget::setTabsOnTop(bool on)
+{
+    if (m_topMode == on) {
+        return;
+    }
+    m_topMode = on;
+    m_bar->setTopMode(on);
+    m_bar->setShape(on ? QTabBar::RoundedNorth : QTabBar::RoundedWest);
+    applyLayout();
+    // Reset to the default width on mode switch (restoring the other
+    // mode's width misbehaves); dragging re-saves from here. Deferred:
+    // the fresh splitter has no width until the layout runs.
+    deferPanelWidth(180);
+    QSettings settings;
+    settings.setValue(m_topMode ? QStringLiteral("panelWidthTop")
+                                : QStringLiteral("panelWidthSide"),
+                      180);
+}
+
+bool SideTabWidget::tabsOnTop() const
+{
+    return m_topMode;
+}
+
+QList<QPair<QWidget *, QString>> SideTabWidget::takePages()
+{
+    // Detach every page without deleting; processes keep running while
+    // their session is hidden. Callers re-attach via addPage().
+    QList<QPair<QWidget *, QString>> pages;
+    m_bar->blockSignals(true);
+    while (count() > 0) {
+        const int last = count() - 1;
+        pages.prepend({m_stack->widget(last), m_bar->tabText(last)});
+        m_stack->removeWidget(pages.first().first);
+        m_bar->removeTab(last);
+    }
+    m_bar->blockSignals(false);
+    relayout();
+    return pages;
+}
+
+void SideTabWidget::addPage(QWidget *page, const QString &label)
+{
+    m_bar->blockSignals(true);
+    m_bar->addTab(label);
+    m_stack->addWidget(page);
+    m_bar->blockSignals(false);
+    relayout();
+}
+
+void SideTabWidget::applyLayout()
+{
+    // Pull our containers out of the old splitter (its handle widgets die
+    // with it), drop all container layouts, then rebuild for the mode.
+    if (m_splitter) {
+        for (QWidget *w : QList<QWidget *>{m_left, m_stack, m_content}) {
+            w->setParent(this);
+        }
+        delete m_splitter;
+        m_splitter = nullptr;
+    }
+    // Drop the old outer layout: a widget holds one layout, and a second
+    // setLayout is silently ignored (leaving the new splitter unmanaged).
+    delete layout();
+    for (QWidget *box : {m_left, m_barRow, m_content}) {
+        if (QLayout *boxLayout = box->layout()) {
+            while (boxLayout->takeAt(0)) {
+            }
+            delete boxLayout;
+        }
+    }
+    m_bar->setShape(m_topMode ? QTabBar::RoundedNorth : QTabBar::RoundedWest);
+    m_sessions->setExpanded(m_topMode);
+    if (!m_topMode) {
+        auto *leftLayout = new QVBoxLayout(m_left);
+        leftLayout->setContentsMargins(0, 0, 0, 0);
+        leftLayout->setSpacing(4);
+        leftLayout->addWidget(m_sessions);
+        leftLayout->addWidget(m_bar);
+        m_addButton->setFixedHeight(32);
+        leftLayout->addWidget(m_addButton);
+        leftLayout->addStretch(1);
+
+        m_splitter = new QSplitter(Qt::Horizontal, this);
+        m_splitter->addWidget(m_left);
+        m_splitter->addWidget(m_stack);
+        m_barRow->hide();
+        m_content->hide();
+        m_left->show();
+    } else {
+        // Sessions column runs full height on the left; tabs on top of
+        // the terminal column on the right.
+        auto *rowLayout = new QHBoxLayout(m_barRow);
+        rowLayout->setContentsMargins(4, 4, 4, 4);
+        rowLayout->setSpacing(4);
+        rowLayout->addWidget(m_bar, 1);
+        m_addButton->setFixedWidth(48);
+        m_addButton->setFixedHeight(28);
+        rowLayout->addWidget(m_addButton);
+
+        auto *leftLayout = new QVBoxLayout(m_left);
+        leftLayout->setContentsMargins(0, 0, 0, 0);
+        leftLayout->setSpacing(4);
+        leftLayout->addWidget(m_sessions, 1);
+
+        auto *rightLayout = new QVBoxLayout(m_content);
+        rightLayout->setContentsMargins(0, 0, 0, 0);
+        rightLayout->setSpacing(0);
+        rightLayout->addWidget(m_barRow);
+        rightLayout->addWidget(m_stack, 1);
+
+        m_splitter = new QSplitter(Qt::Horizontal, this);
+        m_splitter->addWidget(m_left);
+        m_splitter->addWidget(m_content);
+        m_barRow->show();
+        m_content->show();
+        m_left->show();
+    }
+    auto *outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    outer->addWidget(m_splitter);
+    m_splitter->setChildrenCollapsible(false);
+    connect(m_splitter, &QSplitter::splitterMoved,
+            this, &SideTabWidget::savePanelWidth);
+    relayout();
+    // After relayout so the new splitter has real width (setSizes needs
+    // a non-zero total). No-op pre-show; showEvent covers first show.
+    applyPanelWidth(savedPanelWidth(180));
+}
+
+void SideTabWidget::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    // Constructor-time sizing lands on zero width; re-apply once the
+    // initial layout has run.
+    if (m_firstShow) {
+        m_firstShow = false;
+        deferPanelWidth(savedPanelWidth(180));
+    }
+}
+
+bool SideTabWidget::applyPanelWidth(int width)
+{
+    // Deferred callers (show, mode switch) land here once the new splitter
+    // has real width. Returns false if there is nothing to size yet.
+    if (!m_splitter) {
+        return false;
+    }
+    if (layout()) {
+        layout()->invalidate();
+        layout()->activate();
+    }
+    const int total = m_splitter->width();
+    if (total <= 0) {
+        return false;
+    }
+    // NOTE: sizes must sum to the splitter width; a {width, 1} pair does
+    // not mean "width plus the rest" and mis-sizes the panel.
+    m_splitter->setSizes({width, total - width});
+    return true;
+}
+
+void SideTabWidget::deferPanelWidth(int width)
+{
+    QTimer::singleShot(0, this, [this, width]() { applyPanelWidth(width); });
+}
+
+void SideTabWidget::savePanelWidth()
+{    if (!m_splitter || m_splitter->sizes().isEmpty()) {
+        return;
+    }
+    QSettings settings;
+    settings.setValue(m_topMode ? QStringLiteral("panelWidthTop")
+                                : QStringLiteral("panelWidthSide"),
+                      m_splitter->sizes().first());
+}
+
+int SideTabWidget::savedPanelWidth(int fallback) const
+{
+    QSettings settings;
+    return settings
+        .value(m_topMode ? QStringLiteral("panelWidthTop")
+                         : QStringLiteral("panelWidthSide"),
+               fallback)
+        .toInt();
 }

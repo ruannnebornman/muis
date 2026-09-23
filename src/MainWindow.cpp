@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "SessionsPanel.h"
 #include "SideTabBar.h"
 
 #include <QCloseEvent>
@@ -10,8 +11,11 @@
 #include <QKeySequence>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPointer>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTimer>
+#include <QUrl>
 
 #include "qtermwidget.h"
 
@@ -21,7 +25,6 @@ constexpr int kDefaultWidth = 1100;
 constexpr int kDefaultHeight = 700;
 constexpr int kHistorySize = 10000;
 const char *const kDefaultShell = "/usr/bin/fish";
-const char *const kColorScheme = "MuisDark";
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
@@ -34,31 +37,43 @@ MainWindow::MainWindow(QWidget *parent)
     setupSidebarSlot();
     setupMenuBar();
 
-    restoreSessions();
+    auto *sessions = m_tabs->sessionsPanel();
+    connect(sessions, &SessionsPanel::openRequested, this, [this](int index) {
+        // Defer out of the list view's mouse handling: switching rebuilds
+        // the session list, which deletes the clicked item while the view
+        // is still using it (heap corruption, seen as a crash in
+        // QListView::mouseReleaseEvent).
+        QTimer::singleShot(0, this, [this, index]() { switchWorkspace(index); });
+    });
+    connect(sessions, &SessionsPanel::addRequested,
+            this, &MainWindow::addWorkspace);
+    connect(sessions, &SessionsPanel::removeRequested,
+            this, &MainWindow::removeWorkspace);
+
+    loadSettings();
+    m_tabs->setTabsOnTop(m_tabsOnTop);
+    m_tabs->updateLeftVisibility(m_showSessions);
+    loadWorkspaces();
+    openWorkspace(m_currentWorkspace);
 }
 
 void MainWindow::addSidePanel(const QString &id, QWidget *panel)
 {
     Q_UNUSED(id);
     // Reserved extension slot: no panels registered in v1.
-    // Future panels (session list, Snor assistant) attach here as thin
-    // IPC clients. They must never perform network I/O in this process.
+    // Future panels (Snor assistant) attach here as thin IPC clients.
+    // They must never perform network I/O in this process.
     m_sidebar->setWidget(panel);
     m_sidebar->show();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    int busy = 0;
-    for (int i = 0; i < m_tabs->count(); ++i) {
-        if (tabIsBusy(terminalAt(i))) {
-            ++busy;
-        }
-    }
+    const int busy = countBusyAll();
     if (busy > 0) {
         const auto answer = QMessageBox::question(
             this, tr("Quit muis"),
-            tr("%1 tab(s) still have running processes.\nQuit muis anyway?")
+            tr("%1 terminal(s) still have running processes.\nQuit muis anyway?")
                 .arg(busy),
             QMessageBox::Close | QMessageBox::Cancel, QMessageBox::Cancel);
         if (answer != QMessageBox::Close) {
@@ -72,7 +87,98 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::newTab()
 {
-    newTabAt(QDir::homePath());
+    newTabAt(sessionDir());
+}
+
+QString MainWindow::sessionDir() const
+{
+    if (m_currentWorkspace >= 0 && m_currentWorkspace < m_workspaces.size()) {
+        const QString dir = m_workspaces.at(m_currentWorkspace).dir;
+        if (!dir.isEmpty() && QDir(dir).exists()) {
+            return dir;
+        }
+    }
+    return QDir::homePath();
+}
+
+void MainWindow::switchWorkspace(int index)
+{
+    if (index < 0 || index >= m_workspaces.size() || index == m_currentWorkspace) {
+        return;
+    }
+    // Stash the visible pages; their shells keep running while hidden.
+    Workspace &current = m_workspaces[m_currentWorkspace];
+    current.active = m_tabs->currentIndex();
+    current.live = m_tabs->takePages();
+    openWorkspace(index);
+}
+
+void MainWindow::addWorkspace(const QString &name, const QString &dir)
+{
+    if (name.isEmpty()) {
+        return;
+    }
+    Workspace workspace;
+    workspace.name = name;
+    workspace.dir = (!dir.isEmpty() && QDir(dir).exists()) ? dir : QDir::homePath();
+    m_workspaces.append(workspace);
+    saveSessions();
+    switchWorkspace(m_workspaces.size() - 1);
+}
+
+void MainWindow::removeWorkspace(int index)
+{
+    if (m_workspaces.size() <= 1 || index < 0 || index >= m_workspaces.size()) {
+        return;
+    }
+    Workspace &workspace = m_workspaces[index];
+    int busy = 0;
+    const QList<QPair<QWidget *, QString>> pages =
+        (index == m_currentWorkspace) ? m_tabs->takePages() : workspace.live;
+    for (const auto &[page, label] : pages) {
+        Q_UNUSED(label);
+        if (tabIsBusy(qobject_cast<QTermWidget *>(page))) {
+            ++busy;
+        }
+    }
+    if (busy > 0) {
+        const auto answer = QMessageBox::question(
+            this, tr("Remove session"),
+            tr("Session '%1' has %2 running terminal(s).\nRemove it anyway?")
+                .arg(workspace.name).arg(busy),
+            QMessageBox::Close | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (answer != QMessageBox::Close) {
+            // Put the visible pages back; nothing changed.
+            if (index == m_currentWorkspace) {
+                for (const auto &[page, label] : pages) {
+                    m_tabs->addPage(page, label);
+                }
+                m_tabs->setCurrentIndex(
+                    qBound(0, workspace.active, m_tabs->count() - 1));
+            }
+            return;
+        }
+    }
+    if (index == m_currentWorkspace) {
+        for (const auto &[page, label] : pages) {
+            Q_UNUSED(label);
+            delete page;
+        }
+        m_workspaces.removeAt(index);
+        m_currentWorkspace = qMin(index, m_workspaces.size() - 1);
+        openWorkspace(m_currentWorkspace);
+        return;
+    }
+    for (const auto &[page, label] : pages) {
+        Q_UNUSED(label);
+        delete page;
+    }
+    m_workspaces.removeAt(index);
+    if (m_currentWorkspace > index) {
+        --m_currentWorkspace;
+    }
+    refreshSessionsPanel();
+    saveSessions();
 }
 
 void MainWindow::closeTab(int index)
@@ -97,36 +203,48 @@ void MainWindow::closeTab(int index)
 
 void MainWindow::onTerminalFinished()
 {
-    // Shell already exited (e.g. user typed `exit`): no confirmation,
-    // the tab is simply gone.
+    // Shell already exited (e.g. user typed `exit`): no confirmation.
     auto *terminal = qobject_cast<QTermWidget *>(sender());
     if (!terminal) {
         return;
     }
     const int index = m_tabs->indexOf(terminal);
-    if (index < 0) {
+    if (index >= 0) {
+        if (m_tabs->count() == 1) {
+            // Last tab: quit. closeEvent() saves, session still resumes.
+            close();
+            return;
+        }
+        QWidget *page = m_tabs->widget(index);
+        m_tabs->removeTab(index);
+        delete page;
+        saveSessions();
         return;
     }
-    QWidget *page = m_tabs->widget(index);
-    if (m_tabs->count() == 1) {
-        // Shell already exited and this was the last tab: quit.
-        // closeEvent() saves, so the session still resumes.
-        close();
-        return;
+    // Hidden (stashed) shell exited: drop it from its workspace.
+    for (Workspace &workspace : m_workspaces) {
+        for (int i = 0; i < workspace.live.size(); ++i) {
+            if (workspace.live.at(i).first == terminal) {
+                workspace.live.removeAt(i);
+                delete terminal;
+                refreshSessionsPanel();
+                saveSessions();
+                return;
+            }
+        }
     }
-    m_tabs->removeTab(index);
-    delete page;
-    saveSessions();
 }
 
-void MainWindow::newTabAt(const QString &cwd)
+QTermWidget *MainWindow::newTabAt(const QString &cwd)
 {
     // The PTY layer snapshots the process cwd (setWorkingDirectory() is
     // ignored on this path), so hold the target directory for the whole
     // create+spawn window.
     const QString target = cwd.isEmpty() ? QDir::homePath() : cwd;
     const QString previousDir = QDir::currentPath();
-    QDir::setCurrent(target);
+    if (!QDir::setCurrent(target)) {
+        QDir::setCurrent(QDir::homePath());
+    }
 
     auto *terminal = createTerminal(cwd);
 
@@ -136,6 +254,36 @@ void MainWindow::newTabAt(const QString &cwd)
     terminal->startShellProgram();
     QDir::setCurrent(previousDir);
     terminal->setFocus();
+    saveSessions();
+    return terminal;
+}
+
+void MainWindow::openWorkspace(int index)
+{
+    if (index < 0 || index >= m_workspaces.size()) {
+        return;
+    }
+    m_currentWorkspace = index;
+    Workspace &workspace = m_workspaces[index];
+    if (!workspace.live.isEmpty()) {
+        const QList<QPair<QWidget *, QString>> pages = workspace.live;
+        workspace.live.clear();
+        for (const auto &[page, label] : pages) {
+            m_tabs->addPage(page, label);
+        }
+    } else if (!workspace.cwds.isEmpty()) {
+        // Copy: newTabAt() saves mid-loop, which clears and rewrites this
+        // very list (iterator invalidation -> crash in setWorkingDirectory).
+        const QStringList cwds = workspace.cwds;
+        for (const QString &cwd : cwds) {
+            newTabAt(cwd);
+        }
+    } else {
+        newTabAt(QDir::homePath());
+    }
+    m_tabs->setCurrentIndex(
+        qBound(0, workspace.active, m_tabs->count() - 1));
+    refreshSessionsPanel();
     saveSessions();
 }
 
@@ -153,8 +301,8 @@ QTermWidget *MainWindow::createTerminal(const QString &cwd)
         QStringLiteral("qtermwidget6/color-schemes/MuisDark.colorscheme"));
     terminal->setColorScheme(
         schemePath.isEmpty() ? QLatin1String("Linux") : schemePath);
-    terminal->setWorkingDirectory(cwd.isEmpty() ? QDir::homePath() : cwd);
     terminal->setShellProgram(QLatin1String(kDefaultShell));
+    terminal->setWorkingDirectory(cwd.isEmpty() ? QDir::homePath() : cwd);
     terminal->setHistorySize(kHistorySize);
     terminal->setMargin(5);
     terminal->setScrollBarPosition(QTermWidget::ScrollBarRight);
@@ -215,6 +363,27 @@ void MainWindow::setupMenuBar()
     auto *zoomOutAction = viewMenu->addAction(tr("Zoom &Out"));
     zoomOutAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
     connect(zoomOutAction, &QAction::triggered, this, [this]() { zoomCurrent(-1); });
+
+    viewMenu->addSeparator();
+
+    auto *sessionsAction = viewMenu->addAction(tr("&Sessions Panel"));
+    sessionsAction->setCheckable(true);
+    sessionsAction->setChecked(m_showSessions);
+    connect(sessionsAction, &QAction::triggered, this, [this](bool checked) {
+        m_showSessions = checked;
+        m_tabs->updateLeftVisibility(checked);
+        saveSettings();
+    });
+
+    auto *topTabsAction = viewMenu->addAction(tr("Tabs on &Top"));
+    topTabsAction->setCheckable(true);
+    topTabsAction->setChecked(m_tabsOnTop);
+    connect(topTabsAction, &QAction::triggered, this, [this](bool checked) {
+        m_tabsOnTop = checked;
+        m_tabs->setTabsOnTop(checked);
+        m_tabs->updateLeftVisibility(m_showSessions);
+        saveSettings();
+    });
 
     // Tab switching lives on Ctrl+Tab / Ctrl+Shift+Tab (no Tabs menu):
     // plain Tab must keep reaching the shell for completion.
@@ -314,39 +483,164 @@ QString MainWindow::tabCwd(QTermWidget *terminal) const
     return QDir::homePath();
 }
 
-void MainWindow::saveSessions() const
+void MainWindow::refreshSessionsPanel()
 {
-    QSettings settings;
-    settings.beginWriteArray(QStringLiteral("tabs"));
-    for (int i = 0; i < m_tabs->count(); ++i) {
-        settings.setArrayIndex(i);
-        settings.setValue(QStringLiteral("cwd"), tabCwd(terminalAt(i)));
+    QList<SessionEntry> entries;
+    for (int i = 0; i < m_workspaces.size(); ++i) {
+        const Workspace &workspace = m_workspaces.at(i);
+        entries.append({workspace.name, workspace.dir});
     }
-    settings.endArray();
-    settings.setValue(QStringLiteral("active"), m_tabs->currentIndex());
-    settings.setValue(QStringLiteral("geometry"), saveGeometry());
+    m_tabs->sessionsPanel()->setEntries(entries, m_currentWorkspace);
 }
 
-void MainWindow::restoreSessions()
+void MainWindow::loadSettings()
 {
+    // The user settings file: ~/.config/Veldmuis/muis.conf. View options
+    // live here next to sessions so every toggle survives restarts.
     QSettings settings;
+    m_showSessions = settings.value(QStringLiteral("showSessions"), true).toBool();
+    m_tabsOnTop = settings.value(QStringLiteral("tabsOnTop"), false).toBool();
     const QByteArray geometry =
         settings.value(QStringLiteral("geometry")).toByteArray();
     if (!geometry.isEmpty()) {
         restoreGeometry(geometry);
     }
-    const int count = settings.beginReadArray(QStringLiteral("tabs"));
-    if (count == 0) {
-        settings.endArray();
-        newTab();
-        return;
-    }
+}
+
+void MainWindow::saveSettings() const
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("showSessions"), m_showSessions);
+    settings.setValue(QStringLiteral("tabsOnTop"), m_tabsOnTop);
+    settings.setValue(QStringLiteral("geometry"), saveGeometry());
+}
+
+void MainWindow::loadWorkspaces()
+{
+    QSettings settings;
+    m_workspaces.clear();
+    const int count = settings.beginReadArray(QStringLiteral("workspaces"));
     for (int i = 0; i < count; ++i) {
         settings.setArrayIndex(i);
-        newTabAt(settings.value(QStringLiteral("cwd")).toString());
+        Workspace workspace;
+        workspace.name = settings.value(QStringLiteral("name")).toString();
+        workspace.dir = settings.value(QStringLiteral("dir")).toString();
+        workspace.cwds =
+            settings.value(QStringLiteral("tabs")).toStringList();
+        workspace.active =
+            settings.value(QStringLiteral("activeTab"), 0).toInt();
+        if (workspace.dir.isEmpty() || !QDir(workspace.dir).exists()) {
+            workspace.dir = QDir::homePath();
+        }
+        if (!workspace.name.isEmpty()) {
+            m_workspaces.append(workspace);
+        }
     }
     settings.endArray();
-    m_tabs->setCurrentIndex(
-        qBound(0, settings.value(QStringLiteral("active"), 0).toInt(), count - 1));
-    saveSessions();
+    if (m_workspaces.isEmpty()) {
+        // One-time migration: old named sessions contribute names,
+        // legacy open tabs contribute directories.
+        QStringList names;
+        const int oldCount = settings.beginReadArray(QStringLiteral("sessions"));
+        for (int i = 0; i < oldCount; ++i) {
+            settings.setArrayIndex(i);
+            const QString name = settings.value(QStringLiteral("name")).toString();
+            if (!name.isEmpty()) {
+                names.append(name);
+            }
+        }
+        settings.endArray();
+        if (!names.isEmpty()) {
+            for (const QString &name : names) {
+                Workspace workspace;
+                workspace.name = name;
+                m_workspaces.append(workspace);
+            }
+        } else {
+            Workspace workspace;
+            workspace.name = tr("main");
+            workspace.dir = QDir::homePath();
+            const int tabCount = settings.beginReadArray(QStringLiteral("tabs"));
+            for (int i = 0; i < tabCount; ++i) {
+                settings.setArrayIndex(i);
+                workspace.cwds.append(
+                    settings.value(QStringLiteral("cwd")).toString());
+            }
+            settings.endArray();
+            m_workspaces.append(workspace);
+        }
+        settings.remove(QStringLiteral("sessions"));
+        settings.remove(QStringLiteral("tabs"));
+        settings.remove(QStringLiteral("active"));
+    }
+    if (m_workspaces.isEmpty()) {
+        Workspace workspace;
+        workspace.name = tr("home");
+        workspace.dir = QDir::homePath();
+        m_workspaces.append(workspace);
+    }
+    m_currentWorkspace =
+        qBound(0, settings.value(QStringLiteral("activeWorkspace"), 0).toInt(),
+               m_workspaces.size() - 1);
+}
+
+void MainWindow::saveSessions()
+{
+    // Snapshot the visible strip, refresh dormant snapshots from live
+    // stashed pages, then persist everything with the view settings.
+    if (m_currentWorkspace >= 0 && m_currentWorkspace < m_workspaces.size()) {
+        Workspace &current = m_workspaces[m_currentWorkspace];
+        current.cwds.clear();
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            current.cwds.append(tabCwd(terminalAt(i)));
+        }
+        current.active = m_tabs->currentIndex();
+    }
+    for (int i = 0; i < m_workspaces.size(); ++i) {
+        if (i == m_currentWorkspace) {
+            continue;
+        }
+        Workspace &workspace = m_workspaces[i];
+        if (!workspace.live.isEmpty()) {
+            workspace.cwds.clear();
+            for (const auto &[page, label] : workspace.live) {
+                Q_UNUSED(label);
+                workspace.cwds.append(
+                    tabCwd(qobject_cast<QTermWidget *>(page)));
+            }
+        }
+    }
+    QSettings settings;
+    settings.beginWriteArray(QStringLiteral("workspaces"));
+    for (int i = 0; i < m_workspaces.size(); ++i) {
+        const Workspace &workspace = m_workspaces.at(i);
+        settings.setArrayIndex(i);
+        settings.setValue(QStringLiteral("name"), workspace.name);
+        settings.setValue(QStringLiteral("dir"), workspace.dir);
+        settings.setValue(QStringLiteral("tabs"), workspace.cwds);
+        settings.setValue(QStringLiteral("activeTab"), workspace.active);
+    }
+    settings.endArray();
+    settings.setValue(QStringLiteral("activeWorkspace"), m_currentWorkspace);
+    settings.setValue(QStringLiteral("geometry"), saveGeometry());
+    refreshSessionsPanel();
+}
+
+int MainWindow::countBusyAll() const
+{
+    int busy = 0;
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        if (tabIsBusy(terminalAt(i))) {
+            ++busy;
+        }
+    }
+    for (const Workspace &workspace : m_workspaces) {
+        for (const auto &[page, label] : workspace.live) {
+            Q_UNUSED(label);
+            if (tabIsBusy(qobject_cast<QTermWidget *>(page))) {
+                ++busy;
+            }
+        }
+    }
+    return busy;
 }

@@ -22,6 +22,23 @@ cmake --build build
 ```text
 src/
   main.cpp        application entry
-  MainWindow.*    tab strip, terminal pages, sidebar slot
+  MainWindow.*    sessions, tab strip, menus, persistence
+  SideTabBar.*    left/top tab strip, new-tab button, splitter
+  SessionsPanel.* saved-session launcher
   snor/           assistant engine (later; CLI-first, panel last)
+tests/
+  test_sessions   dormant restore, session switching, restart roundtrip
+  test_strip      tab geometry, button tracking, top mode, splitter drag
+```
+
+## Tests
+
+Browser-style UI tests: real widgets, real mouse clicks, real fish
+shells. Headless by default (offscreen platform, CI-safe); unset
+`QT_QPA_PLATFORM` to watch them run.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
