@@ -1,7 +1,9 @@
 #pragma once
 
 #include <QTabBar>
-#include <QTabWidget>
+#include <QWidget>
+
+class QStackedWidget;
 
 /**
  * Left-side tab bar with horizontal, word-wrapped labels.
@@ -19,9 +21,11 @@ public:
     explicit SideTabBar(QWidget *parent = nullptr);
 
     void setFixedTabWidth(int width);
+    QSize minimumSizeHint() const override;
 
 protected:
     QSize tabSizeHint(int index) const override;
+    QSize minimumTabSizeHint(int index) const override;
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
 
@@ -34,12 +38,37 @@ private:
 };
 
 /**
- * QTabWidget wired to SideTabBar. QTabWidget::setTabBar() is protected,
- * so this subclass exists only to install the custom bar. No signals or
- * slots of its own, deliberately Q_OBJECT-free.
+ * Left tab column: SideTabBar on top, new-tab button directly below it,
+ * terminal pages in a QStackedWidget beside them. Replaces QTabWidget,
+ * which gives no control over the strip layout (no way to dock a button
+ * under the tabs or drop the bottom bar).
  */
-class SideTabWidget : public QTabWidget
+class SideTabWidget : public QWidget
 {
+    Q_OBJECT
+
 public:
     explicit SideTabWidget(QWidget *parent = nullptr);
+
+    int addTab(QWidget *page, const QString &label);
+    void removeTab(int index);
+    void setCurrentIndex(int index);
+    int currentIndex() const;
+    int count() const;
+    QWidget *widget(int index) const;
+    QWidget *currentWidget() const;
+    int indexOf(QWidget *page) const;
+    QString tabText(int index) const;
+
+signals:
+    void tabCloseRequested(int index);
+    void currentChanged(int index);
+    void tabMoved(int from, int to);
+    void newTabRequested();
+
+private:
+    SideTabBar *m_bar = nullptr;
+    QStackedWidget *m_stack = nullptr;
+
+    void relayout();
 };

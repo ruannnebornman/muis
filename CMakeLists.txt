@@ -26,7 +26,11 @@ target_link_libraries(muis PRIVATE
   qtermwidget6
 )
 
+target_compile_definitions(muis PRIVATE MUIS_VERSION="${PROJECT_VERSION}")
+
 install(TARGETS muis RUNTIME DESTINATION bin)
 install(FILES data/muis.desktop DESTINATION share/applications)
 install(FILES data/icons/hicolor/512x512/apps/muis.png
   DESTINATION share/icons/hicolor/512x512/apps)
+install(FILES data/color-schemes/MuisDark.colorscheme
+  DESTINATION share/qtermwidget6/color-schemes)
