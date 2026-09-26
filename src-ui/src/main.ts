@@ -95,6 +95,16 @@ const oscParsers = new Map<string, OscParser>();
 export const sidePanels = new SidePanelRegistry();
 
 let shellCache: string | null = null;
+let liveTestCommandCache: Promise<string | null> | null = null;
+const liveTestCommandSent = new Set<string>();
+
+/** Debug-build-only PTY input requested by the native Xvfb harness. */
+function liveTestCommand(): Promise<string | null> {
+  if (!IN_TAURI) return Promise.resolve(null);
+  liveTestCommandCache ??= invoke<string | null>("live_test_command").catch(() => null);
+  return liveTestCommandCache;
+}
+
 async function defaultShell(): Promise<string> {
   if (shellCache) return shellCache;
   try {
@@ -300,6 +310,7 @@ function ensureView(sessionId: string, tab: Tab): TabView {
     void (async () => {
       try {
         const shell = await defaultShell();
+        const testCommand = await liveTestCommand();
         // Restored tabs replay on-disk scrollback first: read before the
         // pty exists, write after handlers are registered, so live output
         // can never overtake the replay.
@@ -323,6 +334,16 @@ function ensureView(sessionId: string, tab: Tab): TabView {
             activity.lastOutputAt.set(tab.id, Date.now());
             term.write(data);
             observeOsc(sessionId, tab, data);
+            if (testCommand && !liveTestCommandSent.has(tab.id)) {
+              liveTestCommandSent.add(tab.id);
+              // Wait until the shell has emitted its first prompt/banner
+              // before exercising the exact UI -> worker -> PTY input path.
+              window.setTimeout(() => {
+                void client
+                  .write(sessionId, tab.id, enc.encode(`${testCommand}\n`))
+                  .catch(() => {});
+              }, 1000);
+            }
           },
           (code) => {
             activity.exited.add(tab.id);

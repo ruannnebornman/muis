@@ -18,7 +18,7 @@
 - Selenium preview: serve `src-ui/dist`, then run
   `MUIS_URL=http://127.0.0.1:4173 npm test --prefix tests/e2e`
 - Native PTY smoke without a physical desktop: after building the UI and
-  Rust binaries and installing Xvfb, xdotool, and ImageMagick, run
+  Rust binaries and installing Xvfb, xauth, and ImageMagick, run
   `npm run test:live:x11 --prefix tests/e2e`
 - Native focus shortcut: Ctrl+Shift+F12 focuses the active terminal.
 - When changing terminal visibility or navigation, keep the regression

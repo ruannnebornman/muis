@@ -65,7 +65,7 @@ cargo run -p muis-shell
   start `python3 -m http.server 4173 --directory src-ui/dist`, then run
   `MUIS_URL=http://127.0.0.1:4173 npm test --prefix tests/e2e`.
 - Native no-desktop smoke test (real Tauri + WebKit + PTY): install
-  Xvfb, xdotool, and ImageMagick, then run:
+  Xvfb, xauth, and ImageMagick, then run:
 
   ```sh
   npm ci --prefix src-ui
@@ -75,8 +75,9 @@ cargo run -p muis-shell
   npm run test:live:x11 --prefix tests/e2e
   ```
 
-  It types via keyboard only, checks the PTY snapshot, and writes a
-  screenshot artifact under `tests/e2e/artifacts/live-x11/`.
+  A debug-only test hook sends a unique command through the UI/worker
+  bridge. The test checks its real PTY snapshot and writes a screenshot
+  artifact under `tests/e2e/artifacts/live-x11/`.
 - CI runs all three layers: Rust/PTY, Selenium browser interactions,
   and native Tauri PTY smoke under Xvfb. The Xvfb test uses the same
   terminal-focus shortcut, not monitor coordinates.

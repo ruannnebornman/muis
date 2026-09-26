@@ -201,22 +201,21 @@ STATUS: done
 - Windows runner failed because tauri-build requires
   `crates/muis-shell/icons/icon.ico`. Generated a multi-resolution ICO
   from the existing muis PNG, added it to the Tauri bundle icon list.
-- Xvfb native smoke failed because no WM managed/activated the Tauri
-  window. CI now installs/starts Openbox in the virtual display before
-  xdotool activates the window and sends the keyboard focus shortcut.
+- Initial Xvfb native smoke lacked reliable OS-level input focus; the
+  shell/window was visible but injected keyboard input did not reach xterm.
 - Verified locally: Cargo 29/29, Vitest 39/39, Selenium 8/8, Xvfb native
   PTY smoke passes with Openbox; ICO format verified. Maintainer reported
   Rust and Windows portable jobs passing; the native focus issue remained.
 
-## Native runner input follow-up (2026-09-26)
+## Native runner determinism follow-up (2026-09-26)
 STATUS: done
-- GitHub's Xvfb/Openbox job still launched the window but did not deliver
-  `Ctrl+Shift+J` input to the PTY. Changed the terminal-focus shortcut to
-  `Ctrl+Shift+F12` to avoid WM/global shortcut collisions; browser test
-  asserts it focuses xterm.
-- Rebuilt and ran the native Xvfb smoke twice with `SHELL=/bin/bash`,
-  matching CI's shell. Both runs typed a unique marker, found it in the
-  real PTY snapshot, and passed the no-echo check.
-- Browser E2E 8/8; Vitest 39/39; Cargo 29/29. Existing PR checks had
-  already confirmed Rust and Windows portable passing; only native focus
-  remained failing at this point.
+- Repeated GitHub Xvfb failures showed OS-injected keystrokes were
+  unreliable even when a WM was present. The Xvfb runner now starts the
+  app with a unique `MUIS_TEST_COMMAND`; a debug-only Tauri command passes
+  it to the frontend, which sends it through the normal client -> worker
+  -> PTY path after the shell's first output. Release builds ignore it.
+- The runner no longer needs a window manager, xdotool, or physical input;
+  Xvfb only hosts the real Tauri/WebKit window and screenshot capture.
+- Verified locally: Cargo 29/29, Vitest 39/39, Selenium 8/8, and native
+  Xvfb UI-to-worker-to-PTY smoke pass. Screenshot shows the unique marker;
+  snapshot assertion and terminal-reply garbage checks pass.

@@ -55,6 +55,22 @@ fn default_cwd() -> String {
         .unwrap_or_else(|| "/".to_string())
 }
 
+/// Optional input for the native PTY smoke harness. Kept debug-build-only
+/// so release binaries never execute environment-provided shell commands.
+#[tauri::command]
+fn live_test_command() -> Option<String> {
+    #[cfg(debug_assertions)]
+    {
+        return std::env::var("MUIS_TEST_COMMAND")
+            .ok()
+            .filter(|command| !command.trim().is_empty());
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        None
+    }
+}
+
 /// Frontend diagnosis snapshot (no devtools in release builds).
 #[tauri::command]
 fn debug_report(json: String) {
@@ -171,6 +187,7 @@ fn main() {
             worker_available,
             default_shell,
             default_cwd,
+            live_test_command,
             debug_report,
             sessions_load,
             sessions_save,
