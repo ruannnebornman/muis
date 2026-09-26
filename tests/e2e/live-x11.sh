@@ -23,6 +23,12 @@ export XDG_STATE_HOME="$STATE_HOME"
 export XDG_CONFIG_HOME="$CONFIG_HOME"
 
 xvfb-run -a -s "-screen 0 1280x800x24" bash -Eeuo pipefail -c '
+  # A WM is required for realistic activation/focus in virtual X. Without
+  # it, WebKit creates a window but xdotool keyboard events miss xterm.
+  openbox --sm-disable >"$RUN_DIR/openbox.log" 2>&1 &
+  wm_pid=$!
+  sleep 1
+
   "$ROOT/target/debug/muis" >"$LOG" 2>&1 &
   app_pid=$!
   cleanup() {
@@ -35,6 +41,8 @@ xvfb-run -a -s "-screen 0 1280x800x24" bash -Eeuo pipefail -c '
       kill -KILL "$app_pid" 2>/dev/null || true
       wait "$app_pid" 2>/dev/null || true
     fi
+    kill -TERM "$wm_pid" 2>/dev/null || true
+    wait "$wm_pid" 2>/dev/null || true
   }
   trap cleanup EXIT
 
@@ -57,9 +65,9 @@ xvfb-run -a -s "-screen 0 1280x800x24" bash -Eeuo pipefail -c '
     exit 1
   fi
 
-  # WindowManager-free Xvfb: SetInputFocus directly; then route focus to
-  # xterm with the app shortcut, never by clicking at screen coordinates.
-  xdotool windowfocus --sync "$window_id"
+  # Activate the app through Openbox and route focus to xterm with the app
+  # shortcut, never by clicking at screen coordinates.
+  xdotool windowactivate --sync "$window_id"
   sleep 3
   xdotool key --clearmodifiers ctrl+shift+j
   sleep 0.25

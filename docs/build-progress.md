@@ -192,3 +192,18 @@ STATUS: done
   `/tmp/opencode/muis-split-e2e/09-09-session-switches-one-terminal.png`
   shows only the selected session's terminal. Cargo 29, Vitest 39,
   Xvfb native PTY smoke pass; `git diff --check` clean.
+
+## CI runner repairs (2026-09-26)
+STATUS: done
+- Rust runner failed because Tauri's `generate_context!()` requires the
+  configured frontendDist at compile time. The Rust CI job now runs npm
+  install/build before `cargo test --workspace --locked`.
+- Windows runner failed because tauri-build requires
+  `crates/muis-shell/icons/icon.ico`. Generated a multi-resolution ICO
+  from the existing muis PNG, added it to the Tauri bundle icon list.
+- Xvfb native smoke failed because no WM managed/activated the Tauri
+  window. CI now installs/starts Openbox in the virtual display before
+  xdotool activates the window and sends the keyboard focus shortcut.
+- Verified locally: Cargo 29/29, Vitest 39/39, Selenium 8/8, Xvfb native
+  PTY smoke passes with Openbox; ICO format verified. Windows CI build
+  itself remains for the next GitHub run.

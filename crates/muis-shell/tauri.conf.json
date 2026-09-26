@@ -20,7 +20,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["../../data/icons/hicolor/512x512/apps/muis.png"],
+    "icon": [
+      "icons/icon.ico",
+      "../../data/icons/hicolor/512x512/apps/muis.png"
+    ],
     "category": "Utility",
     "shortDescription": "muis terminal for Veldmuis",
     "linux": {
