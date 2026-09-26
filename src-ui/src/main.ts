@@ -28,6 +28,23 @@ import "./style.css";
 
 const IN_TAURI = "__TAURI_INTERNALS__" in window;
 
+function reportDebugStage(stage: string, detail: unknown = undefined): void {
+  if (!IN_TAURI) return;
+  void invoke("debug_report", {
+    json: JSON.stringify({ stage, detail }),
+  }).catch(() => {});
+}
+
+if (IN_TAURI) {
+  reportDebugStage("frontend-module-loaded");
+  window.addEventListener("error", (event) => {
+    reportDebugStage("frontend-error", String(event.message));
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    reportDebugStage("frontend-unhandled-rejection", String(event.reason));
+  });
+}
+
 class TauriTransport implements Transport {
   private handler: ((sessionId: string, frame: WorkerToUi) => void) | null = null;
 
@@ -888,35 +905,41 @@ function installDebugHook(): void {
 /* ---------------- init ---------------- */
 
 async function init(): Promise<void> {
+  reportDebugStage("init-start");
   let home = "~";
   if (IN_TAURI) {
     try {
       home = await invoke<string>("default_cwd");
+      reportDebugStage("default-cwd-loaded");
     } catch {
-      /* keep fallback */
+      reportDebugStage("default-cwd-failed");
     }
     try {
       const info = await invoke<SysInfo>("sys_info");
       sysInfo = info;
+      reportDebugStage("system-info-loaded");
     } catch {
-      /* statusbar shows blanks */
+      reportDebugStage("system-info-failed");
     }
     // Resume where we left off; corrupt files start fresh (never broken).
     try {
       const saved = await invoke<string>("sessions_load");
       if (saved) store = SessionStore.fromJSON(saved);
+      reportDebugStage("sessions-loaded", Boolean(saved));
     } catch {
-      /* fresh start */
+      reportDebugStage("sessions-load-failed");
     }
     try {
       const raw = await invoke<string>("config_load");
       if (raw) cfg = configFromJSON(raw);
+      reportDebugStage("config-loaded", Boolean(raw));
     } catch {
-      /* defaults */
+      reportDebugStage("config-load-failed");
     }
   }
   if (store.workspaces.length === 0) store.ensureDefault("home", home);
   renderAll();
+  reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });
   installDebugHook();
   startSnapshotLoop();
   tickClock();

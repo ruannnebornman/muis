@@ -219,3 +219,8 @@ STATUS: done
 - Verified locally: Cargo 29/29, Vitest 39/39, Selenium 8/8, and native
   Xvfb UI-to-worker-to-PTY smoke pass. Screenshot shows the unique marker;
   snapshot assertion and terminal-reply garbage checks pass.
+- Follow-up runner timeout was a nested-shell quoting bug: a single-quoted
+  readiness pattern was embedded inside `bash -c '...'`, so the app fully
+  rendered and executed the marker but the outer test loop never matched
+  its debug phase. Switched to the quote-free `initial-render-complete`
+  substring; reproduced and verified the Xvfb smoke passes again.

@@ -74,7 +74,10 @@ fn live_test_command() -> Option<String> {
 /// Frontend diagnosis snapshot (no devtools in release builds).
 #[tauri::command]
 fn debug_report(json: String) {
+    #[cfg(debug_assertions)]
     eprintln!("muis-debug: {json}");
+    #[cfg(not(debug_assertions))]
+    let _ = json;
 }
 
 #[tauri::command]

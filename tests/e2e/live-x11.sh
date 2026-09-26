@@ -41,9 +41,14 @@ xvfb-run -a -s "-screen 0 1280x800x24" bash -Eeuo pipefail -c '
   }
   trap cleanup EXIT
 
+  # Keep a startup capture and frontend phase log even if initialization
+  # or persistence fails, so runner failures can be diagnosed.
+  sleep 5
+  import -window root "$RUN_DIR/startup.png"
+
   deadline=$((SECONDS + 30))
   while (( SECONDS < deadline )); do
-    if [[ -f "$STATE_HOME/muis/sessions.json" ]]; then
+    if grep -Fq "initial-render-complete" "$LOG"; then
       break
     fi
     if ! kill -0 "$app_pid" 2>/dev/null; then
@@ -52,8 +57,8 @@ xvfb-run -a -s "-screen 0 1280x800x24" bash -Eeuo pipefail -c '
     fi
     sleep 0.2
   done
-  if [[ ! -f "$STATE_HOME/muis/sessions.json" ]]; then
-    echo "timed out waiting for muis to initialize; log: $LOG" >&2
+  if ! grep -Fq "initial-render-complete" "$LOG"; then
+    echo "timed out waiting for frontend initial render; log: $LOG" >&2
     exit 1
   fi
 
