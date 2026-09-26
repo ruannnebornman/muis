@@ -1,0 +1,29 @@
+# Rust
+/target/
+**/target/
+*.pdb
+
+# Node / UI
+src-ui/node_modules/
+src-ui/dist/
+tests/e2e/node_modules/
+tests/e2e/artifacts/
+
+# Tauri bundles
+crates/muis-shell/target/
+*.AppImage
+*.deb
+*.msi
+*.nsis.zip
+*-setup.exe
+*-portable.zip
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# muis runtime state (never commit live sessions)
+*.scrollback

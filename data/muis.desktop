@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=muis
+Comment=muis terminal for Veldmuis
+Exec=muis
+Icon=muis
+Categories=System;TerminalEmulator;
+Terminal=false
+StartupWMClass=muis
