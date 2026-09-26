@@ -722,7 +722,7 @@ window.addEventListener("keydown", (e) => {
     titleSearch.focus();
     titleSearch.select();
   }
-  if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+  if (e.ctrlKey && e.shiftKey && !e.altKey && e.key === "F12") {
     // Explicit keyboard route into xterm. Useful for keyboard-only users
     // and native-window automation: neither relies on global coordinates.
     e.preventDefault();

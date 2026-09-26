@@ -146,7 +146,7 @@ STATUS: done
 - User identified multi-monitor coordinate mismatch (muis on the right
   Samsung, test pointer on the LG). Removed all pointer positioning from
   live testing.
-- Added Ctrl+Shift+J to focus the active terminal; Selenium browser test
+- Added Ctrl+Shift+F12 to focus the active terminal; Selenium browser test
   verifies it focuses xterm and types without clicking.
 - Added `tests/e2e/live-x11.sh`: launches the real Tauri/WebKit app in
   Xvfb with isolated XDG state, uses xdotool keyboard only, checks a
@@ -166,9 +166,9 @@ STATUS: done
 ## Live visual/input test harness
 - STATUS: done
 - `tests/e2e/muis.test.mjs`: Selenium tests for the browser preview;
-  passes 8/8, including Ctrl+Shift+J focus and input without clicking.
+  passes 8/8, including Ctrl+Shift+F12 focus and input without clicking.
 - `tests/e2e/live.mjs`: launches native Tauri muis with isolated XDG
-  config/state, activates via KWin, focuses xterm via Ctrl+Shift+J,
+  config/state, activates via KWin, focuses xterm via Ctrl+Shift+F12,
   types a unique `echo` marker, waits for real-PTY snapshot, checks for
   the old query garbage, and captures a desktop screenshot. It no longer
   uses pointer coordinates; the Xvfb runner is the verified repeatable
@@ -205,5 +205,18 @@ STATUS: done
   window. CI now installs/starts Openbox in the virtual display before
   xdotool activates the window and sends the keyboard focus shortcut.
 - Verified locally: Cargo 29/29, Vitest 39/39, Selenium 8/8, Xvfb native
-  PTY smoke passes with Openbox; ICO format verified. Windows CI build
-  itself remains for the next GitHub run.
+  PTY smoke passes with Openbox; ICO format verified. Maintainer reported
+  Rust and Windows portable jobs passing; the native focus issue remained.
+
+## Native runner input follow-up (2026-09-26)
+STATUS: done
+- GitHub's Xvfb/Openbox job still launched the window but did not deliver
+  `Ctrl+Shift+J` input to the PTY. Changed the terminal-focus shortcut to
+  `Ctrl+Shift+F12` to avoid WM/global shortcut collisions; browser test
+  asserts it focuses xterm.
+- Rebuilt and ran the native Xvfb smoke twice with `SHELL=/bin/bash`,
+  matching CI's shell. Both runs typed a unique marker, found it in the
+  real PTY snapshot, and passed the no-echo check.
+- Browser E2E 8/8; Vitest 39/39; Cargo 29/29. Existing PR checks had
+  already confirmed Rust and Windows portable passing; only native focus
+  remained failing at this point.

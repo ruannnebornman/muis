@@ -47,7 +47,7 @@ cargo run -p muis-shell
 ## Use
 
 - Ctrl+T new tab, × button closes (confirms when a process is busy),
-  Ctrl+Shift+J focuses the terminal, Ctrl+Shift+F search, Ctrl+, settings.
+  Ctrl+Shift+F12 focuses the terminal, Ctrl+Shift+F search, Ctrl+, settings.
 - Sessions persist across restarts with scrollback snapshots
   (`~/.local/share/muis`, `%APPDATA%\muis` on Windows).
 - Tabs track `cd` via OSC 7; fish on Veldmuis needs no setup.

@@ -154,7 +154,7 @@ try {
   // coordinate; this is independent of which monitor/workspace it uses.
   await sleep(1200);
   fs.mkdirSync(path.dirname(opts.shot), { recursive: true });
-  await execFile("ydotool", ["key", "ctrl+shift+j"]);
+  await execFile("ydotool", ["key", "ctrl+shift+F12"]);
   await sleep(250);
   await execFile("ydotool", ["type", "--", opts.command]);
   await execFile("ydotool", ["key", "Return"]);

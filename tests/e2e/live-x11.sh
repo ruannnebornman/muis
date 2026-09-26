@@ -69,7 +69,7 @@ xvfb-run -a -s "-screen 0 1280x800x24" bash -Eeuo pipefail -c '
   # shortcut, never by clicking at screen coordinates.
   xdotool windowactivate --sync "$window_id"
   sleep 3
-  xdotool key --clearmodifiers ctrl+shift+j
+  xdotool key --clearmodifiers ctrl+shift+F12
   sleep 0.25
   xdotool type --clearmodifiers --delay 15 "echo $MARKER"
   xdotool key --clearmodifiers Return

@@ -119,7 +119,7 @@ describe("muis chrome", () => {
       .actions()
       .keyDown(Key.CONTROL)
       .keyDown(Key.SHIFT)
-      .sendKeys("j")
+      .sendKeys(Key.F12)
       .keyUp(Key.SHIFT)
       .keyUp(Key.CONTROL)
       .perform();
