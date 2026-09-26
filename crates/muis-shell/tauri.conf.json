@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "muis",
+  "version": "0.1.0",
+  "identifier": "dev.veldmus.muis",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../../src-ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "muis",
+        "width": 1100,
+        "height": 700,
+        "decorations": false
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["../../data/icons/hicolor/512x512/apps/muis.png"],
+    "category": "Utility",
+    "shortDescription": "muis terminal for Veldmuis",
+    "linux": {
+      "deb": {},
+      "appimage": {}
+    },
+    "windows": {}
+  }
+}

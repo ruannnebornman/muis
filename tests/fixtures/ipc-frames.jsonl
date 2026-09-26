@@ -1,0 +1,10 @@
+{"dir": "ui", "frame": {"type": "spawn", "pty_id": "p1", "shell": "/usr/bin/fish", "cwd": "/home/kaazrot", "cols": 80, "rows": 24}}
+{"dir": "ui", "frame": {"type": "write", "pty_id": "p1", "data_b64": "bHMgLWxhCg=="}}
+{"dir": "ui", "frame": {"type": "resize", "pty_id": "p1", "cols": 120, "rows": 32}}
+{"dir": "ui", "frame": {"type": "snapshot", "pty_id": "p1"}}
+{"dir": "ui", "frame": {"type": "kill", "pty_id": "p1"}}
+{"dir": "worker", "frame": {"type": "spawned", "pty_id": "p1"}}
+{"dir": "worker", "frame": {"type": "output", "pty_id": "p1", "data_b64": "aGVsbG8tbXVpcwo="}}
+{"dir": "worker", "frame": {"type": "exited", "pty_id": "p1", "code": 0}}
+{"dir": "worker", "frame": {"type": "snapshot_data", "pty_id": "p1", "data_b64": "aGVsbG8tbXVpcwo="}}
+{"dir": "worker", "frame": {"type": "error", "pty_id": "p1", "message": "no such pty"}}

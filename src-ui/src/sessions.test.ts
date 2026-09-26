@@ -1,0 +1,76 @@
+import { describe, expect, it } from "vitest";
+import { SessionStore, isDefaultTitle, type Workspace } from "./sessions";
+
+function store(): SessionStore {
+  const s = new SessionStore();
+  s.ensureDefault("home", "/home/kaazrot");
+  return s;
+}
+
+describe("SessionStore", () => {
+  it("starts with one workspace and one tab", () => {
+    const s = store();
+    expect(s.workspaces.length).toBe(1);
+    expect(s.activeTab()?.title).toBe("Terminal 1");
+  });
+
+  it("rejects out-of-range switches", () => {
+    const s = store();
+    expect(s.switch(7)).toBe(false);
+    expect(s.current).toBe(0);
+  });
+
+  it("keeps a visible tab per workspace across rapid switching", () => {
+    const s = store();
+    s.newTab("Terminal 2", "/home/kaazrot");
+    s.addWorkspace("veldmuis", "/home/kaazrot/Documents/code/veldmuis");
+    s.switch(1);
+    s.newTab("v1", "/home/kaazrot/Documents/code/veldmuis");
+    s.newTab("v2", "/home/kaazrot/Documents/code/veldmuis");
+    s.switch(0);
+    expect(s.activeTab()?.title).toBe("Terminal 2");
+    s.switch(1);
+    expect(s.activeTab()?.title).toBe("v2");
+  });
+
+  it("clamps the visible tab on close", () => {
+    const s = store();
+    s.newTab("Terminal 2", "/home/kaazrot");
+    s.newTab("Terminal 3", "/home/kaazrot");
+    expect(s.closeTab(0, 2)).toBe(true);
+    expect(s.activeTab()?.title).toBe("Terminal 2");
+    expect(s.closeTab(0, 5)).toBe(false);
+  });
+
+  it("serializes to the same shape as the Rust store", () => {
+    const s = store();
+    const back = JSON.parse(s.toJSON()) as { workspaces: Workspace[] };
+    expect(back.workspaces[0].name).toBe("home");
+    expect(back.workspaces[0].tabs[0].cwd).toBe("/home/kaazrot");
+  });
+
+  it("roundtrips through toJSON/fromJSON without reusing ids", () => {
+    const s = store();
+    s.newTab("Terminal 2", "/tmp");
+    const back = SessionStore.fromJSON(s.toJSON());
+    expect(back.workspaces.length).toBe(1);
+    expect(back.activeTab()?.title).toBe("Terminal 2");
+    // Counter continues past restored ids.
+    const id = back.newTab("Terminal 3", "/tmp");
+    expect(id).not.toBe("t1");
+    expect(id).not.toBe("t2");
+  });
+  it("rejects corrupt session files instead of starting broken", () => {
+    expect(() => SessionStore.fromJSON("not json")).toThrow();
+    expect(() => SessionStore.fromJSON('{"workspaces":[]}')).toThrow();
+    expect(() => SessionStore.fromJSON('{"nope":1}')).toThrow();
+  });
+
+  it("knows placeholder titles from user names", () => {
+    expect(isDefaultTitle("Terminal 1")).toBe(true);
+    expect(isDefaultTitle("Terminal 23")).toBe(true);
+    expect(isDefaultTitle("dev")).toBe(false);
+    expect(isDefaultTitle("Terminal X")).toBe(false);
+    expect(isDefaultTitle("~/D/c/veldmuis")).toBe(false);
+  });
+});

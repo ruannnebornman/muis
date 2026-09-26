@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "crates/muis-core",
+  "crates/muis-worker",
+  "crates/muis-shell",
+]
+resolver = "2"

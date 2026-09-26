@@ -1,0 +1,149 @@
+/*
+ * muis chrome — MIRROR OF ../wezterm-web/index.html (Breeze design system).
+ *
+ * :root palette, titlebar, sidebar, tabbar, statusbar and control rules
+ * are ported from the mock. Restyle THERE first, then copy here.
+ * "App glue" at the bottom only adapts to a live window (xterm surface,
+ * overlays) and is the only part allowed to diverge.
+ *
+ * design/mock.html (Muis Dark) is SUPERSEDED by the wezterm-web look.
+ */
+
+/* ---------- verbatim design tokens (mock :root) ---------- */
+:root{
+  --bg0:#1d2023; --bg1:#232629; --bg2:#2d3237; --bg3:#31363b;
+  --sidebar:#232629; --tabbar:#2a2e32; --border:#3a4147;
+  --border-dark:#17191b;
+  --fg:#fcfcfc; --dim:#9ca4ab; --accent:#3daee9; --accent2:#7bbfb6; --green:#9ece6a; --yellow:#e0af68; --red:#da4453; --cyan:#3daee9;
+  --prompt-user:#3daee9; --prompt-host:#7bbfb6; --prompt-path:#9ece6a;
+  --radius:4px;
+  --font:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  --uifont:'Noto Sans',system-ui,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:#17191b;
+  color:var(--fg); font-family:var(--font); font-size:14px;
+  display:block; padding:0;
+  overflow:hidden;
+}
+.window{
+  width:100%; height:100vh;
+  background:var(--bg1);
+  border:none; border-radius:0; overflow:hidden;
+  display:flex; flex-direction:column; box-shadow:none;
+}
+/* titlebar — KDE Breeze (server-side decorated look) */
+.titlebar{
+  height:42px; background:#2d3237;
+  display:flex; align-items:stretch; padding:0; border-bottom:1px solid var(--border-dark);
+  font-family:var(--uifont); user-select:none;
+}
+.tb-left{
+  flex:0 0 50%; display:flex; align-items:center; gap:10px; padding-left:12px;
+  min-width:0; overflow:hidden;
+}
+.tb-right{
+  flex:0 0 50%; display:flex; align-items:center; gap:8px; padding-right:0;
+  min-width:0;
+}
+.app-icon{width:22px;height:22px;border-radius:5px; background:linear-gradient(180deg,#3daee9,#1d99d6); display:grid; place-items:center; font-size:13px; color:#fff; flex-shrink:0}
+.app-title{font-size:13px; font-weight:600; color:#fcfcfc; white-space:nowrap}
+.search{
+  flex:1; min-width:0; background:#1d2023; border:1px solid var(--border-dark);
+  border-radius:4px; color:var(--dim); padding:5px 10px; display:flex; gap:8px; align-items:center; font-size:12.5px;
+  font-family:var(--uifont); white-space:nowrap; position:relative;
+}
+.search input{
+  flex:1; min-width:0; background:transparent; border:none; outline:none; color:var(--fg);
+  font-family:var(--uifont); font-size:12.5px;
+}
+.search input::placeholder{color:var(--dim)}
+.win-controls{display:flex; align-items:stretch; height:100%; flex-shrink:0}
+.win-btn{width:46px; display:grid; place-items:center; color:#dcdcdc; cursor:pointer; font-size:13px; border-left:1px solid transparent}
+.win-btn:hover{background:#3d4349}
+.win-btn.close:hover{background:#da4453; color:#fff}
+.main{flex:1; display:flex; min-height:0}
+/* sessions sidebar */
+.sidebar{
+  width:248px; background:var(--sidebar);
+  border-right:1px solid var(--border-dark); display:flex; flex-direction:column; padding:10px; gap:4px;
+  font-family:var(--uifont);
+}
+.side-label{font-size:11px; letter-spacing:.08em; color:var(--dim); text-transform:uppercase; padding:6px 8px 4px; display:flex; justify-content:space-between; align-items:center; font-family:var(--uifont)}
+.session{
+  display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:4px;
+  border:1px solid transparent; border-left:3px solid transparent; cursor:pointer; user-select:none;
+}
+.session:hover{background:var(--bg2)}
+.session.active{background:var(--bg3); border-color:#4a5258; border-left:3px solid var(--accent); box-shadow:none}
+.s-icon{width:32px;height:32px;border-radius:4px; display:grid; place-items:center; font-size:16px; font-weight:700; flex-shrink:0}
+.s-meta{min-width:0; flex:1}
+.s-name{font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.s-sub{font-size:11.5px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.s-dot{width:8px;height:8px;border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green)}
+.side-footer{margin-top:auto; display:flex; flex-direction:column; gap:8px}
+.btn{
+  background:#394147; border:1px solid var(--border-dark); color:var(--fg);
+  border-radius:4px; padding:7px 10px; font-family:var(--uifont); font-size:12.5px; cursor:pointer;
+  display:flex; align-items:center; gap:8px; justify-content:center;
+}
+.btn:hover{background:#434c53; border-color:#4a5258}
+.btn.primary{background:#3daee9; border-color:#1d99d6; color:#fff; font-weight:600}
+.btn.primary:hover{background:#53b8ec}
+.row{display:flex; gap:8px}
+/* tabs + terminal column */
+.center{flex:1; display:flex; flex-direction:column; min-width:0}
+.tabbar{
+  display:flex; align-items:flex-end; gap:2px; padding:6px 8px 0 8px;
+  background:var(--tabbar);
+  border-bottom:1px solid var(--border-dark); overflow-x:auto; scrollbar-width:none;
+  font-family:var(--uifont);
+}
+.tabbar::-webkit-scrollbar{display:none}
+.tab{
+  display:flex; align-items:center; gap:8px; padding:7px 10px 7px 12px;
+  background:#232629; border:1px solid var(--border-dark); border-bottom:none;
+  border-radius:4px 4px 0 0; font-size:12.5px; cursor:pointer; white-space:nowrap; color:var(--dim);
+  min-width:140px; max-width:220px;
+}
+.tab.active{background:#31363b; color:#fff; border-color:var(--border-dark); box-shadow:inset 0 2px 0 var(--accent)}
+.tab .t-dot{width:8px;height:8px;border-radius:50%}
+.tab .x{margin-left:auto; opacity:.6; border-radius:3px; padding:0 5px}
+.tab .x:hover{opacity:1; background:#da4453; color:#fff}
+.newtab{border:1px solid transparent; background:transparent; color:var(--dim); border-radius:4px 4px 0 0; padding:7px 12px; cursor:pointer}
+.newtab:hover{color:#fff; background:#31363b}
+@keyframes pulse{50%{opacity:.25}}
+.tab.done{border-color:var(--green); box-shadow:inset 0 2px 0 var(--green)}
+.tab.done .t-dot{animation:pulse 1s infinite}
+.t-done{background:var(--green); color:#10210f; font-size:10px; font-weight:700; border-radius:3px; padding:0 5px; animation:pulse 1s infinite}
+.s-dot.notify{background:var(--green) !important; box-shadow:0 0 10px var(--green) !important; animation:pulse 1s infinite}
+.s-badge{background:var(--green); color:#10210f; font-size:10px; font-weight:700; border-radius:8px; padding:0 6px; margin-right:-4px}
+.term-wrap{flex:1; display:flex; min-height:0; background:var(--bg0)}
+.statusbar{
+  height:30px; border-top:1px solid var(--border-dark); background:#2d3237;
+  display:flex; align-items:center; gap:12px; padding:0 12px; font-size:11.5px; color:var(--dim);
+  font-family:var(--uifont);
+}
+.statusbar b{color:var(--fg)}
+.pill{background:#232629; border:1px solid var(--border-dark); border-radius:4px; padding:2px 9px}
+.kbd{background:#394147; border:1px solid var(--border-dark); border-bottom-width:2px; border-radius:4px; padding:0 6px; font-size:11px; color:var(--fg)}
+
+/* ---------- app glue (live window only) ---------- */
+#app{height:100vh; width:100vw; display:flex; flex-direction:column}
+.term-wrap .tabbox{flex:1; min-height:0; min-width:0; display:none}
+.term-wrap .tabbox.active{display:block; height:100%}
+.term-wrap .xterm{height:100%; padding:8px 0 0 8px}
+/* settings dialog + side panel slot, same tokens */
+.settings-overlay{position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55)}
+.settings-box{background:var(--bg3); color:var(--fg); border:1px solid var(--border-dark); border-radius:var(--radius); padding:16px 20px; min-width:300px; font-family:var(--uifont); font-size:12.5px}
+.settings-box h2{margin:0 0 12px; color:var(--fg); font-size:13.5px}
+.settings-row{display:flex; justify-content:space-between; align-items:center; gap:16px; margin:8px 0}
+.settings-row input[type="number"]{width:90px; background:var(--bg0); color:var(--fg); border:1px solid var(--border); border-radius:4px; font:inherit; padding:2px 6px}
+.settings-row input[type="checkbox"]{accent-color:var(--accent); width:16px; height:16px}
+.settings-buttons{display:flex; justify-content:flex-end; gap:8px; margin-top:14px}
+.settings-buttons button{background:var(--accent); border:1px solid #1d99d6; color:#fff; border-radius:var(--radius); font:inherit; padding:4px 14px; cursor:pointer}
+.sidepanel{width:300px; min-width:300px; background:var(--sidebar); border-left:1px solid var(--border-dark); flex-direction:column; overflow-y:auto; font-family:var(--uifont)}
+.sidepanel [data-panel-body]{flex:1; padding:8px}
+@media(max-width:900px){ .sidebar{width:76px} .s-meta,.side-label span,.side-footer{display:none} .s-icon{margin:auto} }
