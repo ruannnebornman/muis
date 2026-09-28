@@ -94,6 +94,10 @@ describe("muis chrome", () => {
     assert.ok((await driver.findElements(By.css(".session"))).length >= 1);
     assert.equal((await tabs()).length, 1);
     assert.ok(await driver.findElement(By.css(".statusbar")).isDisplayed());
+    assert.ok(await driver.findElement(By.css(".pane-head")).isDisplayed());
+    assert.match(await driver.findElement(By.css(".pane-head")).getText(), /ready/);
+    // Import/export were removed; only the "+ session" action remains.
+    assert.equal((await driver.findElements(By.css(".side-footer .btn"))).length, 1);
     const termText = await driver.findElement(By.css(".xterm")).getText();
     assert.match(termText, /browser preview/);
     await shot("01-chrome");
@@ -164,6 +168,9 @@ describe("muis chrome", () => {
     await shot("06-settings");
     const boxes = await overlay.findElements(By.css('input[type="checkbox"]'));
     assert.equal(boxes.length, 1); // show sessions
+    const themes = await overlay.findElements(By.css("select"));
+    assert.equal(themes.length, 1);
+    assert.equal((await themes[0].findElements(By.css("option"))).length, 6);
     await boxes[0].click(); // uncheck
     await overlay.findElement(By.xpath('.//button[text()="Save"]')).click();
     await driver.wait(async () => !(await driver.findElement(By.css(".sidebar")).isDisplayed()), 5000);

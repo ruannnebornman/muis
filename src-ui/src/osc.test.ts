@@ -48,4 +48,15 @@ describe("OscParser", () => {
     ]);
     expect(p.push(enc.encode(`${ESC}]2;a;b\x07`))).toEqual([{ type: "title", title: "a;b" }]);
   });
+
+  it("reads OSC 133 command markers and exit codes", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]133;A\x07${ESC}]133;B\x07`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]133;C\x07`))).toEqual([{ type: "cmd-start" }]);
+    expect(p.push(enc.encode(`${ESC}]133;C;cmdline_url=echo%20hi%20there\x07`))).toEqual([
+      { type: "cmd-start", cmd: "echo hi there" },
+    ]);
+    expect(p.push(enc.encode(`${ESC}]133;D;7\x1b\\`))).toEqual([{ type: "cmd-end", exit: 7 }]);
+    expect(p.push(enc.encode(`${ESC}]133;D\x07`))).toEqual([{ type: "cmd-end", exit: null }]);
+  });
 });

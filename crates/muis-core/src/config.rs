@@ -6,8 +6,11 @@ use std::path::Path;
 pub struct AppConfig {
     pub show_sessions: bool,
     pub tabs_on_top: bool,
-    /// Terminal font size in points. None means system fixed font + 1.
+    /// Terminal font size in points. None means system fixed font + 2.
     pub font_size: Option<u32>,
+    /// Accent theme name. None keeps the default Breeze/Muis chrome.
+    #[serde(default)]
+    pub theme: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -16,6 +19,7 @@ impl Default for AppConfig {
             show_sessions: true,
             tabs_on_top: false,
             font_size: None,
+            theme: None,
         }
     }
 }
@@ -67,6 +71,7 @@ mod tests {
             show_sessions: false,
             tabs_on_top: true,
             font_size: Some(13),
+            theme: Some("nord".to_string()),
         };
         cfg.save(&path).unwrap();
         assert_eq!(AppConfig::load(&path).unwrap(), cfg);
@@ -79,5 +84,19 @@ mod tests {
         std::fs::write(&path, "{not json").unwrap();
         let err = AppConfig::load(&path).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn old_config_without_theme_still_loads() {
+        let path = tmp().join("old.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"show_sessions":true,"tabs_on_top":false,"font_size":11}"#,
+        )
+        .unwrap();
+        let cfg = AppConfig::load(&path).unwrap();
+        assert_eq!(cfg.theme, None);
+        assert_eq!(cfg.font_size, Some(11));
     }
 }
