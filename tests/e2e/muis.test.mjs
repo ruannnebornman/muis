@@ -139,12 +139,13 @@ describe("muis chrome", () => {
   });
 
   it("focuses titlebar search with ctrl+f and searches", async () => {
-    await driver
-      .actions()
-      .keyDown(Key.CONTROL)
-      .sendKeys("f")
-      .keyUp(Key.CONTROL)
-      .perform();
+    // Real Ctrl+F is the browser's own find in Chrome, so dispatch the
+    // chord as a synthetic event to exercise the app's binding.
+    await driver.executeScript(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    });
     const active = await driver.switchTo().activeElement();
     assert.equal(await active.getAttribute("id"), "titleSearch");
     await active.sendKeys("echo");
