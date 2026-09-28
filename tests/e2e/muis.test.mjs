@@ -138,13 +138,11 @@ describe("muis chrome", () => {
     await shot("04-typed");
   });
 
-  it("focuses titlebar search with ctrl+shift+f and searches", async () => {
+  it("focuses titlebar search with ctrl+f and searches", async () => {
     await driver
       .actions()
       .keyDown(Key.CONTROL)
-      .keyDown(Key.SHIFT)
       .sendKeys("f")
-      .keyUp(Key.SHIFT)
       .keyUp(Key.CONTROL)
       .perform();
     const active = await driver.switchTo().activeElement();
