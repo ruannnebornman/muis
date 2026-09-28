@@ -73,4 +73,13 @@ describe("SessionStore", () => {
     expect(isDefaultTitle("Terminal X")).toBe(false);
     expect(isDefaultTitle("~/D/c/veldmuis")).toBe(false);
   });
+
+  it("defaults tabs to auto title and preserves a manual pin", () => {
+    const s = store();
+    expect(s.activeTab()?.manual).toBe(false);
+    const t = s.activeTab();
+    if (t) t.manual = true;
+    const back = SessionStore.fromJSON(s.toJSON());
+    expect(back.activeTab()?.manual).toBe(true);
+  });
 });

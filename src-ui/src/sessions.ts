@@ -8,6 +8,8 @@ export interface Tab {
   id: string;
   title: string;
   cwd: string;
+  /** User pinned the title; shell OSC 0/2 must not overwrite it. */
+  manual?: boolean;
 }
 
 export interface Workspace {
@@ -70,7 +72,7 @@ export class SessionStore {  workspaces: Workspace[] = [];
     const ws = this.currentWorkspace();
     if (!ws) return undefined;
     const id = this.mint("t");
-    ws.tabs.push({ id, title, cwd });
+    ws.tabs.push({ id, title, cwd, manual: false });
     ws.active = ws.tabs.length - 1;
     return id;
   }

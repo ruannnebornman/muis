@@ -41,9 +41,77 @@ export function colorFor(name: string): string {
   return PALETTE[h % PALETTE.length];
 }
 
+/**
+ * Accent themes from the mock (../wezterm-web/index.html). Each recolors
+ * the terminal accents and the chrome accent variables; the Breeze
+ * background/foreground stays put. `default` is the base Muis look.
+ */
+export interface ThemeSpec {
+  accent: string;
+  accent2: string;
+  green: string;
+  promptPath: string;
+}
+
+export const THEMES: Record<string, ThemeSpec> = {
+  default: {
+    accent: MUIS_THEME.accent,
+    accent2: MUIS_THEME.accent2,
+    green: MUIS_THEME.green,
+    promptPath: MUIS_THEME.green,
+  },
+  "tokyo-night": {
+    accent: "#7aa2f7",
+    accent2: "#bb9af7",
+    green: "#9ece6a",
+    promptPath: "#9ece6a",
+  },
+  gruvbox: {
+    accent: "#fabd2f",
+    accent2: "#d3869b",
+    green: "#b8bb26",
+    promptPath: "#b8bb26",
+  },
+  dracula: {
+    accent: "#bd93f9",
+    accent2: "#ff79c6",
+    green: "#50fa7b",
+    promptPath: "#50fa7b",
+  },
+  catppuccin: {
+    accent: "#89b4fa",
+    accent2: "#cba6f7",
+    green: "#a6e3a1",
+    promptPath: "#a6e3a1",
+  },
+  nord: {
+    accent: "#88c0d0",
+    accent2: "#b48ead",
+    green: "#a3be8c",
+    promptPath: "#a3be8c",
+  },
+};
+
+export function themeNames(): string[] {
+  return Object.keys(THEMES);
+}
+
+/** Recolor the chrome accent variables for the given theme name. */
+export function applyTheme(name: string | null): void {
+  const t = THEMES[name ?? "default"] ?? THEMES.default;
+  const r = document.documentElement.style;
+  r.setProperty("--accent", t.accent);
+  r.setProperty("--accent2", t.accent2);
+  r.setProperty("--green", t.green);
+  r.setProperty("--cyan", t.accent);
+  r.setProperty("--prompt-user", t.accent);
+  r.setProperty("--prompt-host", t.accent2);
+  r.setProperty("--prompt-path", t.promptPath);
+}
+
 /** xterm.js theme mapping for the terminal surface. */
-export function xtermTheme() {
-  return {
+export function xtermTheme(name: string | null = null) {
+  const base = {
     background: MUIS_THEME.termBg,
     foreground: MUIS_THEME.termFg,
     cursor: MUIS_THEME.accent,
@@ -66,5 +134,18 @@ export function xtermTheme() {
     brightMagenta: "#c678dd",
     brightCyan: "#56b6c2",
     brightWhite: "#ffffff",
+  };
+  if (!name || name === "default" || !THEMES[name]) return base;
+  const t = THEMES[name];
+  return {
+    ...base,
+    cursor: t.accent,
+    selectionBackground: `${t.accent}55`,
+    green: t.green,
+    blue: t.accent,
+    cyan: t.accent2,
+    brightGreen: t.green,
+    brightBlue: t.accent,
+    brightCyan: t.accent2,
   };
 }

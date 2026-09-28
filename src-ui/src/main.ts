@@ -5,14 +5,18 @@ import { SearchAddon } from "@xterm/addon-search";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { SessionStore, isDefaultTitle, type Tab, type Workspace } from "./sessions";
-import { xtermTheme, colorFor, MUIS_THEME } from "./theme";
+import { SessionStore, type Tab, type Workspace } from "./sessions";
+import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
 import { defaultConfig, configFromJSON, effectiveFontSize, type AppConfig } from "./config";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
 import { newActivityState, isTabBusy, anyTabBusy, forgetTab } from "./activity";
 import { OscParser } from "./osc";
+import { CommandTracker } from "./commandbar";
+import { collectMatches, type SearchHit, type SearchScope, type SearchableTab } from "./searchall";
+import { resolveShortcut } from "./shortcuts";
+import { DoneTracker } from "./done";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
 import "./style.css";
@@ -192,8 +196,12 @@ titleSearch.autocomplete = "off";
 titleSearch.spellcheck = false;
 const searchHint = document.createElement("span");
 searchHint.className = "kbd";
-searchHint.textContent = "ctrl shift f";
-searchBox.append(searchGlyph, titleSearch, searchHint);
+searchHint.textContent = "ctrl f";
+const searchResults = document.createElement("div");
+searchResults.id = "searchResults";
+searchResults.className = "results";
+searchResults.style.display = "none";
+searchBox.append(searchGlyph, titleSearch, searchHint, searchResults);
 const winControls = document.createElement("div");
 winControls.className = "win-controls";
 const winMin = document.createElement("div");
@@ -237,17 +245,18 @@ app.append(titlebar, mainRow, panelSlot);
 /* ---------------- titlebar: search + window controls ---------------- */
 
 titleSearch.addEventListener("input", () => {
-  if (!searcher.isOpen()) searcher.toggle();
-  searcher.search(titleSearch.value);
+  renderSearchResults();
 });
 titleSearch.addEventListener("keydown", (e) => {
   e.stopPropagation();
   if (e.key === "Enter") {
-    if (e.shiftKey) searcher.previous();
-    else searcher.next();
+    e.preventDefault();
+    const first = searchResults.querySelector<HTMLElement>(".r-item");
+    if (first) first.click();
   } else if (e.key === "Escape") {
+    e.preventDefault();
     titleSearch.value = "";
-    searcher.close();
+    hideSearchResults();
     titleSearch.blur();
   }
 });
@@ -346,10 +355,15 @@ function ensureView(sessionId: string, tab: Tab): TabView {
 
   const box = document.createElement("div");
   box.className = "tabbox";
+  const head = document.createElement("div");
+  head.className = "pane-head";
+  const surface = document.createElement("div");
+  surface.className = "tab-surface";
+  box.append(head, surface);
   termWrap.append(box);
 
   const term = new Terminal({
-    theme: xtermTheme(),
+    theme: xtermTheme(cfg.theme),
     fontFamily: MUIS_THEME.termFont,
     fontSize: effectiveFontSize(cfg),
     cursorBlink: true,
@@ -359,13 +373,14 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   term.loadAddon(search);
   const fit = new FitAddon();
   term.loadAddon(fit);
-  term.open(box);
+  term.open(surface);
 
   if (IN_TAURI) {
     activity.spawnedAt.set(tab.id, Date.now());
     void (async () => {
       try {
         const shell = await defaultShell();
+        renderCommandHead(tab.id);
         const testCommand = await liveTestCommand();
         // Restored tabs replay on-disk scrollback first: read before the
         // pty exists, write after handlers are registered, so live output
@@ -390,11 +405,13 @@ function ensureView(sessionId: string, tab: Tab): TabView {
             activity.lastOutputAt.set(tab.id, Date.now());
             term.write(data);
             observeOsc(sessionId, tab, data);
+            armIdleFallback(tab.id);
             if (testCommand && !liveTestCommandSent.has(tab.id)) {
               liveTestCommandSent.add(tab.id);
               // Wait until the shell has emitted its first prompt/banner
               // before exercising the exact UI -> worker -> PTY input path.
               window.setTimeout(() => {
+                trackInput(tab.id, `${testCommand}\n`);
                 void client
                   .write(sessionId, tab.id, enc.encode(`${testCommand}\n`))
                   .catch(() => {});
@@ -404,8 +421,13 @@ function ensureView(sessionId: string, tab: Tab): TabView {
           (code) => {
             activity.exited.add(tab.id);
             term.writeln(`\r\n[process exited${code === null ? "" : ` (${code})`}]`);
+            if (!isTabVisible(tab.id)) {
+              doneTabs.mark(tab.id);
+              scheduleSave();
+            }
             renderTabs();
             renderSessions();
+            updateWindowTitle();
           },
         );
         if (replay) term.write(b64decode(replay));
@@ -414,19 +436,24 @@ function ensureView(sessionId: string, tab: Tab): TabView {
       }
     })();
     term.onData((data) => {
+      trackInput(tab.id, data);
       void client.write(sessionId, tab.id, enc.encode(data));
     });
   } else {
     term.writeln("browser preview — local echo only; run in the Tauri window for real ptys.");
-    term.onData((data) => term.write(data));
+    term.onData((data) => {
+      trackInput(tab.id, data);
+      term.write(data);
+    });
   }
 
   view = { term, fit, search, box };
   views.set(tab.id, view);
+  renderCommandHead(tab.id);
   return view;
 }
 
-/** Shell-reported cwd/title (OSC 7 / OSC 0,2). Chrome refreshes on change. */
+/** Shell-reported cwd/title (OSC 7 / OSC 0,2) and command markers (OSC 133). */
 function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
   let parser = oscParsers.get(tab.id);
   if (!parser) {
@@ -442,18 +469,28 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
       tabNow.cwd = ev.path;
       changed = true;
     } else if (ev.type === "title" && ev.title && tabNow.title !== ev.title) {
-      // Fish reports its abbreviated cwd as title. Take it only for
-      // placeholder tabs; user-named tabs keep their names.
-      if (isDefaultTitle(tabNow.title)) {
+      // Fish reports its abbreviated cwd as title. Pinned (manual) tabs
+      // keep their names.
+      if (!tabNow.manual) {
         tabNow.title = ev.title;
         changed = true;
       }
+    } else if (ev.type === "cmd-start") {
+      // Prefer the shell-reported command line, then captured keystrokes,
+      // then the on-screen line (input that bypassed the keyboard).
+      const st = commandTracker.state(tabNow.id);
+      const cmd = ev.cmd || st.input.trim() || currentInputLine(tabNow.id);
+      commandTracker.onCmdStart(tabNow.id, cmd);
+      renderCommandHead(tabNow.id);
+    } else if (ev.type === "cmd-end") {
+      finishCommand(tabNow.id, ev.exit);
     }
   }
   if (changed) {
     renderTabs();
     renderSessions();
     renderStatusbar();
+    updateWindowTitle();
     scheduleSave();
   }
 }
@@ -478,6 +515,7 @@ function closeTab(sessionId: string, tabId: string): void {
     views.delete(tabId);
     oscParsers.delete(tabId);
     forgetTab(activity, tabId);
+    forgetTabState(tabId);
   }
   const wsIndex = store.workspaces.findIndex((w) => w.id === sessionId);
   const ws = store.workspaces[wsIndex];
@@ -505,7 +543,10 @@ function renderAll(): void {
     renderAll();
     return;
   }
-  document.title = `muis — ${ws.name}`;
+  // Looking at a tab acknowledges its finished command.
+  const active = ws.tabs[ws.active];
+  if (active) doneTabs.clear(active.id);
+  updateWindowTitle();
   sidebar.style.display = cfg.showSessions ? "" : "none";
   renderSessions();
   renderTabs();
@@ -545,13 +586,30 @@ function renderSessions(): void {
   sidebar.append(footer);
 }
 
+/** Stable per-session glyph (mock shows an icon per session). */
+const SESSION_GLYPHS = ["◈", "⬢", "⬣", "✦", "⬔", "❖", "◆", "●"];
+function sessionGlyph(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return SESSION_GLYPHS[h % SESSION_GLYPHS.length];
+}
+
+function renameSession(w: Workspace): void {
+  const name = window.prompt("Session name", w.name);
+  if (name) {
+    w.name = name;
+    renderAll();
+  }
+}
+
 function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   const idx = store.workspaces.indexOf(w);
   const d = el("div", "session" + (selected ? " active" : ""));
+  d.dataset.i = String(idx);
   const col = colorFor(w.name);
   // Finished background tabs in hidden sessions surface as a badge.
-  const doneN = selected ? 0 : w.tabs.filter((t) => activity.exited.has(t.id)).length;
-  const icon = el("div", "s-icon", (w.name[0] ?? "?").toUpperCase());
+  const doneN = selected ? 0 : w.tabs.filter((t) => isTabDone(t.id)).length;
+  const icon = el("div", "s-icon", sessionGlyph(w.name));
   icon.style.background = `${col}22`;
   icon.style.color = col;
   icon.style.border = `1px solid ${col}55`;
@@ -570,13 +628,7 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
     store.switch(idx);
     renderAll();
   });
-  d.addEventListener("dblclick", () => {
-    const name = window.prompt("Session name", w.name);
-    if (name) {
-      w.name = name;
-      renderAll();
-    }
-  });
+  d.addEventListener("dblclick", () => renameSession(w));
   return d;
 }
 
@@ -595,14 +647,37 @@ function renderTabs(): void {
   tabbar.append(nb);
 }
 
+function renameTab(ws: Workspace, tab: Tab): void {
+  const name = window.prompt("Tab name", tab.title);
+  if (name) {
+    tab.title = name;
+    tab.manual = true;
+    renderAll();
+  }
+}
+
+function toggleFreezeTitle(ws: Workspace, tab: Tab): void {
+  tab.manual = !tab.manual;
+  if (!tab.manual) {
+    // Back to the shell-driven title: reset to the placeholder and let
+    // the next OSC 0/2 update land.
+    const i = ws.tabs.findIndex((t) => t.id === tab.id);
+    tab.title = `Terminal ${i + 1}`;
+  }
+  renderTabs();
+  scheduleSave();
+}
+
 function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
-  const d = el("div", "tab" + (selected ? " active" : "") + (activity.exited.has(tab.id) ? " done" : ""));
+  const done = isTabDone(tab.id);
+  const d = el("div", "tab" + (selected ? " active" : "") + (done ? " done" : ""));
+  d.dataset.i = String(ws.tabs.findIndex((t) => t.id === tab.id));
   const tcol = colorFor(tab.title);
   const dot = el("span", "t-dot");
   dot.style.background = tcol;
   const title = el("span", "", tab.title);
   d.append(dot, title);
-  if (activity.exited.has(tab.id)) d.append(el("span", "t-done", "✓ done"));
+  if (done) d.append(el("span", "t-done", "✓ done"));
   const x = el("span", "x", "✕");
   x.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -613,13 +688,7 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
     ws.active = ws.tabs.findIndex((t) => t.id === tab.id);
     renderAll();
   });
-  d.addEventListener("dblclick", () => {
-    const name = window.prompt("Rename tab", tab.title);
-    if (name) {
-      tab.title = name;
-      renderAll();
-    }
-  });
+  d.addEventListener("dblclick", () => renameTab(ws, tab));
   return d;
 }
 
@@ -789,29 +858,54 @@ window.addEventListener("keydown", (e) => {
   if (target === titleSearch) return; // search box handles its own keys
   const ws = store.currentWorkspace();
   if (!ws) return;
-  if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "t") {
-    e.preventDefault();
-    store.newTab(`Terminal ${ws.tabs.length + 1}`, ws.dir);
-    renderAll();
-  }
-  if (e.ctrlKey && e.shiftKey && !e.altKey && e.key.toLowerCase() === "f") {
-    e.preventDefault();
-    titleSearch.focus();
-    titleSearch.select();
-  }
-  if (e.ctrlKey && e.shiftKey && !e.altKey && e.key === "F12") {
-    // Explicit keyboard route into xterm. Useful for keyboard-only users
-    // and native-window automation: neither relies on global coordinates.
-    e.preventDefault();
-    const active = ws.tabs[ws.active];
-    if (active) views.get(active.id)?.term.focus();
-  }
-  if (e.key === "," && e.ctrlKey && !e.shiftKey && !e.altKey) {
-    e.preventDefault();
-    openSettings();
-  }
-  if (e.key === "Escape" && settingsOverlay.style.display !== "none") {
-    closeSettings();
+  const action = resolveShortcut(e);
+  if (!action) return;
+  switch (action.type) {
+    case "new-tab":
+      e.preventDefault();
+      store.newTab(`Terminal ${ws.tabs.length + 1}`, ws.dir);
+      renderAll();
+      break;
+    case "close-tab": {
+      e.preventDefault();
+      const active = ws.tabs[ws.active];
+      if (active) closeTab(ws.id, active.id);
+      break;
+    }
+    case "focus-search":
+      e.preventDefault();
+      titleSearch.focus();
+      titleSearch.select();
+      break;
+    case "focus-terminal": {
+      e.preventDefault();
+      const active = ws.tabs[ws.active];
+      if (active) views.get(active.id)?.term.focus();
+      break;
+    }
+    case "open-settings":
+      e.preventDefault();
+      openSettings();
+      break;
+    case "switch-tab":
+      if (action.index < ws.tabs.length) {
+        e.preventDefault();
+        ws.active = action.index;
+        renderAll();
+      }
+      break;
+    case "cycle-tab": {
+      e.preventDefault();
+      const n = ws.tabs.length;
+      if (n > 0) {
+        ws.active = (ws.active + action.delta + n) % n;
+        renderAll();
+      }
+      break;
+    }
+    case "close-overlay":
+      if (settingsOverlay.style.display !== "none") closeSettings();
+      break;
   }
 });
 
@@ -842,6 +936,13 @@ optFontSize.min = "6";
 optFontSize.max = "32";
 optFontSize.placeholder = "System";
 optFontSize.title = "Empty = default size";
+const optTheme = document.createElement("select");
+for (const name of themeNames()) {
+  const o = document.createElement("option");
+  o.value = name;
+  o.textContent = name;
+  optTheme.append(o);
+}
 
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
@@ -854,6 +955,7 @@ settingsBox.append(
   settingsTitle,
   settingsRow("Show sessions panel", optSessions),
   settingsRow("Terminal font size", optFontSize),
+  settingsRow("Theme", optTheme),
   settingsButtons,
 );
 settingsOverlay.append(settingsBox);
@@ -862,6 +964,7 @@ document.body.append(settingsOverlay);
 function openSettings(): void {
   optSessions.checked = cfg.showSessions;
   optFontSize.value = cfg.fontSize?.toString() ?? "";
+  optTheme.value = cfg.theme ?? "default";
   settingsOverlay.style.display = "flex";
 }
 
@@ -875,10 +978,16 @@ function applySettings(): void {
     showSessions: optSessions.checked,
     tabsOnTop: cfg.tabsOnTop,
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
+    theme: optTheme.value === "default" ? null : optTheme.value,
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
+  applyTheme(cfg.theme);
+  const nextTheme = xtermTheme(cfg.theme);
   const px = effectiveFontSize(cfg);
-  for (const [, view] of views) view.term.options.fontSize = px;
+  for (const [, view] of views) {
+    view.term.options.fontSize = px;
+    view.term.options.theme = nextTheme;
+  }
   closeSettings();
   renderAll();
 }
@@ -941,6 +1050,272 @@ function installDebugHook(): void {
   }
 }
 
+/* ---------------- last-command bar ---------------- */
+
+const commandTracker = new CommandTracker();
+const doneTabs = new DoneTracker();
+const idleFallback = new Map<string, number>();
+
+/** A tab is "done" when a finished command or pty exit needs attention. */
+function isTabDone(tabId: string): boolean {
+  return doneTabs.has(tabId) || activity.exited.has(tabId);
+}
+
+function isTabVisible(tabId: string): boolean {
+  const ws = store.currentWorkspace();
+  return ws?.tabs[ws.active]?.id === tabId;
+}
+
+function renderCommandHead(tabId: string): void {
+  const view = views.get(tabId);
+  if (!view) return;
+  const head = view.box.querySelector<HTMLElement>(".pane-head");
+  if (!head) return;
+  const st = commandTracker.state(tabId);
+  head.innerHTML = "";
+  if (st.running) {
+    head.append(el("span", "ok", "⏺"), el("span", "cmd-full", st.lastCmd ?? "…"));
+    head.append(el("span", "dim exit", "running"));
+    return;
+  }
+  if (!st.lastCmd) {
+    head.append(el("span", "dim", `${shellBaseName() || "shell"} — ready`));
+    return;
+  }
+  const ok = st.lastExit === 0 || st.lastExit === null;
+  head.append(el("span", ok ? "ok" : "fail", ok ? "✓" : "✗"), el("span", "cmd-full", st.lastCmd));
+  const bits: string[] = [];
+  if (st.lastExit !== null) bits.push(`exit ${st.lastExit}`);
+  if (st.lastMs !== null) bits.push(`${st.lastMs}ms`);
+  if (bits.length) head.append(el("span", "dim exit", bits.join(" · ")));
+}
+
+/** Read the command from the on-screen line (fallback when keys weren't captured). */
+function currentInputLine(tabId: string): string {
+  const view = views.get(tabId);
+  if (!view) return "";
+  const buf = view.term.buffer.active;
+  const line = buf.getLine(buf.baseY + buf.cursorY);
+  const raw = line ? line.translateToString(true) : "";
+  const marker = raw.lastIndexOf("❯");
+  return (marker >= 0 ? raw.slice(marker + 1) : raw).trim();
+}
+
+/** With no OSC 133 (non-fish shells), infer completion from output settling. */
+function armIdleFallback(tabId: string): void {
+  const st = commandTracker.state(tabId);
+  if (!st.running || st.sawOsc) return;
+  window.clearTimeout(idleFallback.get(tabId));
+  idleFallback.set(
+    tabId,
+    window.setTimeout(() => {
+      const s = commandTracker.state(tabId);
+      if (s.running && !s.sawOsc) finishCommand(tabId, null);
+    }, 500),
+  );
+}
+
+function trackInput(tabId: string, data: string): void {
+  if (commandTracker.onInput(tabId, data)) {
+    renderCommandHead(tabId);
+    armIdleFallback(tabId);
+  }
+}
+
+function finishCommand(tabId: string, exit: number | null): void {
+  commandTracker.onCmdEnd(tabId, exit);
+  window.clearTimeout(idleFallback.get(tabId));
+  idleFallback.delete(tabId);
+  renderCommandHead(tabId);
+  if (!isTabVisible(tabId)) {
+    doneTabs.mark(tabId);
+    renderTabs();
+    renderSessions();
+    updateWindowTitle();
+    scheduleSave();
+  }
+}
+
+function forgetTabState(tabId: string): void {
+  commandTracker.forget(tabId);
+  doneTabs.forget(tabId);
+  window.clearTimeout(idleFallback.get(tabId));
+  idleFallback.delete(tabId);
+}
+
+/* ---------------- cross-session search ---------------- */
+
+let searchScope: SearchScope = "all";
+
+function hideSearchResults(): void {
+  searchResults.style.display = "none";
+  searchResults.innerHTML = "";
+}
+
+/** Snapshot the open tabs and their visible scrollback for matching. */
+function searchableTabs(): SearchableTab[] {
+  const out: SearchableTab[] = [];
+  store.workspaces.forEach((w, wsIndex) => {
+    w.tabs.forEach((t, ti) => {
+      const view = views.get(t.id);
+      const lines: string[] = [];
+      if (view) {
+        const buf = view.term.buffer.active;
+        for (let i = 0; i < buf.length; i++) {
+          const line = buf.getLine(i);
+          lines.push(line ? line.translateToString(true) : "");
+        }
+      }
+      out.push({
+        wsIndex,
+        tabId: t.id,
+        wsName: w.name,
+        title: t.title,
+        active: wsIndex === store.current && ti === w.active,
+        lines,
+      });
+    });
+  });
+  return out;
+}
+
+function renderSearchResults(): void {
+  const q = titleSearch.value.trim();
+  if (q.length < 2) {
+    hideSearchResults();
+    return;
+  }
+  const { total, items } = collectMatches(q, searchScope, store.current, searchableTabs());
+  searchResults.innerHTML = "";
+  const head = el("div", "r-head");
+  head.append(el("span", "", `${total} match${total === 1 ? "" : "es"}`));
+  const scopes = el("span", "r-scopes");
+  for (const [value, label] of [
+    ["all", "Everywhere"],
+    ["session", "Session"],
+    ["tab", "Tab"],
+  ] as const) {
+    const b = el("button", "r-scope" + (searchScope === value ? " on" : ""), label);
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      searchScope = value;
+      renderSearchResults();
+      titleSearch.focus();
+    });
+    scopes.append(b);
+  }
+  head.append(scopes);
+  searchResults.append(head);
+  if (total === 0) {
+    searchResults.append(el("div", "r-empty", `no matches for “${q}”`));
+  } else {
+    for (const hit of items) {
+      const item = el("div", "r-item");
+      item.append(el("div", "r-crumb", hit.crumb), el("div", "r-line", hit.text));
+      item.addEventListener("click", () => jumpToResult(hit, q));
+      searchResults.append(item);
+    }
+  }
+  searchResults.style.display = "block";
+}
+
+function jumpToResult(hit: SearchHit, q: string): void {
+  store.switch(hit.wsIndex);
+  const ws = store.currentWorkspace();
+  const ti = ws?.tabs.findIndex((t) => t.id === hit.tabId) ?? -1;
+  if (ws && ti >= 0) ws.active = ti;
+  hideSearchResults();
+  titleSearch.blur();
+  renderAll();
+  // Focus on the next tick: the Enter that picked this result must not
+  // land in xterm (which would run the typed line).
+  window.setTimeout(() => {
+    const view = views.get(hit.tabId);
+    if (!view) return;
+    try {
+      view.search.findNext(q);
+    } catch {
+      /* no match in the xterm buffer */
+    }
+    view.term.focus();
+  }, 0);
+}
+
+/* ---------------- context menu ---------------- */
+
+const ctxMenu = document.createElement("div");
+ctxMenu.className = "ctxmenu";
+ctxMenu.style.display = "none";
+document.body.append(ctxMenu);
+
+function closeCtx(): void {
+  ctxMenu.style.display = "none";
+  ctxMenu.innerHTML = "";
+}
+
+function openCtx(
+  x: number,
+  y: number,
+  items: { label: string; hint?: string; fn: () => void }[],
+): void {
+  ctxMenu.innerHTML = "";
+  for (const it of items) {
+    const d = el("div", "ctx-item");
+    d.append(el("span", "ctx-label", it.label));
+    if (it.hint) d.append(el("span", "ctx-hint", it.hint));
+    d.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closeCtx();
+      it.fn();
+    });
+    ctxMenu.append(d);
+  }
+  ctxMenu.style.display = "block";
+  const w = ctxMenu.offsetWidth || 200;
+  const h = ctxMenu.offsetHeight || 120;
+  ctxMenu.style.left = `${Math.min(x, window.innerWidth - w - 8)}px`;
+  ctxMenu.style.top = `${Math.min(y, window.innerHeight - h - 8)}px`;
+}
+
+document.addEventListener("contextmenu", (e) => {
+  const target = e.target as HTMLElement;
+  const sEl = target.closest<HTMLElement>(".session");
+  const tEl = sEl ? null : target.closest<HTMLElement>(".tab");
+  if (sEl) {
+    e.preventDefault();
+    const w = store.workspaces[Number(sEl.dataset.i)];
+    if (w) openCtx(e.clientX, e.clientY, [{ label: "Rename session", fn: () => renameSession(w) }]);
+  } else if (tEl) {
+    e.preventDefault();
+    const ws = store.currentWorkspace();
+    const tab = ws?.tabs[Number(tEl.dataset.i)];
+    if (ws && tab) {
+      openCtx(e.clientX, e.clientY, [
+        { label: "Rename tab", hint: tab.manual ? "manual" : "auto", fn: () => renameTab(ws, tab) },
+        {
+          label: tab.manual ? "Use automatic title" : "Freeze current title",
+          fn: () => toggleFreezeTitle(ws, tab),
+        },
+      ]);
+    }
+  } else {
+    closeCtx();
+  }
+});
+
+document.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  if (!searchBox.contains(target)) hideSearchResults();
+  if (!ctxMenu.contains(target)) closeCtx();
+});
+
+/* ---------------- window title ---------------- */
+
+function updateWindowTitle(): void {
+  const n = doneTabs.count();
+  document.title = n > 0 ? `● (${n}) done — muis` : `muis — ${store.currentWorkspace()?.name ?? ""}`;
+}
+
 /* ---------------- init ---------------- */
 
 async function init(): Promise<void> {
@@ -977,6 +1352,7 @@ async function init(): Promise<void> {
     }
   }
   if (store.workspaces.length === 0) store.ensureDefault("home", home);
+  applyTheme(cfg.theme);
   renderAll();
   reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });
   installDebugHook();

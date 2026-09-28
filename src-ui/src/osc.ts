@@ -9,7 +9,11 @@
  * config. Other shells need an OSC 7 prompt hook (see README).
  */
 
-export type OscEvent = { type: "cwd"; path: string } | { type: "title"; title: string };
+export type OscEvent =
+  | { type: "cwd"; path: string }
+  | { type: "title"; title: string }
+  | { type: "cmd-start"; cmd?: string }
+  | { type: "cmd-end"; exit: number | null };
 
 const ESC = 0x1b;
 const BEL = 0x07;
@@ -79,6 +83,33 @@ function parseOscBody(body: string): OscEvent | null {
   }
   if (ps === "0" || ps === "2") {
     return { type: "title", title: pt };
+  }
+  if (ps === "133") {
+    // Semantic prompt markers (FinalTerm / OSC 133):
+    //   A = prompt start, B = command start, C = command executed,
+    //   D[;exit] = command finished. Only C/D drive the command bar.
+    const kind = pt[0]?.toUpperCase();
+    if (kind === "C") {
+      // fish (and others) may append the command line, e.g.
+      // `133;C;cmdline_url=echo%20hi`. Prefer it over keystroke capture.
+      const params = pt.slice(1).replace(/^;/, "");
+      const m = /(?:^|;)cmdline_url=([^;]*)/.exec(params);
+      if (m) {
+        let cmd = m[1];
+        try {
+          cmd = decodeURIComponent(cmd);
+        } catch {
+          /* keep raw */
+        }
+        return { type: "cmd-start", cmd };
+      }
+      return { type: "cmd-start" };
+    }
+    if (kind === "D") {
+      const code = pt.slice(1).replace(/^;/, "").split(";")[0];
+      const n = parseInt(code, 10);
+      return { type: "cmd-end", exit: Number.isNaN(n) ? null : n };
+    }
   }
   return null;
 }

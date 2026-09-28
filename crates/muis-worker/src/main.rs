@@ -15,6 +15,10 @@ use std::sync::{Arc, Mutex};
 /// Bytes of recent output kept per pty for Snapshot / crash restore.
 const SCROLLBACK_CAP: usize = 256 * 1024;
 
+/// Fish startup snippet: emit OSC 133 command markers (C on start, D with
+/// exit status on finish) using fish's preexec/postexec events.
+const FISH_INTEGRATION: &str = r"function __muis_preexec --on-event fish_preexec; printf '\e]133;C\e\\'; end; function __muis_postexec --on-event fish_postexec; printf '\e]133;D;%d\e\\' $status; end";
+
 #[derive(Debug, Default)]
 struct Scrollback {
     buf: VecDeque<u8>,
@@ -106,6 +110,18 @@ fn spawn_session(
     cmd.env("TERM", "xterm-256color");
     // Long-running agents/tasks inherit a sane locale.
     cmd.env("LANG", "C.UTF-8");
+
+    // Fish: publish OSC 133 command markers so the UI can show the last
+    // command, its exit code, and duration. Non-invasive event handlers,
+    // added via -C (runs before config, keeps the session interactive).
+    if std::path::Path::new(shell)
+        .file_name()
+        .and_then(|n| n.to_str())
+        == Some("fish")
+    {
+        cmd.arg("-C");
+        cmd.arg(FISH_INTEGRATION);
+    }
 
     let child = match pair.slave.spawn_command(cmd) {
         Ok(child) => child,

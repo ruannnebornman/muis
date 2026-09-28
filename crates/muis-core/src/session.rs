@@ -8,6 +8,9 @@ pub struct Tab {
     pub id: String,
     pub title: String,
     pub cwd: String,
+    /// User pinned the title: shell OSC 0/2 must not overwrite it.
+    #[serde(default)]
+    pub manual: bool,
 }
 
 /// One named place (folder) holding a set of terminals.
@@ -108,6 +111,7 @@ impl SessionStore {
             id: id.clone(),
             title: title.to_string(),
             cwd: cwd.to_string(),
+            manual: false,
         });
         ws.active = ws.tabs.len() - 1;
         Some(id)
@@ -244,5 +248,14 @@ mod tests {
         let c = back.new_tab("z", "/tmp").unwrap();
         assert_ne!(c, a);
         assert_ne!(c, b);
+    }
+
+    #[test]
+    fn old_sessions_without_manual_flag_still_load() {
+        let json = r#"{"workspaces":[{"id":"w1","name":"home","dir":"/tmp",
+            "tabs":[{"id":"t1","title":"Terminal 1","cwd":"/tmp"}],"active":0}],
+            "current":0,"next_id":2}"#;
+        let s = SessionStore::from_json(json).unwrap();
+        assert!(!s.active_tab().unwrap().manual);
     }
 }

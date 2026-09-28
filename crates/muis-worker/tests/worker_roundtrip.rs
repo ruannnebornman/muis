@@ -200,9 +200,17 @@ fn unknown_pty_and_bad_shell_report_errors() {
             pty_id: "t3".into()
         }
     );
-    // Duplicate id is rejected, original keeps running.
+    // Duplicate id is rejected, original keeps running. Startup output
+    // from the first shell may interleave, so drain until the error.
     d.send(&spawn_msg("t3", "/bin/sh"));
-    assert!(matches!(d.next(), WorkerToUi::Error { .. }));
+    let mut seen_dup_error = false;
+    for _ in 0..50 {
+        if matches!(d.next(), WorkerToUi::Error { .. }) {
+            seen_dup_error = true;
+            break;
+        }
+    }
+    assert!(seen_dup_error, "duplicate pty id must be rejected");
     d.send(&UiToWorker::Kill {
         pty_id: "t3".into(),
     });

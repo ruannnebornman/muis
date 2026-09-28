@@ -3,12 +3,12 @@ import { configFromJSON, defaultConfig, effectiveFontSize } from "./config";
 
 describe("AppConfig", () => {
   it("defaults to sessions shown, side tabs, system font", () => {
-    expect(defaultConfig()).toEqual({ showSessions: true, tabsOnTop: false, fontSize: null });
+    expect(defaultConfig()).toEqual({ showSessions: true, tabsOnTop: false, fontSize: null, theme: null });
     expect(configFromJSON("")).toEqual(defaultConfig());
   });
 
   it("loads what it saves", () => {
-    const cfg = { showSessions: false, tabsOnTop: true, fontSize: 13 };
+    const cfg = { showSessions: false, tabsOnTop: true, fontSize: 13, theme: "nord" };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
   });
 
@@ -17,12 +17,18 @@ describe("AppConfig", () => {
     expect(cfg).toEqual(defaultConfig());
   });
 
+  it("reads a theme name and ignores junk", () => {
+    expect(configFromJSON('{"theme":"nord"}').theme).toBe("nord");
+    expect(configFromJSON('{"theme":5}').theme).toBeNull();
+    expect(configFromJSON("").theme).toBeNull();
+  });
+
   it("rejects non-JSON outright so corruption is visible", () => {
     expect(() => configFromJSON("{nope")).toThrow();
   });
 
   it("resolves the effective font size", () => {
-    expect(effectiveFontSize(defaultConfig())).toBe(11);
+    expect(effectiveFontSize(defaultConfig())).toBe(12);
     expect(effectiveFontSize({ ...defaultConfig(), fontSize: 14 })).toBe(14);
   });
 });

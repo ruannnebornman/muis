@@ -2,12 +2,14 @@
 export interface AppConfig {
   showSessions: boolean;
   tabsOnTop: boolean;
-  /** Terminal font size in points. null = system fixed font + 1. */
+  /** Terminal font size in points. null = system fixed font + 2. */
   fontSize: number | null;
+  /** Accent theme name; null keeps the default look. */
+  theme: string | null;
 }
 
 export function defaultConfig(): AppConfig {
-  return { showSessions: true, tabsOnTop: false, fontSize: null };
+  return { showSessions: true, tabsOnTop: false, fontSize: null, theme: null };
 }
 
 export function configFromJSON(json: string): AppConfig {
@@ -28,10 +30,11 @@ export function configFromJSON(json: string): AppConfig {
       typeof r.fontSize === "number" && r.fontSize >= 6 && r.fontSize <= 32
         ? Math.floor(r.fontSize)
         : base.fontSize,
+    theme: typeof r.theme === "string" ? r.theme : base.theme,
   };
 }
 
-/** Effective point size: explicit setting, else 11 (system fixed + 1). */
+/** Effective point size: explicit setting, else 12 (system fixed + 2). */
 export function effectiveFontSize(cfg: AppConfig): number {
-  return cfg.fontSize ?? 11;
+  return cfg.fontSize ?? 12;
 }
