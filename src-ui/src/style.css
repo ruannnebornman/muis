@@ -147,3 +147,15 @@ body{
 .sidepanel{width:300px; min-width:300px; background:var(--sidebar); border-left:1px solid var(--border-dark); flex-direction:column; overflow-y:auto; font-family:var(--uifont)}
 .sidepanel [data-panel-body]{flex:1; padding:8px}
 @media(max-width:900px){ .sidebar{width:76px} .s-meta,.side-label span,.side-footer{display:none} .s-icon{margin:auto} }
+
+/* ---------- frameless window resize grips ---------- */
+.resize-layer{position:fixed; inset:0; z-index:40; pointer-events:none}
+.resize-edge{position:fixed; pointer-events:auto}
+.resize-n{top:0; left:0; right:0; height:5px; cursor:ns-resize}
+.resize-s{bottom:0; left:0; right:0; height:5px; cursor:ns-resize}
+.resize-e{top:0; bottom:0; right:0; width:5px; cursor:ew-resize}
+.resize-w{top:0; bottom:0; left:0; width:5px; cursor:ew-resize}
+.resize-nw{top:0; left:0; width:12px; height:12px; cursor:nwse-resize}
+.resize-ne{top:0; right:0; width:12px; height:12px; cursor:nesw-resize}
+.resize-sw{bottom:0; left:0; width:12px; height:12px; cursor:nesw-resize}
+.resize-se{bottom:0; right:0; width:12px; height:12px; cursor:nwse-resize}

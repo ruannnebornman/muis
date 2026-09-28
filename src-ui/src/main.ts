@@ -267,6 +267,45 @@ winMin.addEventListener("click", () => void winControl("min"));
 winMax.addEventListener("click", () => void winControl("max"));
 winClose.addEventListener("click", () => void winControl("close"));
 
+/* ---------------- frameless resize handles ---------------- */
+
+type ResizeEdgeDirection =
+  | "East"
+  | "North"
+  | "NorthEast"
+  | "NorthWest"
+  | "South"
+  | "SouthEast"
+  | "SouthWest"
+  | "West";
+
+const RESIZE_EDGES: ReadonlyArray<[string, ResizeEdgeDirection]> = [
+  ["n", "North"],
+  ["s", "South"],
+  ["e", "East"],
+  ["w", "West"],
+  ["ne", "NorthEast"],
+  ["nw", "NorthWest"],
+  ["se", "SouthEast"],
+  ["sw", "SouthWest"],
+];
+
+if (IN_TAURI) {
+  const layer = document.createElement("div");
+  layer.className = "resize-layer";
+  for (const [edge, dir] of RESIZE_EDGES) {
+    const handle = document.createElement("div");
+    handle.className = `resize-edge resize-${edge}`;
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      void getCurrentWindow().startResizeDragging(dir).catch(() => {});
+    });
+    layer.append(handle);
+  }
+  document.body.append(layer);
+}
+
 /* ---------------- terminals ---------------- */
 
 /** Size the shown surface once layout settles, retrying a few frames. */
