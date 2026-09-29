@@ -1,19 +1,24 @@
 /**
  * Minimal OSC sequence observer. Watches pty output for:
- *   OSC 7 ; file://host/path BEL  -> current working directory
- *   OSC 0/2 ; title BEL|ST         -> window/tab title
+ *   OSC 7 ; file://host/path BEL    -> current working directory
+ *   OSC 0/2 ; title BEL|ST           -> window/tab title
+ *   OSC 9 ; message BEL              -> desktop notification (iTerm2)
+ *   OSC 777 ; notify ; title ; body  -> desktop notification (rxvt)
  * Everything else passes through untouched (xterm still gets the full
  * byte stream). Sequences split across output chunks are reassembled.
  *
- * Fish on Veldmuis already emits both, so this works with zero shell
+ * Fish on Veldmuis already emits cwd/title, so this works with zero shell
  * config. Other shells need an OSC 7 prompt hook (see README).
  */
+
+export type NotifySource = "osc9" | "osc777";
 
 export type OscEvent =
   | { type: "cwd"; path: string }
   | { type: "title"; title: string }
   | { type: "cmd-start"; cmd?: string }
-  | { type: "cmd-end"; exit: number | null };
+  | { type: "cmd-end"; exit: number | null }
+  | { type: "notify"; title: string | null; body: string; source: NotifySource };
 
 const ESC = 0x1b;
 const BEL = 0x07;
@@ -83,6 +88,25 @@ function parseOscBody(body: string): OscEvent | null {
   }
   if (ps === "0" || ps === "2") {
     return { type: "title", title: pt };
+  }
+  if (ps === "9") {
+    // OSC 9 ; message BEL. ConEmu overloads OSC 9 with numeric subcommands
+    // (9;4 progress, 9;9 cwd); a leading all-digit field is not a message.
+    const first = pt.split(";", 1)[0];
+    if (first.length > 0 && /^\d+$/.test(first)) return null;
+    const body = pt.trim();
+    if (!body) return null;
+    return { type: "notify", title: null, body, source: "osc9" };
+  }
+  if (ps === "777") {
+    // OSC 777 ; notify ; title ; body BEL. Only the notify subtype is a
+    // notification; other subtypes (e.g. container metadata) are ignored.
+    const parts = pt.split(";");
+    if (parts[0] !== "notify") return null;
+    const title = (parts[1] ?? "").trim();
+    const body = parts.slice(2).join(";").trim();
+    if (!body && !title) return null;
+    return { type: "notify", title: title || null, body, source: "osc777" };
   }
   if (ps === "133") {
     // Semantic prompt markers (FinalTerm / OSC 133):
