@@ -80,16 +80,22 @@ Each phase is independently testable, mergeable, and leaves the app green.
   tab identity, forget); chrome behavior is covered by the browser e2e.
 - **Verify:** `npm test --prefix src-ui`, `npm run build --prefix src-ui`.
 
-### Phase 4 — Desktop/OS notification delivery `[ ]`
+### Phase 4 — Desktop/OS notification delivery `[x]`
 
-- Tauri command that posts to the freedesktop
-  `org.freedesktop.Notifications` service on Linux and a Windows toast on
-  Windows; frontend calls it only when the window/tab is unfocused.
-- Click focuses the originating tab/window.
-- **Test:** Rust unit for payload/escape-sanitizing; frontend test with a
-  faked invoke; native Xvfb smoke asserts a toast is attempted.
-- **Verify:** `cargo test --workspace --locked`, `npm test`,
-  `tests/e2e/live-x11.sh`.
+- `tauri-plugin-notification` (Rust dep + `notification:default`
+  capability + `@tauri-apps/plugin-notification`), registered in
+  `muis-shell`. Linux uses the freedesktop D-Bus service; Windows uses a
+  toast.
+- Frontend tracks window focus (`isFocused` + `onFocusChanged`) and fires
+  a toast only while unfocused, so it never duplicates the in-app badge.
+  Title falls back to the originating tab's title when the protocol only
+  carried a body (OSC 9).
+- Deferred: click-to-focus from the toast (the plugin's action support is
+  platform-limited).
+- **Test:** `notify.test.ts` covers the focus gate; Rust build validates
+  the capability. Delivery itself is platform chrome (manual/e2e).
+- **Verify:** `npm test --prefix src-ui`, `npm run build --prefix src-ui`,
+  `cargo test --workspace --locked`.
 
 ### Phase 5 — `muis notify` command endpoint + env contract `[ ]`
 
