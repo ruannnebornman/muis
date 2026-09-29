@@ -157,11 +157,16 @@ describe("muis chrome", () => {
   });
 
   it("labels the active tab with the last command", async () => {
-    await driver.wait(async () => {
-      const els = await tabs();
-      const i = await activeTabIndex();
-      return i >= 0 && (await els[i].getText()).includes("echo hi-e2e");
-    }, 3000);
+    // Read in-page: renderTabs replaces the tab nodes, so a held element
+    // reference goes stale.
+    await driver.wait(
+      () =>
+        driver.executeScript(() => {
+          const tab = document.querySelector("#tabbar .tab.active");
+          return !!tab && (tab.textContent || "").includes("echo hi-e2e");
+        }),
+      3000,
+    );
     await shot("04b-tab-label");
   });
 
