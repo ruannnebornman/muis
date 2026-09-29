@@ -32,7 +32,11 @@
     "shortDescription": "muis terminal for Veldmuis",
     "linux": {
       "deb": {},
-      "appimage": {}
+      "appimage": {
+        "files": {
+          "usr/bin/muis-worker": "../../target/release/muis-worker"
+        }
+      }
     },
     "windows": {}
   }
