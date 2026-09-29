@@ -108,3 +108,12 @@ export class CommandTracker {
     st.startedAt = null;
   }
 }
+
+/**
+ * Label for a tab: the last command that ran, unless the user pinned a
+ * name (manual), in which case the shell/user title wins.
+ */
+export function tabLabel(title: string, manual: boolean | undefined, lastCmd: string | null): string {
+  if (manual) return title;
+  return lastCmd ?? title;
+}

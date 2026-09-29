@@ -13,7 +13,7 @@ import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
 import { newActivityState, isTabBusy, anyTabBusy, forgetTab } from "./activity";
 import { OscParser } from "./osc";
-import { CommandTracker } from "./commandbar";
+import { CommandTracker, tabLabel as tabLabelOf } from "./commandbar";
 import { collectMatches, type SearchHit, type SearchScope, type SearchableTab } from "./searchall";
 import { resolveShortcut } from "./shortcuts";
 import { DoneTracker } from "./done";
@@ -375,6 +375,12 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   term.loadAddon(fit);
   term.open(surface);
 
+  // While replaying saved scrollback, xterm re-parses the shell's captured
+  // terminal queries (OSC 11, CPR, DA) and would answer them into the live
+  // pty — the shell then echoes the answers as garbage on the prompt line.
+  // Drop everything xterm emits during replay.
+  let replaying = false;
+
   if (IN_TAURI) {
     activity.spawnedAt.set(tab.id, Date.now());
     void (async () => {
@@ -430,18 +436,25 @@ function ensureView(sessionId: string, tab: Tab): TabView {
             updateWindowTitle();
           },
         );
-        if (replay) term.write(b64decode(replay));
+        if (replay) {
+          replaying = true;
+          term.write(b64decode(replay), () => {
+            replaying = false;
+          });
+        }
       } catch (e) {
         term.writeln(`\r\n[failed to spawn pty: ${String(e)}]`);
       }
     })();
     term.onData((data) => {
+      if (replaying) return; // never feed replayed-query answers to the pty
       trackInput(tab.id, data);
       void client.write(sessionId, tab.id, enc.encode(data));
     });
   } else {
     term.writeln("browser preview — local echo only; run in the Tauri window for real ptys.");
     term.onData((data) => {
+      if (replaying) return;
       trackInput(tab.id, data);
       term.write(data);
     });
@@ -668,14 +681,20 @@ function toggleFreezeTitle(ws: Workspace, tab: Tab): void {
   scheduleSave();
 }
 
+/** Tab label: the last command run, unless the user pinned a name. */
+function tabLabel(tab: Tab): string {
+  return tabLabelOf(tab.title, tab.manual, commandTracker.state(tab.id).lastCmd);
+}
+
 function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
   const done = isTabDone(tab.id);
   const d = el("div", "tab" + (selected ? " active" : "") + (done ? " done" : ""));
   d.dataset.i = String(ws.tabs.findIndex((t) => t.id === tab.id));
-  const tcol = colorFor(tab.title);
+  const label = tabLabel(tab);
+  const tcol = colorFor(label);
   const dot = el("span", "t-dot");
   dot.style.background = tcol;
-  const title = el("span", "", tab.title);
+  const title = el("span", "t-name", label);
   d.append(dot, title);
   if (done) d.append(el("span", "t-done", "✓ done"));
   const x = el("span", "x", "✕");
@@ -1138,9 +1157,10 @@ function finishCommand(tabId: string, exit: number | null): void {
   window.clearTimeout(idleFallback.get(tabId));
   idleFallback.delete(tabId);
   renderCommandHead(tabId);
+  // The tab now shows (and colors by) the command that just ran.
+  renderTabs();
   if (!isTabVisible(tabId)) {
     doneTabs.mark(tabId);
-    renderTabs();
     renderSessions();
     updateWindowTitle();
     scheduleSave();

@@ -156,6 +156,20 @@ describe("muis chrome", () => {
     await shot("04-typed");
   });
 
+  it("labels the active tab with the last command", async () => {
+    // Read in-page: renderTabs replaces the tab nodes, so a held element
+    // reference goes stale.
+    await driver.wait(
+      () =>
+        driver.executeScript(() => {
+          const tab = document.querySelector("#tabbar .tab.active");
+          return !!tab && (tab.textContent || "").includes("echo hi-e2e");
+        }),
+      3000,
+    );
+    await shot("04b-tab-label");
+  });
+
   it("focuses titlebar search with ctrl+shift+f and searches", async () => {
     await driver
       .actions()
