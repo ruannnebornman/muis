@@ -46,10 +46,9 @@ job). Manually:
 ```sh
 npm ci --prefix src-ui && npm run build --prefix src-ui
 cargo build --release --locked -p muis-worker
-mkdir -p crates/muis-shell/binaries
-cp target/release/muis-worker \
-  crates/muis-shell/binaries/muis-worker-x86_64-unknown-linux-gnu
 (cd crates/muis-shell && ../../src-ui/node_modules/.bin/tauri build --bundles appimage)
 ```
 
-The AppImage lands in `target/release/bundle/appimage/`.
+`muis-worker` is placed beside `muis` inside the AppImage via
+`bundle.linux.appimage.files` in `crates/muis-shell/tauri.conf.json`. The
+AppImage lands in `target/release/bundle/appimage/`.

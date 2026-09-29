@@ -20,9 +20,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": [
-      "binaries/muis-worker"
-    ],
     "icon": [
       "icons/icon.ico",
       "../../data/icons/hicolor/48x48/apps/muis.png",
@@ -35,7 +32,11 @@
     "shortDescription": "muis terminal for Veldmuis",
     "linux": {
       "deb": {},
-      "appimage": {}
+      "appimage": {
+        "files": {
+          "usr/bin/muis-worker": "../../target/release/muis-worker"
+        }
+      }
     },
     "windows": {}
   }

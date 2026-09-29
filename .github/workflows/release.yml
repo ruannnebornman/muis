@@ -95,10 +95,6 @@ jobs:
       - run: npm run build
         working-directory: src-ui
       - run: cargo build --release --locked -p muis-worker
-      - name: Stage the worker sidecar
-        run: |
-          mkdir -p crates/muis-shell/binaries
-          cp target/release/muis-worker crates/muis-shell/binaries/muis-worker-x86_64-unknown-linux-gnu
       - name: Build the AppImage
         working-directory: crates/muis-shell
         run: ../../src-ui/node_modules/.bin/tauri build --bundles appimage
