@@ -54,6 +54,24 @@ async function activeTabIndex() {
   return -1;
 }
 
+async function activeSessionIndex() {
+  const els = await driver.findElements(By.css(".session"));
+  for (let i = 0; i < els.length; i++) {
+    const cls = await els[i].getAttribute("class");
+    if (cls.split(" ").includes("active")) return i;
+  }
+  return -1;
+}
+
+/** Dispatch a chord as a synthetic event (Chrome reserves ctrl+tab etc.). */
+async function press(chord) {
+  await driver.executeScript((c) => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { ...c, bubbles: true, cancelable: true }),
+    );
+  }, chord);
+}
+
 async function assertOneVisibleTerminal() {
   const state = await driver.executeScript(() => {
     const boxes = [...document.querySelectorAll(".term-wrap .tabbox")];
@@ -138,14 +156,15 @@ describe("muis chrome", () => {
     await shot("04-typed");
   });
 
-  it("focuses titlebar search with ctrl+f and searches", async () => {
-    // Real Ctrl+F is the browser's own find in Chrome, so dispatch the
-    // chord as a synthetic event to exercise the app's binding.
-    await driver.executeScript(() => {
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }),
-      );
-    });
+  it("focuses titlebar search with ctrl+shift+f and searches", async () => {
+    await driver
+      .actions()
+      .keyDown(Key.CONTROL)
+      .keyDown(Key.SHIFT)
+      .sendKeys("f")
+      .keyUp(Key.SHIFT)
+      .keyUp(Key.CONTROL)
+      .perform();
     const active = await driver.switchTo().activeElement();
     assert.equal(await active.getAttribute("id"), "titleSearch");
     await active.sendKeys("echo");
@@ -211,6 +230,26 @@ describe("muis chrome", () => {
     await (await driver.findElements(By.css(".session")))[1].click();
     await assertOneVisibleTerminal();
     await shot("09-session-switches-one-terminal");
+  });
+
+  it("cycles tabs with ctrl+tab and ctrl+shift+tab", async () => {
+    await (await driver.findElements(By.css(".session")))[0].click();
+    await (await tabs())[0].click();
+    assert.equal(await activeTabIndex(), 0);
+    await press({ key: "Tab", code: "Tab", ctrlKey: true });
+    await driver.wait(async () => (await activeTabIndex()) === 1, 3000);
+    await press({ key: "Tab", code: "Tab", ctrlKey: true, shiftKey: true });
+    await driver.wait(async () => (await activeTabIndex()) === 0, 3000);
+    await shot("11-ctrl-tab");
+  });
+
+  it("cycles sessions with ctrl+page down and up", async () => {
+    const before = await activeSessionIndex();
+    await press({ key: "PageDown", code: "PageDown", ctrlKey: true });
+    await driver.wait(async () => (await activeSessionIndex()) !== before, 3000);
+    await press({ key: "PageUp", code: "PageUp", ctrlKey: true });
+    await driver.wait(async () => (await activeSessionIndex()) === before, 3000);
+    await shot("12-ctrl-page-sessions");
   });
 
   it("closes the second tab", async () => {

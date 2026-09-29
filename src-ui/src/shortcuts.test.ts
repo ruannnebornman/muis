@@ -14,9 +14,11 @@ describe("resolveShortcut", () => {
     expect(resolveShortcut(key({ key: ",", ctrlKey: true }))).toEqual({ type: "open-settings" });
   });
 
-  it("finds with ctrl+f, not ctrl+shift+f", () => {
+  it("focuses search with ctrl+shift+f (and ctrl+f as a fallback)", () => {
+    expect(resolveShortcut(key({ key: "f", ctrlKey: true, shiftKey: true }))).toEqual({
+      type: "focus-search",
+    });
     expect(resolveShortcut(key({ key: "f", ctrlKey: true }))).toEqual({ type: "focus-search" });
-    expect(resolveShortcut(key({ key: "f", ctrlKey: true, shiftKey: true }))).toBeNull();
   });
 
   it("switches tabs with alt+digit using either key or code", () => {
@@ -27,9 +29,28 @@ describe("resolveShortcut", () => {
     });
   });
 
-  it("cycles tabs with ctrl+page keys", () => {
-    expect(resolveShortcut(key({ key: "PageDown", ctrlKey: true }))).toEqual({ type: "cycle-tab", delta: 1 });
-    expect(resolveShortcut(key({ key: "PageUp", ctrlKey: true }))).toEqual({ type: "cycle-tab", delta: -1 });
+  it("cycles sessions with ctrl+page down/up", () => {
+    expect(resolveShortcut(key({ key: "PageDown", ctrlKey: true }))).toEqual({
+      type: "cycle-session",
+      delta: 1,
+    });
+    expect(resolveShortcut(key({ key: "PageUp", ctrlKey: true }))).toEqual({
+      type: "cycle-session",
+      delta: -1,
+    });
+  });
+
+  it("cycles tabs with ctrl+tab and ctrl+shift+tab", () => {
+    // Real events carry key "Tab"; accept code "Tab" too.
+    expect(resolveShortcut(key({ key: "Tab", ctrlKey: true }))).toEqual({ type: "cycle-tab", delta: 1 });
+    expect(resolveShortcut(key({ key: "Tab", code: "Tab", ctrlKey: true }))).toEqual({
+      type: "cycle-tab",
+      delta: 1,
+    });
+    expect(resolveShortcut(key({ key: "Tab", ctrlKey: true, shiftKey: true }))).toEqual({
+      type: "cycle-tab",
+      delta: -1,
+    });
   });
 
   it("reports escape and ignores plain keys", () => {

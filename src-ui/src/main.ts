@@ -196,7 +196,7 @@ titleSearch.autocomplete = "off";
 titleSearch.spellcheck = false;
 const searchHint = document.createElement("span");
 searchHint.className = "kbd";
-searchHint.textContent = "ctrl f";
+searchHint.textContent = "ctrl shift f";
 const searchResults = document.createElement("div");
 searchResults.id = "searchResults";
 searchResults.className = "results";
@@ -853,7 +853,7 @@ window.addEventListener("resize", () => {
   if (IN_TAURI) void client.resize(ws.id, active.id, view.term.cols, view.term.rows).catch(() => {});
 });
 
-window.addEventListener("keydown", (e) => {
+const onShortcut = (e: KeyboardEvent): void => {
   const target = e.target as HTMLElement | null;
   if (target === titleSearch) return; // search box handles its own keys
   const ws = store.currentWorkspace();
@@ -903,11 +903,22 @@ window.addEventListener("keydown", (e) => {
       }
       break;
     }
+    case "cycle-session": {
+      e.preventDefault();
+      const n = store.workspaces.length;
+      if (n > 0) {
+        store.switch((store.current + action.delta + n) % n);
+        renderAll();
+      }
+      break;
+    }
     case "close-overlay":
       if (settingsOverlay.style.display !== "none") closeSettings();
       break;
   }
-});
+};
+// Capture phase so the focused terminal cannot swallow these chords first.
+window.addEventListener("keydown", onShortcut, true);
 
 /* ---------------- settings dialog ---------------- */
 
