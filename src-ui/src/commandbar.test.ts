@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CommandTracker } from "./commandbar";
+import { CommandTracker, tabLabel } from "./commandbar";
 
 function tracker() {
   let t = 1000;
@@ -63,5 +63,16 @@ describe("CommandTracker", () => {
     tr.forget("t");
     expect(tr.state("t").running).toBe(false);
     expect(tr.state("t").lastCmd).toBeNull();
+  });
+});
+
+describe("tabLabel", () => {
+  it("shows the last command, falling back to the shell title", () => {
+    expect(tabLabel("~/code", false, "cargo test")).toBe("cargo test");
+    expect(tabLabel("~/code", undefined, null)).toBe("~/code");
+  });
+
+  it("keeps a pinned (manual) name", () => {
+    expect(tabLabel("deploy", true, "cargo test")).toBe("deploy");
   });
 });

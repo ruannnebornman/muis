@@ -156,6 +156,15 @@ describe("muis chrome", () => {
     await shot("04-typed");
   });
 
+  it("labels the active tab with the last command", async () => {
+    await driver.wait(async () => {
+      const els = await tabs();
+      const i = await activeTabIndex();
+      return i >= 0 && (await els[i].getText()).includes("echo hi-e2e");
+    }, 3000);
+    await shot("04b-tab-label");
+  });
+
   it("focuses titlebar search with ctrl+shift+f and searches", async () => {
     await driver
       .actions()
