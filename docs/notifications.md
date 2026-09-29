@@ -57,11 +57,13 @@ Each phase is independently testable, mergeable, and leaves the app green.
   body-with-semicolons, ConEmu/other-subtype ignores, split chunks.
 - **Verify:** `npm test --prefix src-ui`.
 
-### Phase 2 — OSC 99 rich protocol `[ ]`
+### Phase 2 — OSC 99 rich protocol `[x]`
 
 - Add OSC 99 with metadata parsing (`i`, `d`, `e`, `u`, `p`) and chunk
   reassembly: title/body chunks joined by id, base64 `e=1`, urgency.
 - Cap payload growth; drop incomplete trains safely.
+- Deferred: responding to the `p=?` capability query (needs a pty write
+  path; it is detected and ignored for now, so OSC 99 senders fall back).
 - **Test:** `osc.test.ts` / new `notify.test.ts` — two-chunk title+body,
   base64, out-of-order ids, oversized payload, non-99 passthrough.
 - **Verify:** `npm test --prefix src-ui`.
