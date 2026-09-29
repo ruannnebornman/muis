@@ -80,7 +80,7 @@ jobs:
             sleep 1
           done
           npm test --prefix tests/e2e
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: muis-browser-e2e
@@ -110,7 +110,7 @@ jobs:
       - run: cargo build --locked -p muis-shell -p muis-worker
       - name: Run native Tauri PTY smoke under Xvfb
         run: bash tests/e2e/live-x11.sh
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: muis-native-xvfb
@@ -136,7 +136,7 @@ jobs:
           Compress-Archive -Path
           target\release\muis.exe,target\release\muis-worker.exe
           -DestinationPath muis-portable.zip
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: muis-portable
           path: muis-portable.zip
