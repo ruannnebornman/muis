@@ -68,15 +68,17 @@ Each phase is independently testable, mergeable, and leaves the app green.
   base64, out-of-order ids, oversized payload, non-99 passthrough.
 - **Verify:** `npm test --prefix src-ui`.
 
-### Phase 3 — Notification router + in-app surface `[ ]`
+### Phase 3 — Notification router + in-app surface `[x]`
 
-- Pure `NotificationRouter`: dedupe, per-tab routing, focus-aware
-  suppress, urgency, `done` badge integration (reuse `DoneTracker`).
-- Wire into `observeOsc`: toast + tab badge; window title done count
-  already exists.
-- **Test:** router unit tests (fake clock/focus); browser e2e asserts the
-  toast/badge appear for a fake OSC 9 injected into the preview.
-- **Verify:** `npm test --prefix src-ui`, `npm test --prefix tests/e2e`.
+- `src-ui/src/notify.ts`: pure `NotifyRouter` — per-tab dedupe within a
+  short window, and "badge the tab when the user was not looking at it".
+- Wire `notify` events in `observeOsc` into the existing attention
+  surface (tab done badge, pulsing session dot, window-title count)
+  instead of inventing new chrome — the design target
+  (`wezterm-web/index.html`) defines no in-app toast.
+- **Test:** `notify.test.ts` (visibility, dedupe window, source/content/
+  tab identity, forget); chrome behavior is covered by the browser e2e.
+- **Verify:** `npm test --prefix src-ui`, `npm run build --prefix src-ui`.
 
 ### Phase 4 — Desktop/OS notification delivery `[ ]`
 

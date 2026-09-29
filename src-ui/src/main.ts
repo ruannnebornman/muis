@@ -17,6 +17,7 @@ import { CommandTracker, tabLabel as tabLabelOf } from "./commandbar";
 import { collectMatches, type SearchHit, type SearchScope, type SearchableTab } from "./searchall";
 import { resolveShortcut } from "./shortcuts";
 import { DoneTracker } from "./done";
+import { NotifyRouter } from "./notify";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
 import "./style.css";
@@ -497,6 +498,14 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
       renderCommandHead(tabNow.id);
     } else if (ev.type === "cmd-end") {
       finishCommand(tabNow.id, ev.exit);
+    } else if (ev.type === "notify") {
+      // Terminal agents report completion with OSC 9/777/99. Badge the tab
+      // when the user was not looking at it, same as a finished command.
+      const decision = notifyRouter.route(tabNow.id, ev, isTabVisible(tabNow.id), Date.now());
+      if (decision?.markDone) {
+        doneTabs.mark(tabNow.id);
+        changed = true;
+      }
     }
   }
   if (changed) {
@@ -1084,6 +1093,7 @@ function installDebugHook(): void {
 
 const commandTracker = new CommandTracker();
 const doneTabs = new DoneTracker();
+const notifyRouter = new NotifyRouter();
 const idleFallback = new Map<string, number>();
 
 /** A tab is "done" when a finished command or pty exit needs attention. */
@@ -1170,6 +1180,7 @@ function finishCommand(tabId: string, exit: number | null): void {
 function forgetTabState(tabId: string): void {
   commandTracker.forget(tabId);
   doneTabs.forget(tabId);
+  notifyRouter.forget(tabId);
   window.clearTimeout(idleFallback.get(tabId));
   idleFallback.delete(tabId);
 }
