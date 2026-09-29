@@ -20,6 +20,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/muis-worker"
+    ],
     "icon": [
       "icons/icon.ico",
       "../../data/icons/hicolor/48x48/apps/muis.png",

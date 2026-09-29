@@ -11,6 +11,7 @@ tests/e2e/artifacts/
 
 # Tauri bundles
 crates/muis-shell/target/
+crates/muis-shell/binaries/
 *.AppImage
 *.deb
 *.msi
