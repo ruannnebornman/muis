@@ -12,6 +12,7 @@ export type ShortcutAction =
   | { type: "open-settings" }
   | { type: "switch-tab"; index: number }
   | { type: "cycle-tab"; delta: number }
+  | { type: "cycle-session"; delta: number }
   | { type: "close-overlay" };
 
 export interface KeyLike {
@@ -32,6 +33,9 @@ export function resolveShortcut(e: KeyLike): ShortcutAction | null {
   if (plainCtrl && lower === "t") return { type: "new-tab" };
   if (ctrlShift && lower === "t") return { type: "new-tab" };
   if (ctrlShift && lower === "w") return { type: "close-tab" };
+  // ctrl+shift+f is the reliable binding (ctrl+f is consumed by the
+  // focused terminal / browser find before the chrome sees it).
+  if (ctrlShift && lower === "f") return { type: "focus-search" };
   if (plainCtrl && lower === "f") return { type: "focus-search" };
   if (ctrlShift && key === "F12") return { type: "focus-terminal" };
   if (plainCtrl && key === ",") return { type: "open-settings" };
@@ -42,8 +46,13 @@ export function resolveShortcut(e: KeyLike): ShortcutAction | null {
     if (digit > 0) return { type: "switch-tab", index: digit - 1 };
   }
 
-  if (e.ctrlKey && key === "PageDown") return { type: "cycle-tab", delta: 1 };
-  if (e.ctrlKey && key === "PageUp") return { type: "cycle-tab", delta: -1 };
+  // Tabs: ctrl+tab forwards, ctrl+shift+tab back.
+  if (e.ctrlKey && (key === "Tab" || e.code === "Tab")) {
+    return { type: "cycle-tab", delta: e.shiftKey ? -1 : 1 };
+  }
+  // Sessions: ctrl+page down/up moves between workspaces.
+  if (e.ctrlKey && key === "PageDown") return { type: "cycle-session", delta: 1 };
+  if (e.ctrlKey && key === "PageUp") return { type: "cycle-session", delta: -1 };
 
   if (key === "Escape") return { type: "close-overlay" };
   return null;
