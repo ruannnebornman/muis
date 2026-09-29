@@ -17,6 +17,7 @@ import { CommandTracker, tabLabel as tabLabelOf } from "./commandbar";
 import { collectMatches, type SearchHit, type SearchScope, type SearchableTab } from "./searchall";
 import { resolveShortcut } from "./shortcuts";
 import { DoneTracker } from "./done";
+import { expandHome, shortPath as shortPathOf } from "./paths";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
 import "./style.css";
@@ -160,8 +161,11 @@ function activeSearch() {
 }
 const searcher = new SearchController(activeSearch);
 
+/** Real home directory, set once from the backend (`default_cwd`). */
+let homeDir = "";
+
 function shortPath(p: string): string {
-  return p.replace(/^\/home\/kaazrot/, "~");
+  return shortPathOf(p, homeDir);
 }
 
 const enc = new TextEncoder();
@@ -590,7 +594,7 @@ function renderSessions(): void {
     const name = window.prompt("Session name:", `session-${store.workspaces.length + 1}`);
     if (!name) return;
     const dirRaw = window.prompt("Session directory:", store.currentWorkspace()?.dir ?? "~") ?? "~";
-    const dir = dirRaw.startsWith("~/") ? `/home/kaazrot${dirRaw.slice(1)}` : dirRaw;
+    const dir = expandHome(dirRaw, homeDir);
     const idx = store.addWorkspace(name, dir);
     store.switch(idx);
     renderAll();
@@ -1382,6 +1386,7 @@ async function init(): Promise<void> {
       reportDebugStage("config-load-failed");
     }
   }
+  homeDir = home.startsWith("/") ? home : "";
   if (store.workspaces.length === 0) store.ensureDefault("home", home);
   applyTheme(cfg.theme);
   renderAll();

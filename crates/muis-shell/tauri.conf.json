@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "muis",
-  "version": "0.1.0",
-  "identifier": "dev.veldmus.muis",
+  "version": "1.0.0",
+  "identifier": "org.veldmuislinux.muis",
   "build": {
     "devUrl": "http://localhost:1420",
     "frontendDist": "../../src-ui/dist"
@@ -22,6 +22,10 @@
     "targets": "all",
     "icon": [
       "icons/icon.ico",
+      "../../data/icons/hicolor/48x48/apps/muis.png",
+      "../../data/icons/hicolor/64x64/apps/muis.png",
+      "../../data/icons/hicolor/128x128/apps/muis.png",
+      "../../data/icons/hicolor/256x256/apps/muis.png",
       "../../data/icons/hicolor/512x512/apps/muis.png"
     ],
     "category": "Utility",
