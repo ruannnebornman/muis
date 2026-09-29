@@ -50,6 +50,45 @@ if (IN_TAURI) {
   });
 }
 
+/** Whether the muis window has keyboard focus; gates desktop notifications. */
+let windowFocused = !IN_TAURI ? document.hasFocus() : true;
+if (IN_TAURI) {
+  const win = getCurrentWindow();
+  void win
+    .isFocused()
+    .then((f) => {
+      windowFocused = f;
+    })
+    .catch(() => {});
+  void win
+    .onFocusChanged(({ payload }) => {
+      windowFocused = payload;
+    })
+    .catch(() => {});
+} else {
+  window.addEventListener("focus", () => {
+    windowFocused = true;
+  });
+  window.addEventListener("blur", () => {
+    windowFocused = false;
+  });
+}
+
+/** Best-effort OS toast; no-op outside Tauri or without permission. */
+async function sendDesktopNotification(title: string, body: string): Promise<void> {
+  if (!IN_TAURI) return;
+  try {
+    const { isPermissionGranted, requestPermission, sendNotification } = await import(
+      "@tauri-apps/plugin-notification"
+    );
+    let granted = await isPermissionGranted();
+    if (!granted) granted = (await requestPermission()) === "granted";
+    if (granted) sendNotification({ title, body });
+  } catch {
+    /* notifications are best-effort */
+  }
+}
+
 class TauriTransport implements Transport {
   private handler: ((sessionId: string, frame: WorkerToUi) => void) | null = null;
 
@@ -500,11 +539,22 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
       finishCommand(tabNow.id, ev.exit);
     } else if (ev.type === "notify") {
       // Terminal agents report completion with OSC 9/777/99. Badge the tab
-      // when the user was not looking at it, same as a finished command.
-      const decision = notifyRouter.route(tabNow.id, ev, isTabVisible(tabNow.id), Date.now());
-      if (decision?.markDone) {
-        doneTabs.mark(tabNow.id);
-        changed = true;
+      // when the user was not looking at it, same as a finished command,
+      // and raise a desktop toast only while the window is unfocused.
+      const decision = notifyRouter.route(
+        tabNow.id,
+        ev,
+        { visible: isTabVisible(tabNow.id), windowFocused },
+        Date.now(),
+      );
+      if (decision) {
+        if (decision.markDone) {
+          doneTabs.mark(tabNow.id);
+          changed = true;
+        }
+        if (decision.toast) {
+          void sendDesktopNotification(ev.title ?? tabNow.title ?? "muis", ev.body);
+        }
       }
     }
   }
