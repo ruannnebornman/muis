@@ -49,6 +49,57 @@ describe("OscParser", () => {
     expect(p.push(enc.encode(`${ESC}]2;a;b\x07`))).toEqual([{ type: "title", title: "a;b" }]);
   });
 
+  it("reads OSC 9 notifications with BEL or ST terminators", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]9;Build complete\x07`))).toEqual([
+      { type: "notify", title: null, body: "Build complete", source: "osc9" },
+    ]);
+    expect(p.push(enc.encode(`${ESC}]9;needs input\x1b\\`))).toEqual([
+      { type: "notify", title: null, body: "needs input", source: "osc9" },
+    ]);
+  });
+
+  it("keeps semicolons in OSC 9 bodies but ignores ConEmu subcommands", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]9;a;b;c\x07`))).toEqual([
+      { type: "notify", title: null, body: "a;b;c", source: "osc9" },
+    ]);
+    // 9;4 progress and 9;9 cwd are ConEmu extensions, not notifications.
+    expect(p.push(enc.encode(`${ESC}]9;4;1;50\x07`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]9;9;/home/kaazrot\x07`))).toEqual([]);
+  });
+
+  it("reads OSC 777 notify with separate title and body", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]777;notify;Deploy;Success on prod\x07`))).toEqual([
+      { type: "notify", title: "Deploy", body: "Success on prod", source: "osc777" },
+    ]);
+    // Body may itself contain semicolons; keep them.
+    expect(p.push(enc.encode(`${ESC}]777;notify;T;a;b\x07`))).toEqual([
+      { type: "notify", title: "T", body: "a;b", source: "osc777" },
+    ]);
+    // Title-only is allowed.
+    expect(p.push(enc.encode(`${ESC}]777;notify;Heads up;\x07`))).toEqual([
+      { type: "notify", title: "Heads up", body: "", source: "osc777" },
+    ]);
+  });
+
+  it("ignores non-notify OSC 777 and empty notifications", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]777;container;abc\x07`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]777;notify;;\x07`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]9;   \x07`))).toEqual([]);
+  });
+
+  it("reassembles notification sequences split across chunks", () => {
+    const p = new OscParser();
+    const full = enc.encode(`x${ESC}]777;notify;Long;done now\x07y`);
+    expect(p.push(full.slice(0, 10))).toEqual([]);
+    expect(p.push(full.slice(10))).toEqual([
+      { type: "notify", title: "Long", body: "done now", source: "osc777" },
+    ]);
+  });
+
   it("reads OSC 133 command markers and exit codes", () => {
     const p = new OscParser();
     expect(p.push(enc.encode(`${ESC}]133;A\x07${ESC}]133;B\x07`))).toEqual([]);
