@@ -19,6 +19,40 @@ const SCROLLBACK_CAP: usize = 256 * 1024;
 /// exit status on finish) using fish's preexec/postexec events.
 const FISH_INTEGRATION: &str = r"function __muis_preexec --on-event fish_preexec; printf '\e]133;C\e\\'; end; function __muis_postexec --on-event fish_postexec; printf '\e]133;D;%d\e\\' $status; end";
 
+/// True when the worker is running inside a Flatpak sandbox.
+fn in_flatpak() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
+/// Full argv used to spawn the shell. Inside a Flatpak sandbox the shell is
+/// run on the host via `flatpak-spawn --host` so the user gets their real
+/// environment and tools: the runtime has no fish and a sandboxed shell
+/// cannot run host binaries.
+fn shell_argv(shell: &str, cwd: &str, flatpak: bool, fish_integration: &str) -> Vec<String> {
+    let mut argv: Vec<String> = Vec::new();
+    if flatpak {
+        argv.push("flatpak-spawn".to_string());
+        argv.push("--host".to_string());
+        argv.push(format!("--directory={cwd}"));
+        argv.push("--env=TERM=xterm-256color".to_string());
+        argv.push("--env=LANG=C.UTF-8".to_string());
+    }
+    argv.push(shell.to_string());
+    // Fish: publish OSC 133 command markers so the UI can show the last
+    // command, its exit code, and duration. Non-invasive event handlers,
+    // added via -C (runs before config, keeps the session interactive).
+    if std::path::Path::new(shell)
+        .file_name()
+        .and_then(|n| n.to_str())
+        == Some("fish")
+    {
+        argv.push("-C".to_string());
+        argv.push(fish_integration.to_string());
+    }
+    argv
+}
+
+
 #[derive(Debug, Default)]
 struct Scrollback {
     buf: VecDeque<u8>,
@@ -105,22 +139,17 @@ fn spawn_session(
     #[cfg(unix)]
     disable_echo(&*pair.master);
 
-    let mut cmd = CommandBuilder::new(shell);
-    cmd.cwd(cwd);
-    cmd.env("TERM", "xterm-256color");
-    // Long-running agents/tasks inherit a sane locale.
-    cmd.env("LANG", "C.UTF-8");
-
-    // Fish: publish OSC 133 command markers so the UI can show the last
-    // command, its exit code, and duration. Non-invasive event handlers,
-    // added via -C (runs before config, keeps the session interactive).
-    if std::path::Path::new(shell)
-        .file_name()
-        .and_then(|n| n.to_str())
-        == Some("fish")
-    {
-        cmd.arg("-C");
-        cmd.arg(FISH_INTEGRATION);
+    let flatpak = in_flatpak();
+    let argv = shell_argv(shell, cwd, flatpak, FISH_INTEGRATION);
+    let mut cmd = CommandBuilder::new(&argv[0]);
+    for arg in &argv[1..] {
+        cmd.arg(arg);
+    }
+    if !flatpak {
+        cmd.cwd(cwd);
+        cmd.env("TERM", "xterm-256color");
+        // Long-running agents/tasks inherit a sane locale.
+        cmd.env("LANG", "C.UTF-8");
     }
 
     let child = match pair.slave.spawn_command(cmd) {
@@ -336,5 +365,34 @@ fn main() {    let emitter = Emitter::default();
     // UI went away: take everything down with us, no orphans.
     for (_, session) in sessions {
         let _ = session.child.lock().unwrap().kill();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shell_argv_native_prefers_plain_command() {
+        assert_eq!(shell_argv("/bin/bash", "/tmp", false, "INT"), vec!["/bin/bash"]);
+    }
+
+    #[test]
+    fn shell_argv_adds_fish_integration() {
+        assert_eq!(
+            shell_argv("/usr/bin/fish", "/home/x", false, "INT"),
+            vec!["/usr/bin/fish", "-C", "INT"]
+        );
+    }
+
+    #[test]
+    fn shell_argv_flatpak_wraps_with_flatpak_spawn() {
+        let argv = shell_argv("/usr/bin/fish", "/home/x", true, "INT");
+        assert_eq!(argv[0], "flatpak-spawn");
+        assert_eq!(argv[1], "--host");
+        assert_eq!(argv[2], "--directory=/home/x");
+        assert_eq!(argv[3], "--env=TERM=xterm-256color");
+        assert_eq!(argv[4], "--env=LANG=C.UTF-8");
+        assert_eq!(&argv[5..], &["/usr/bin/fish", "-C", "INT"]);
     }
 }

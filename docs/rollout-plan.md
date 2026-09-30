@@ -19,7 +19,20 @@ Goal: ship muis through these artifacts and one future channel.
 Items 1, 2, 3, and 4 all ship the same `muis` binary; only `veldmuis-muis` is
 Veldmuis-only.
 
-This document is the plan only. Nothing here is implemented yet.
+## Status
+
+- ✅ **Phase 0 — prerequisites** — version `1.0.0`, identifier
+  `org.veldmuislinux.muis`, Tauri CLI, `worker_path()` fallback, icon ladder,
+  home-path fix.
+- 🚧 **Phase 1 — release automation** — `release.yml` ships the Linux tarball,
+  AppImage, and Windows portable zip; **`v1.0.0` is released and verified**
+  (assets + `SHA256SUMS`). **Flatpak is in progress.**
+- ⏳ **Phase 2** (download hardening) — partially: `packaging-windows.md` and
+  `packaging-linux-appimage.md` exist; Flatpak doc pending.
+- ⏳ **Phase 2b** (AUR), **Phase 3** (Veldmuis package + auto-latest),
+  **Phase 4** (default terminal), **Phase 5** (website) — not started.
+
+This document is the plan; the status above tracks what has landed.
 
 ## Constraints (apply to every phase)
 
