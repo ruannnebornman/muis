@@ -34,7 +34,8 @@
       "deb": {},
       "appimage": {
         "files": {
-          "usr/bin/muis-worker": "../../target/release/muis-worker"
+          "usr/bin/muis-worker": "../../target/release/muis-worker",
+          "usr/bin/muis-notify": "../../target/release/muis-notify"
         }
       }
     },

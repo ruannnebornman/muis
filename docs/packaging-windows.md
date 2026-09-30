@@ -9,6 +9,7 @@ No admin required: everything installs and runs per-user.
 ```text
 muis.exe            Tauri shell (WebView2 window + xterm frontend)
 muis-worker.exe     pty sidecar, resolved as a sibling of muis.exe
+muis-notify.exe     CLI: send a notification to the running muis window
 ```
 
 No installer, no registry keys, no services. Unzip anywhere
@@ -25,8 +26,8 @@ No installer, no registry keys, no services. Unzip anywhere
 On a Windows machine with Rust stable:
 
 ```powershell
-cargo build --release -p muis-shell -p muis-worker
-Compress-Archive -Path target\release\muis.exe,target\release\muis-worker.exe `
+cargo build --release -p muis-shell -p muis-worker -p muis-notify
+Compress-Archive -Path target\release\muis.exe,target\release\muis-worker.exe,target\release\muis-notify.exe `
   -DestinationPath muis-portable-<version>.zip
 ```
 

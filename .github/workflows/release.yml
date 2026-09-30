@@ -53,7 +53,7 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
-      - run: cargo build --release --locked -p muis-shell -p muis-worker
+      - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
       - name: Assemble tarball
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           staging="muis-${VERSION}-x86_64-linux"
           mkdir -p "${staging}/icons"
-          cp target/release/muis target/release/muis-worker "${staging}/"
+          cp target/release/muis target/release/muis-worker target/release/muis-notify "${staging}/"
           cp data/muis.desktop "${staging}/"
           cp data/icons/hicolor/512x512/apps/muis.png "${staging}/icons/muis.png"
           tar -czf "${staging}.tar.gz" "${staging}"
@@ -94,7 +94,7 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
-      - run: cargo build --release --locked -p muis-worker
+      - run: cargo build --release --locked -p muis-worker -p muis-notify
       - name: Build the AppImage
         working-directory: crates/muis-shell
         run: ../../src-ui/node_modules/.bin/tauri build --bundles appimage
@@ -125,14 +125,14 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
-      - run: cargo build --release --locked -p muis-shell -p muis-worker
+      - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
       - name: Assemble portable zip
         env:
           VERSION: ${{ needs.version.outputs.version }}
         shell: pwsh
         run: |
           $zip = "muis-portable-$env:VERSION.zip"
-          Compress-Archive -Path target\release\muis.exe,target\release\muis-worker.exe -DestinationPath $zip
+          Compress-Archive -Path target\release\muis.exe,target\release\muis-worker.exe,target\release\muis-notify.exe -DestinationPath $zip
           (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  " + $zip | Out-File -Encoding ascii "$zip.sha256"
       - uses: actions/upload-artifact@v6
         with:

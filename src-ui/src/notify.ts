@@ -8,6 +8,21 @@
  */
 import type { NotifyEvent } from "./osc";
 
+/** Payload of a `muis-notify` request forwarded by the shell. */
+export interface CliNotify {
+  title?: string | null;
+  body: string;
+  tab_id?: string | null;
+  urgency?: number;
+}
+
+/** Turn a `muis-notify` request into a notification event. */
+export function notifyEventFromCli(req: CliNotify): NotifyEvent {
+  const ev: NotifyEvent = { type: "notify", title: req.title ?? null, body: req.body, source: "cli" };
+  if (req.urgency !== undefined) ev.urgency = req.urgency;
+  return ev;
+}
+
 export interface NotifyContext {
   /** The originating tab is the active tab of the shown workspace. */
   visible: boolean;

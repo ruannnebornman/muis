@@ -18,8 +18,9 @@ If your system lacks `libfuse.so.2`, run it without FUSE:
 ## What it bundles
 
 The AppImage is built to be self-contained: WebKitGTK 4.1, JavaScriptCore,
-libsoup3, and GTK are bundled inside, along with both `muis` and `muis-worker`.
-So it does not require `webkit2gtk-4.1` to be installed on the host.
+libsoup3, and GTK are bundled inside, along with `muis`, `muis-worker`,
+and `muis-notify`. So it does not require `webkit2gtk-4.1` to be
+installed on the host.
 
 ## Requirements
 
@@ -45,10 +46,11 @@ job). Manually:
 
 ```sh
 npm ci --prefix src-ui && npm run build --prefix src-ui
-cargo build --release --locked -p muis-worker
+cargo build --release --locked -p muis-worker -p muis-notify
 (cd crates/muis-shell && ../../src-ui/node_modules/.bin/tauri build --bundles appimage)
 ```
 
-`muis-worker` is placed beside `muis` inside the AppImage via
-`bundle.linux.appimage.files` in `crates/muis-shell/tauri.conf.json`. The
-AppImage lands in `target/release/bundle/appimage/`.
+`muis-worker` and `muis-notify` are placed beside `muis` inside the
+AppImage via `bundle.linux.appimage.files` in
+`crates/muis-shell/tauri.conf.json`. The AppImage lands in
+`target/release/bundle/appimage/`.

@@ -12,7 +12,7 @@
  * config. Other shells need an OSC 7 prompt hook (see README).
  */
 
-export type NotifySource = "osc9" | "osc777" | "osc99";
+export type NotifySource = "osc9" | "osc777" | "osc99" | "cli";
 
 export type NotifyEvent = {
   type: "notify";

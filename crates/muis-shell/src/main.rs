@@ -16,7 +16,7 @@ mod bridge;
 mod persist;
 
 use bridge::WorkerPool;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// Locate the worker binary in `dir`. Prefers the plain `muis-worker`
 /// sibling that the Arch package and Windows zip ship; falls back to the
@@ -242,6 +242,18 @@ fn main() {
                 );
             }
             app.handle().manage(WorkerPool::new(app.handle().clone(), worker_path()));
+
+            // Notification endpoint for `muis-notify` clients. One per-user
+            // socket; each request is forwarded to the frontend, which routes
+            // it to the originating tab. Best-effort: a failure here only
+            // disables the CLI path, not the window.
+            let socket = muis_core::notify::socket_name();
+            let handle = app.handle().clone();
+            if let Err(e) = muis_core::notify::serve(&socket, move |req| {
+                let _ = handle.emit("muis-notify", &req);
+            }) {
+                eprintln!("muis: notification endpoint unavailable ({socket}): {e}");
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
