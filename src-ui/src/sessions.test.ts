@@ -42,6 +42,34 @@ describe("SessionStore", () => {
     expect(s.closeTab(0, 5)).toBe(false);
   });
 
+  it("closes the session when its last tab closes", () => {
+    const s = store();
+    expect(s.closeTab(0, 0)).toBe(true);
+    expect(s.workspaces.length).toBe(0);
+    expect(s.activeTab()).toBeUndefined();
+    expect(s.currentWorkspace()).toBeUndefined();
+    // A tab needs a workspace; adding one restores the invariant.
+    expect(s.newTab("x", "/tmp")).toBeUndefined();
+    const idx = s.addWorkspace("fresh", "/tmp");
+    expect(s.newTab("x", "/tmp")).toBeDefined();
+    expect(s.current).toBe(idx);
+  });
+
+  it("switches to a neighbor when the active session closes", () => {
+    const s = store();
+    s.addWorkspace("b", "/tmp/b");
+    s.switch(1);
+    s.newTab("b1", "/tmp/b");
+    s.addWorkspace("c", "/tmp/c");
+    s.switch(2);
+    s.newTab("c1", "/tmp/c");
+    s.switch(1);
+    expect(s.closeTab(1, 0)).toBe(true);
+    expect(s.workspaces.length).toBe(2);
+    expect(s.currentWorkspace()?.name).toBe("c");
+    expect(s.activeTab()?.title).toBe("c1");
+  });
+
   it("serializes to the same shape as the Rust store", () => {
     const s = store();
     const back = JSON.parse(s.toJSON()) as { workspaces: Workspace[] };
@@ -62,8 +90,14 @@ describe("SessionStore", () => {
   });
   it("rejects corrupt session files instead of starting broken", () => {
     expect(() => SessionStore.fromJSON("not json")).toThrow();
-    expect(() => SessionStore.fromJSON('{"workspaces":[]}')).toThrow();
     expect(() => SessionStore.fromJSON('{"nope":1}')).toThrow();
+  });
+
+  it("loads an empty workspace list as the sessionless state", () => {
+    const s = SessionStore.fromJSON('{"workspaces":[],"current":0,"next_id":1}');
+    expect(s.workspaces.length).toBe(0);
+    expect(s.activeTab()).toBeUndefined();
+    expect(s.currentWorkspace()).toBeUndefined();
   });
 
   it("knows placeholder titles from user names", () => {

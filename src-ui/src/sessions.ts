@@ -81,8 +81,12 @@ export class SessionStore {  workspaces: Workspace[] = [];
     const ws = this.workspaces[wsIndex];
     if (!ws || tabIndex >= ws.tabs.length) return false;
     ws.tabs.splice(tabIndex, 1);
-    if (ws.tabs.length === 0) ws.active = 0;
-    else if (ws.active >= ws.tabs.length) ws.active = ws.tabs.length - 1;
+    if (ws.tabs.length === 0) {
+      // Closing the last tab closes its workspace (session) too.
+      this.removeWorkspace(wsIndex);
+      return true;
+    }
+    if (ws.active >= ws.tabs.length) ws.active = ws.tabs.length - 1;
     else if (tabIndex < ws.active) ws.active--;
     return true;
   }
@@ -125,7 +129,8 @@ export class SessionStore {  workspaces: Workspace[] = [];
         if (m) s.nextId = Math.max(s.nextId, parseInt(m[2], 10) + 1);
       }
     }
-    if (s.workspaces.length === 0) throw new Error("session file has no workspaces");
+    // An empty workspace list is a valid sessionless state (every session
+    // was closed), so it loads rather than counting as a corrupt file.
     return s;
   }
 }
