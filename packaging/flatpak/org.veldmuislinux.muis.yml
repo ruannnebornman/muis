@@ -1,0 +1,44 @@
+app-id: org.veldmuislinux.muis
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+command: muis
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+
+finish-args:
+  # Windowing
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # A terminal needs the network and the user's files.
+  - --share=network
+  - --filesystem=home
+  # Run the user's real shell on the host (muis-worker uses flatpak-spawn).
+  - --talk-name=org.freedesktop.Flatpak
+  - --talk-name=org.freedesktop.Notifications
+
+modules:
+  - name: muis
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+      env:
+        CARGO_HOME: /run/build/muis/cargo
+        npm_config_cache: /run/build/muis/npm-cache
+    build-commands:
+      - npm ci --prefix src-ui
+      - npm run build --prefix src-ui
+      - cargo build --release --locked -p muis-shell -p muis-worker
+      - install -Dm755 target/release/muis /app/bin/muis
+      - install -Dm755 target/release/muis-worker /app/bin/muis-worker
+      - install -Dm644 packaging/flatpak/org.veldmuislinux.muis.desktop
+        /app/share/applications/org.veldmuislinux.muis.desktop
+      - install -Dm644 data/icons/hicolor/512x512/apps/muis.png
+        /app/share/icons/hicolor/512x512/apps/org.veldmuislinux.muis.png
+    sources:
+      - type: dir
+        path: ../..

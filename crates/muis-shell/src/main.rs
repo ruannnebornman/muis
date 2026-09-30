@@ -10,7 +10,7 @@
 //! src-ui. A worker crash therefore takes down one session, never the
 //! window or the other sessions.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod bridge;
 mod persist;
@@ -18,19 +18,43 @@ mod persist;
 use bridge::WorkerPool;
 use tauri::Manager;
 
-/// Locate the worker binary next to the shell executable. Same directory
-/// layout on all platforms: `muis` + `muis-worker[.exe]`, which is what
-/// both the Arch package and the Windows portable zip ship.
-fn worker_path() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?;
+/// Locate the worker binary in `dir`. Prefers the plain `muis-worker`
+/// sibling that the Arch package and Windows zip ship; falls back to the
+/// Tauri-style triple-suffixed sidecar name
+/// (`muis-worker-x86_64-unknown-linux-gnu`), which is how `bundle.externalBin`
+/// names it inside the AppImage.
+fn find_worker_in(dir: &Path) -> Option<PathBuf> {
     let name = if cfg!(windows) {
         "muis-worker.exe"
     } else {
         "muis-worker"
     };
-    let candidate = dir.join(name);
-    candidate.is_file().then(|| candidate)
+    let plain = dir.join(name);
+    if plain.is_file() {
+        return Some(plain);
+    }
+    let ext = if cfg!(windows) { ".exe" } else { "" };
+    let mut matches: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("muis-worker-") && n.ends_with(ext))
+                .unwrap_or(false)
+        })
+        .collect();
+    matches.sort();
+    matches.into_iter().next()
+}
+
+/// Locate the worker binary next to the shell executable. Same directory
+/// layout on all platforms: `muis` + `muis-worker[.exe]`, which is what
+/// both the Arch package and the Windows portable zip ship.
+fn worker_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    find_worker_in(exe.parent()?)
 }
 
 #[tauri::command]
@@ -229,7 +253,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn worker_path_points_at_sibling_binary_when_present() {        // worker_path() resolves against the test binary's directory.
+    fn worker_path_points_at_sibling_binary_when_present() {
+        // worker_path() resolves against the test binary's directory.
         // No assertion on presence here (cargo test doesn't ship the
         // sidecar); this locks the naming contract instead.
         let name = if cfg!(windows) {
@@ -239,6 +264,34 @@ mod tests {
         };
         assert_eq!(name.strip_suffix(".exe").unwrap_or(name), "muis-worker");
         let _ = worker_path();
+    }
+
+    #[test]
+    fn find_worker_in_prefers_plain_then_triple_suffixed() {
+        let dir = std::env::temp_dir().join(format!("muis-worker-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let plain = dir.join(if cfg!(windows) {
+            "muis-worker.exe"
+        } else {
+            "muis-worker"
+        });
+        let sidecar = dir.join(if cfg!(windows) {
+            "muis-worker-x86_64-pc-windows-msvc.exe"
+        } else {
+            "muis-worker-x86_64-unknown-linux-gnu"
+        });
+
+        // Sidecar only: fall back to the triple-suffixed name.
+        std::fs::write(&sidecar, b"x").unwrap();
+        assert_eq!(find_worker_in(&dir), Some(sidecar));
+
+        // Plain sibling present: prefer it.
+        std::fs::write(&plain, b"x").unwrap();
+        assert_eq!(find_worker_in(&dir), Some(plain));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
