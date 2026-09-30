@@ -1,0 +1,20 @@
+pkgbase = muis
+	pkgdesc = Terminal emulator for Veldmuis: Rust backend, Tauri window, xterm.js frontend
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/ruannnebornman/muis
+	arch = x86_64
+	license = MIT
+	makedepends = rust
+	makedepends = nodejs
+	makedepends = npm
+	makedepends = pkgconf
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	depends = libsoup3
+	depends = libjavascriptcoregtk-4.1
+	optdepends = fish: OSC 133 shell integration for the last-command bar
+	source = muis-1.0.0.tar.gz::https://github.com/ruannnebornman/muis/archive/refs/tags/v1.0.0.tar.gz
+	sha256sums = 49385fdb9e9f4e8c25c703aff8cc9e00dee897f419498bba32f7c7429840d067
+
+pkgname = muis

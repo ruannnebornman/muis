@@ -27,3 +27,8 @@ Thumbs.db
 
 # muis runtime state (never commit live sessions)
 *.scrollback
+
+# AUR build artifacts
+aur/*.tar.gz
+aur/pkg/
+aur/src/
