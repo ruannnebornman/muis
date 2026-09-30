@@ -274,4 +274,57 @@ describe("muis chrome", () => {
     await driver.wait(async () => (await tabs()).length === 1, 5000);
     await shot("10-one-tab");
   });
+
+  it("closes the session when its last tab closes", async () => {
+    // Switch to the second session and close its only tab; the session
+    // must disappear and the first session take over.
+    await (await driver.findElements(By.css(".session")))[1].click();
+    await driver.wait(async () => (await tabs()).length === 1, 5000);
+    await driver.findElement(By.css("#tabbar .tab .x")).click();
+    await driver.wait(
+      async () => (await driver.findElements(By.css(".session"))).length === 1,
+      5000,
+    );
+    assert.equal((await tabs()).length, 1);
+    await assertOneVisibleTerminal();
+    await shot("13-session-closed-with-last-tab");
+  });
+
+  it("leaves no sessions after the last session's last tab closes", async () => {
+    // Only the first session remains; closing its last tab empties the
+    // app instead of quitting or resurrecting a tab.
+    await driver.findElement(By.css("#tabbar .tab .x")).click();
+    await driver.wait(
+      async () => (await driver.findElements(By.css(".session"))).length === 0,
+      5000,
+    );
+    assert.equal((await tabs()).length, 0);
+    const visible = await driver.executeScript(() => {
+      const boxes = [...document.querySelectorAll(".term-wrap .tabbox")];
+      return boxes.filter((box) => {
+        const rect = box.getBoundingClientRect();
+        return getComputedStyle(box).display !== "none" && rect.width > 0 && rect.height > 0;
+      }).length;
+    });
+    assert.equal(visible, 0);
+    await shot("14-no-sessions");
+
+    // The empty state recovers: "+ session" mints a fresh session + tab.
+    await driver.findElement(By.css(".side-footer .btn.primary")).click();
+    await driver.wait(until.alertIsPresent(), 5000);
+    const nameDialog = await driver.switchTo().alert();
+    await nameDialog.sendKeys("e2e-fresh");
+    await nameDialog.accept();
+    await driver.wait(until.alertIsPresent(), 5000);
+    const dirDialog = await driver.switchTo().alert();
+    await dirDialog.sendKeys("/tmp");
+    await dirDialog.accept();
+    await driver.wait(
+      async () => (await driver.findElements(By.css(".session"))).length === 1,
+      5000,
+    );
+    await driver.wait(async () => (await tabs()).length === 1, 5000);
+    await assertOneVisibleTerminal();
+    await shot("15-empty-state-recovers");
+  });
 });

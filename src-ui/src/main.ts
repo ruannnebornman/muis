@@ -609,14 +609,15 @@ function el(tag: string, cls: string, text?: string): HTMLElement {
 
 function renderAll(): void {
   const ws = store.currentWorkspace();
-  if (!ws) return;
-  if (ws.tabs.length === 0) {
+  if (ws && ws.tabs.length === 0) {
+    // A live workspace always shows a terminal. Only a fully closed
+    // workspace (no sessions left) is allowed to stay empty.
     store.newTab("Terminal 1", ws.dir);
     renderAll();
     return;
   }
   // Looking at a tab acknowledges its finished command.
-  const active = ws.tabs[ws.active];
+  const active = ws?.tabs[ws.active];
   if (active) doneTabs.clear(active.id);
   updateWindowTitle();
   sidebar.style.display = cfg.showSessions ? "" : "none";
@@ -705,9 +706,9 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
 }
 
 function renderTabs(): void {
+  tabbar.innerHTML = "";
   const ws = store.currentWorkspace();
   if (!ws) return;
-  tabbar.innerHTML = "";
   ws.tabs.forEach((t, i) => {
     tabbar.append(tabElement(ws, t, i === ws.active));
   });
@@ -770,7 +771,7 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
   return d;
 }
 
-function renderTerms(ws: Workspace): void {
+function renderTerms(ws: Workspace | undefined): void {
   for (const [id, view] of views) {
     if (!store.workspaces.some((w) => w.tabs.some((t) => t.id === id))) {
       view.term.dispose();
@@ -784,6 +785,8 @@ function renderTerms(ws: Workspace): void {
       view.box.classList.remove("active");
     }
   }
+  // No sessions: every terminal view was just disposed above.
+  if (!ws) return;
   for (const t of ws.tabs) {
     const view = ensureView(ws.id, t);
     const show = ws.tabs[ws.active]?.id === t.id;
@@ -1448,6 +1451,7 @@ function updateWindowTitle(): void {
 async function init(): Promise<void> {
   reportDebugStage("init-start");
   let home = "~";
+  let resumed = false;
   if (IN_TAURI) {
     try {
       home = await invoke<string>("default_cwd");
@@ -1465,7 +1469,10 @@ async function init(): Promise<void> {
     // Resume where we left off; corrupt files start fresh (never broken).
     try {
       const saved = await invoke<string>("sessions_load");
-      if (saved) store = SessionStore.fromJSON(saved);
+      if (saved) {
+        store = SessionStore.fromJSON(saved);
+        resumed = true;
+      }
       reportDebugStage("sessions-loaded", Boolean(saved));
     } catch {
       reportDebugStage("sessions-load-failed");
@@ -1479,7 +1486,9 @@ async function init(): Promise<void> {
     }
   }
   homeDir = home.startsWith("/") ? home : "";
-  if (store.workspaces.length === 0) store.ensureDefault("home", home);
+  // Only mint a default session on a fresh start. A resumed empty store
+  // means the user closed every session and quit that way on purpose.
+  if (store.workspaces.length === 0 && !resumed) store.ensureDefault("home", home);
   applyTheme(cfg.theme);
   renderAll();
   reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });
