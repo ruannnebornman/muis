@@ -1,0 +1,44 @@
+# Maintainer: Ruann Ne Bornman <ruann@veldmuislinux.org>
+pkgname=muis
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Terminal emulator for Veldmuis: Rust backend, Tauri window, xterm.js frontend"
+arch=("x86_64")
+url="https://github.com/ruannnebornman/muis"
+license=("MIT")
+depends=(
+  "webkit2gtk-4.1"
+  "gtk3"
+  "libsoup3"
+  "libjavascriptcoregtk-4.1"
+)
+makedepends=(
+  "rust"
+  "nodejs"
+  "npm"
+  "pkgconf"
+)
+optdepends=(
+  "fish: OSC 133 shell integration for the last-command bar"
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=("49385fdb9e9f4e8c25c703aff8cc9e00dee897f419498bba32f7c7429840d067")
+
+build() {
+  cd "$pkgname-$pkgver"
+  npm ci --prefix src-ui
+  npm run build --prefix src-ui
+  cargo build --release --locked -p muis-shell -p muis-worker
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/muis "${pkgdir}/usr/bin/muis"
+  install -Dm755 target/release/muis-worker "${pkgdir}/usr/bin/muis-worker"
+  install -Dm644 data/muis.desktop "${pkgdir}/usr/share/applications/muis.desktop"
+  local size
+  for size in 48 64 128 256 512; do
+    install -Dm644 "data/icons/hicolor/${size}x${size}/apps/muis.png" \
+      "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/muis.png"
+  done
+}
