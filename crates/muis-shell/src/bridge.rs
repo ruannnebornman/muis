@@ -73,6 +73,9 @@ impl WorkerPool {
             "muis-worker not found next to the muis binary".to_string()
         })?;
         let mut child = Command::new(bin)
+            // The worker forwards this to each pty so `muis-notify` can find
+            // the shell's notification socket.
+            .env("MUIS_SOCKET", muis_core::notify::socket_name())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

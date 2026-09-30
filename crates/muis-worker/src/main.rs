@@ -28,14 +28,22 @@ fn in_flatpak() -> bool {
 /// run on the host via `flatpak-spawn --host` so the user gets their real
 /// environment and tools: the runtime has no fish and a sandboxed shell
 /// cannot run host binaries.
-fn shell_argv(shell: &str, cwd: &str, flatpak: bool, fish_integration: &str) -> Vec<String> {
+fn shell_argv(
+    shell: &str,
+    cwd: &str,
+    flatpak: bool,
+    fish_integration: &str,
+    envs: &[(String, String)],
+) -> Vec<String> {
     let mut argv: Vec<String> = Vec::new();
     if flatpak {
         argv.push("flatpak-spawn".to_string());
         argv.push("--host".to_string());
         argv.push(format!("--directory={cwd}"));
-        argv.push("--env=TERM=xterm-256color".to_string());
-        argv.push("--env=LANG=C.UTF-8".to_string());
+        // `flatpak-spawn` only forwards env explicitly passed with --env.
+        for (key, value) in envs {
+            argv.push(format!("--env={key}={value}"));
+        }
     }
     argv.push(shell.to_string());
     // Fish: publish OSC 133 command markers so the UI can show the last
@@ -140,16 +148,32 @@ fn spawn_session(
     disable_echo(&*pair.master);
 
     let flatpak = in_flatpak();
-    let argv = shell_argv(shell, cwd, flatpak, FISH_INTEGRATION);
+    // Env shared by both spawn paths. Inside Flatpak these go through
+    // `flatpak-spawn --env=...`; natively they are set on the command.
+    let mut envs: Vec<(String, String)> = vec![
+        ("TERM".to_string(), "xterm-256color".to_string()),
+        // Long-running agents/tasks inherit a sane locale.
+        ("LANG".to_string(), "C.UTF-8".to_string()),
+        // Identify the terminal and this tab so `muis-notify` (and any tool
+        // reading the env) can target the right window/tab.
+        ("TERM_PROGRAM".to_string(), "muis".to_string()),
+        ("MUIS_TAB_ID".to_string(), pty_id.to_string()),
+    ];
+    // The shell sets MUIS_SOCKET on this worker; pass it through to the pty.
+    if let Ok(socket) = std::env::var("MUIS_SOCKET") {
+        envs.push(("MUIS_SOCKET".to_string(), socket));
+    }
+
+    let argv = shell_argv(shell, cwd, flatpak, FISH_INTEGRATION, &envs);
     let mut cmd = CommandBuilder::new(&argv[0]);
     for arg in &argv[1..] {
         cmd.arg(arg);
     }
     if !flatpak {
         cmd.cwd(cwd);
-        cmd.env("TERM", "xterm-256color");
-        // Long-running agents/tasks inherit a sane locale.
-        cmd.env("LANG", "C.UTF-8");
+        for (key, value) in &envs {
+            cmd.env(key, value);
+        }
     }
 
     let child = match pair.slave.spawn_command(cmd) {
@@ -374,25 +398,46 @@ mod tests {
 
     #[test]
     fn shell_argv_native_prefers_plain_command() {
-        assert_eq!(shell_argv("/bin/bash", "/tmp", false, "INT"), vec!["/bin/bash"]);
+        assert_eq!(shell_argv("/bin/bash", "/tmp", false, "INT", &[]), vec!["/bin/bash"]);
     }
 
     #[test]
     fn shell_argv_adds_fish_integration() {
         assert_eq!(
-            shell_argv("/usr/bin/fish", "/home/x", false, "INT"),
+            shell_argv("/usr/bin/fish", "/home/x", false, "INT", &[]),
             vec!["/usr/bin/fish", "-C", "INT"]
         );
     }
 
     #[test]
     fn shell_argv_flatpak_wraps_with_flatpak_spawn() {
-        let argv = shell_argv("/usr/bin/fish", "/home/x", true, "INT");
+        let envs = [
+            ("TERM".to_string(), "xterm-256color".to_string()),
+            ("LANG".to_string(), "C.UTF-8".to_string()),
+        ];
+        let argv = shell_argv("/usr/bin/fish", "/home/x", true, "INT", &envs);
         assert_eq!(argv[0], "flatpak-spawn");
         assert_eq!(argv[1], "--host");
         assert_eq!(argv[2], "--directory=/home/x");
         assert_eq!(argv[3], "--env=TERM=xterm-256color");
         assert_eq!(argv[4], "--env=LANG=C.UTF-8");
         assert_eq!(&argv[5..], &["/usr/bin/fish", "-C", "INT"]);
+    }
+
+    #[test]
+    fn shell_argv_flatpak_forwards_muis_env() {
+        let envs = [
+            ("TERM_PROGRAM".to_string(), "muis".to_string()),
+            ("MUIS_TAB_ID".to_string(), "tab-7".to_string()),
+            ("MUIS_SOCKET".to_string(), "muis-notify-x".to_string()),
+        ];
+        let argv = shell_argv("/bin/bash", "/home/x", true, "INT", &envs);
+        assert!(argv.contains(&"--env=TERM_PROGRAM=muis".to_string()));
+        assert!(argv.contains(&"--env=MUIS_TAB_ID=tab-7".to_string()));
+        assert!(argv.contains(&"--env=MUIS_SOCKET=muis-notify-x".to_string()));
+        // Env args must precede the shell command.
+        let shell_at = argv.iter().position(|a| a == "/bin/bash").unwrap();
+        let last_env = argv.iter().rposition(|a| a.starts_with("--env=")).unwrap();
+        assert!(last_env < shell_at);
     }
 }

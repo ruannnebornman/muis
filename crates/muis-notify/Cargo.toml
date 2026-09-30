@@ -1,0 +1,12 @@
+[package]
+name = "muis-notify"
+version = "0.1.0"
+edition = "2021"
+description = "Send a desktop notification to a running muis window"
+
+[[bin]]
+name = "muis-notify"
+path = "src/main.rs"
+
+[dependencies]
+muis-core = { path = "../muis-core" }

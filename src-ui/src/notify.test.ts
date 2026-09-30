@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NotifyRouter, NOTIFY_DEDUPE_MS, type NotifyContext } from "./notify";
+import { NotifyRouter, NOTIFY_DEDUPE_MS, notifyEventFromCli, type NotifyContext } from "./notify";
 import type { NotifyEvent } from "./osc";
 
 const osc9 = (body: string): NotifyEvent => ({ type: "notify", title: null, body, source: "osc9" });
@@ -49,5 +49,26 @@ describe("NotifyRouter", () => {
     r.route("t1", osc9("x"), ctx(), 0);
     r.forget("t1");
     expect(r.route("t1", osc9("x"), ctx(), 1)).not.toBeNull();
+  });
+});
+
+describe("notifyEventFromCli", () => {
+  it("maps a CLI request to a cli-source event", () => {
+    expect(notifyEventFromCli({ title: "Build", body: "done", urgency: 2 })).toEqual({
+      type: "notify",
+      title: "Build",
+      body: "done",
+      source: "cli",
+      urgency: 2,
+    });
+  });
+
+  it("omits missing title and urgency", () => {
+    expect(notifyEventFromCli({ body: "hi" })).toEqual({
+      type: "notify",
+      title: null,
+      body: "hi",
+      source: "cli",
+    });
   });
 });
