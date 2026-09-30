@@ -12,11 +12,12 @@ import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
 import { newActivityState, isTabBusy, anyTabBusy, forgetTab } from "./activity";
-import { OscParser } from "./osc";
+import { OscParser, type NotifyEvent } from "./osc";
 import { CommandTracker, tabLabel as tabLabelOf } from "./commandbar";
 import { collectMatches, type SearchHit, type SearchScope, type SearchableTab } from "./searchall";
 import { resolveShortcut } from "./shortcuts";
 import { DoneTracker } from "./done";
+import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
@@ -48,6 +49,45 @@ if (IN_TAURI) {
   window.addEventListener("unhandledrejection", (event) => {
     reportDebugStage("frontend-unhandled-rejection", String(event.reason));
   });
+}
+
+/** Whether the muis window has keyboard focus; gates desktop notifications. */
+let windowFocused = !IN_TAURI ? document.hasFocus() : true;
+if (IN_TAURI) {
+  const win = getCurrentWindow();
+  void win
+    .isFocused()
+    .then((f) => {
+      windowFocused = f;
+    })
+    .catch(() => {});
+  void win
+    .onFocusChanged(({ payload }) => {
+      windowFocused = payload;
+    })
+    .catch(() => {});
+} else {
+  window.addEventListener("focus", () => {
+    windowFocused = true;
+  });
+  window.addEventListener("blur", () => {
+    windowFocused = false;
+  });
+}
+
+/** Best-effort OS toast; no-op outside Tauri or without permission. */
+async function sendDesktopNotification(title: string, body: string): Promise<void> {
+  if (!IN_TAURI) return;
+  try {
+    const { isPermissionGranted, requestPermission, sendNotification } = await import(
+      "@tauri-apps/plugin-notification"
+    );
+    let granted = await isPermissionGranted();
+    if (!granted) granted = (await requestPermission()) === "granted";
+    if (granted) sendNotification({ title, body });
+  } catch {
+    /* notifications are best-effort */
+  }
 }
 
 class TauriTransport implements Transport {
@@ -99,6 +139,16 @@ class EchoTransport implements Transport {
 
 let store = new SessionStore();
 const client = new WorkerClient(IN_TAURI ? new TauriTransport() : new EchoTransport());
+
+// `muis-notify` clients reach the shell over a local socket; the shell
+// forwards each request here as a `muis-notify` event.
+if (IN_TAURI) {
+  void listen<CliNotify>("muis-notify", (e) => handleNotifyRequest(e.payload)).catch((e: unknown) => {
+    const w = window as unknown as { __muisErrors?: string[] };
+    w.__muisErrors ??= [];
+    w.__muisErrors.push(`notify-listen failed: ${String(e)}`);
+  });
+}
 
 /** View options; loaded from disk in init, edited in the settings dialog. */
 let cfg: AppConfig = defaultConfig();
@@ -501,6 +551,11 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
       renderCommandHead(tabNow.id);
     } else if (ev.type === "cmd-end") {
       finishCommand(tabNow.id, ev.exit);
+    } else if (ev.type === "notify") {
+      // Terminal agents report completion with OSC 9/777/99 (or the
+      // muis-notify CLI). Badge the tab when the user was not looking at
+      // it, and raise a desktop toast only while the window is unfocused.
+      if (applyNotification(tabNow, ev)) changed = true;
     }
   }
   if (changed) {
@@ -1088,6 +1143,7 @@ function installDebugHook(): void {
 
 const commandTracker = new CommandTracker();
 const doneTabs = new DoneTracker();
+const notifyRouter = new NotifyRouter();
 const idleFallback = new Map<string, number>();
 
 /** A tab is "done" when a finished command or pty exit needs attention. */
@@ -1174,8 +1230,44 @@ function finishCommand(tabId: string, exit: number | null): void {
 function forgetTabState(tabId: string): void {
   commandTracker.forget(tabId);
   doneTabs.forget(tabId);
+  notifyRouter.forget(tabId);
   window.clearTimeout(idleFallback.get(tabId));
   idleFallback.delete(tabId);
+}
+
+/**
+ * Surface one notification from a tab. Returns true when the chrome
+ * changed (tab badged done) so callers can re-render.
+ */
+function applyNotification(tab: Tab, ev: NotifyEvent): boolean {
+  const decision = notifyRouter.route(
+    tab.id,
+    ev,
+    { visible: isTabVisible(tab.id), windowFocused },
+    Date.now(),
+  );
+  if (!decision) return false;
+  if (decision.toast) {
+    void sendDesktopNotification(ev.title ?? tab.title ?? "muis", ev.body);
+  }
+  if (!decision.markDone) return false;
+  doneTabs.mark(tab.id);
+  return true;
+}
+
+/** A `muis-notify` request forwarded by the shell, routed to its tab. */
+function handleNotifyRequest(req: CliNotify): void {
+  if (!req?.tab_id) return;
+  const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === req.tab_id));
+  const tab = ws?.tabs.find((t) => t.id === req.tab_id);
+  if (!tab) return;
+  if (applyNotification(tab, notifyEventFromCli(req))) {
+    renderTabs();
+    renderSessions();
+    renderStatusbar();
+    updateWindowTitle();
+    scheduleSave();
+  }
 }
 
 /* ---------------- cross-session search ---------------- */

@@ -100,6 +100,75 @@ describe("OscParser", () => {
     ]);
   });
 
+  it("reads OSC 99 single-shot title and body", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]99;i=1;Hello\x1b\\`))).toEqual([
+      { type: "notify", title: "Hello", body: "", source: "osc99" },
+    ]);
+    expect(p.push(enc.encode(`${ESC}]99;i=2:p=body;just body\x07`))).toEqual([
+      { type: "notify", title: null, body: "just body", source: "osc99" },
+    ]);
+  });
+
+  it("assembles OSC 99 title and body fragments by id", () => {
+    const p = new OscParser();
+    const both = p.push(
+      enc.encode(
+        `${ESC}]99;i=42:d=0:p=title;Build finished\x1b\\` +
+          `${ESC}]99;i=42:p=body;42 files compiled in 3.7s\x1b\\`,
+      ),
+    );
+    expect(both).toEqual([
+      { type: "notify", title: "Build finished", body: "42 files compiled in 3.7s", source: "osc99" },
+    ]);
+  });
+
+  it("defers OSC 99 fragments until a done fragment arrives", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]99;i=11:d=0:p=title;Hi\x1b\\`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]99;i=11:d=0:p=body; there\x1b\\`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]99;i=11:d=1:p=body;!\x1b\\`))).toEqual([
+      { type: "notify", title: "Hi", body: " there!", source: "osc99" },
+    ]);
+  });
+
+  it("decodes OSC 99 base64 payloads and urgency", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]99;i=7:p=body:e=1;aGVsbG8gd29ybGQ=\x1b\\`))).toEqual([
+      { type: "notify", title: null, body: "hello world", source: "osc99" },
+    ]);
+    expect(p.push(enc.encode(`${ESC}]99;i=8:p=body:u=2;critical\x1b\\`))).toEqual([
+      { type: "notify", title: null, body: "critical", source: "osc99", urgency: 2 },
+    ]);
+  });
+
+  it("ignores OSC 99 queries and non-title/body payloads", () => {
+    const p = new OscParser();
+    expect(p.push(enc.encode(`${ESC}]99;i=9:p=?;\x1b\\`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]99;i=9:p=close;\x1b\\`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]99;i=9:p=icon;data\x1b\\`))).toEqual([]);
+  });
+
+  it("reassembles OSC 99 sequences split across chunks and decodes UTF-8", () => {
+    const p = new OscParser();
+    const full = enc.encode(`${ESC}]99;i=13:p=body;café done\x1b\\`);
+    expect(p.push(full.slice(0, 12))).toEqual([]);
+    expect(p.push(full.slice(12))).toEqual([
+      { type: "notify", title: null, body: "café done", source: "osc99" },
+    ]);
+  });
+
+  it("drops oversized OSC 99 trains and recovers for the next id", () => {
+    const p = new OscParser();
+    const chunk = "a".repeat(3000);
+    expect(p.push(enc.encode(`${ESC}]99;i=5:d=0:p=title;${chunk}\x1b\\`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]99;i=5:d=0:p=body;${chunk}\x1b\\`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]99;i=5:d=1:p=body;${chunk}\x1b\\`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]99;i=6:p=body;ok\x1b\\`))).toEqual([
+      { type: "notify", title: null, body: "ok", source: "osc99" },
+    ]);
+  });
+
   it("reads OSC 133 command markers and exit codes", () => {
     const p = new OscParser();
     expect(p.push(enc.encode(`${ESC}]133;A\x07${ESC}]133;B\x07`))).toEqual([]);

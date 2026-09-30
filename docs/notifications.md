@@ -42,6 +42,20 @@ Focus policy: Codex defaults to notify only when `unfocused`; OSC 99 has
 `w=`. muis should suppress the OS toast when the tab/window is already
 focused, but always update the in-app tab badge/done state.
 
+## `muis-notify` usage
+
+Hook-only tools call the CLI; OSC-speaking tools need nothing.
+
+```sh
+muis-notify --body "done"                     # inside muis: targets this tab
+muis-notify --title "Aider" --body "ready"    # explicit title
+aider --notifications-command "muis-notify --title Aider --body 'ready'"
+# Claude Code Notification hook / Codex notify = ["muis-notify", "--body", "done"]
+```
+
+`--socket` and `--tab` default to `MUIS_SOCKET` and `MUIS_TAB_ID`, which
+muis injects into every pty. See Phase 6 for full agent configs.
+
 ## Phases
 
 Each phase is independently testable, mergeable, and leaves the app green.
@@ -57,45 +71,63 @@ Each phase is independently testable, mergeable, and leaves the app green.
   body-with-semicolons, ConEmu/other-subtype ignores, split chunks.
 - **Verify:** `npm test --prefix src-ui`.
 
-### Phase 2 — OSC 99 rich protocol `[ ]`
+### Phase 2 — OSC 99 rich protocol `[x]`
 
 - Add OSC 99 with metadata parsing (`i`, `d`, `e`, `u`, `p`) and chunk
   reassembly: title/body chunks joined by id, base64 `e=1`, urgency.
 - Cap payload growth; drop incomplete trains safely.
+- Deferred: responding to the `p=?` capability query (needs a pty write
+  path; it is detected and ignored for now, so OSC 99 senders fall back).
 - **Test:** `osc.test.ts` / new `notify.test.ts` — two-chunk title+body,
   base64, out-of-order ids, oversized payload, non-99 passthrough.
 - **Verify:** `npm test --prefix src-ui`.
 
-### Phase 3 — Notification router + in-app surface `[ ]`
+### Phase 3 — Notification router + in-app surface `[x]`
 
-- Pure `NotificationRouter`: dedupe, per-tab routing, focus-aware
-  suppress, urgency, `done` badge integration (reuse `DoneTracker`).
-- Wire into `observeOsc`: toast + tab badge; window title done count
-  already exists.
-- **Test:** router unit tests (fake clock/focus); browser e2e asserts the
-  toast/badge appear for a fake OSC 9 injected into the preview.
-- **Verify:** `npm test --prefix src-ui`, `npm test --prefix tests/e2e`.
+- `src-ui/src/notify.ts`: pure `NotifyRouter` — per-tab dedupe within a
+  short window, and "badge the tab when the user was not looking at it".
+- Wire `notify` events in `observeOsc` into the existing attention
+  surface (tab done badge, pulsing session dot, window-title count)
+  instead of inventing new chrome — the design target
+  (`wezterm-web/index.html`) defines no in-app toast.
+- **Test:** `notify.test.ts` (visibility, dedupe window, source/content/
+  tab identity, forget); chrome behavior is covered by the browser e2e.
+- **Verify:** `npm test --prefix src-ui`, `npm run build --prefix src-ui`.
 
-### Phase 4 — Desktop/OS notification delivery `[ ]`
+### Phase 4 — Desktop/OS notification delivery `[x]`
 
-- Tauri command that posts to the freedesktop
-  `org.freedesktop.Notifications` service on Linux and a Windows toast on
-  Windows; frontend calls it only when the window/tab is unfocused.
-- Click focuses the originating tab/window.
-- **Test:** Rust unit for payload/escape-sanitizing; frontend test with a
-  faked invoke; native Xvfb smoke asserts a toast is attempted.
-- **Verify:** `cargo test --workspace --locked`, `npm test`,
-  `tests/e2e/live-x11.sh`.
+- `tauri-plugin-notification` (Rust dep + `notification:default`
+  capability + `@tauri-apps/plugin-notification`), registered in
+  `muis-shell`. Linux uses the freedesktop D-Bus service; Windows uses a
+  toast.
+- Frontend tracks window focus (`isFocused` + `onFocusChanged`) and fires
+  a toast only while unfocused, so it never duplicates the in-app badge.
+  Title falls back to the originating tab's title when the protocol only
+  carried a body (OSC 9).
+- Deferred: click-to-focus from the toast (the plugin's action support is
+  platform-limited).
+- **Test:** `notify.test.ts` covers the focus gate; Rust build validates
+  the capability. Delivery itself is platform chrome (manual/e2e).
+- **Verify:** `npm test --prefix src-ui`, `npm run build --prefix src-ui`,
+  `cargo test --workspace --locked`.
 
-### Phase 5 — `muis notify` command endpoint + env contract `[ ]`
+### Phase 5 — `muis notify` command endpoint + env contract `[x]`
 
-- A CLI/IPC entry (`muis notify --title T --body B [--urgency U]`) that
-  routes to the right tab, plus pty env `TERM_PROGRAM=muis`,
-  `MUIS_PANE`, `MUIS_SOCKET` so tools can auto-detect and target muis.
-- **Test:** Rust IPC roundtrip in the shared fixture
-  (`tests/fixtures/ipc-frames.jsonl`) tested from Rust and TS; socket
-  routing test.
-- **Verify:** `cargo test --workspace --locked`, `npm test`.
+- New `muis-notify` binary (separate, console-subsystem) sends one JSON
+  request over a local socket: unix abstract socket on Linux, named pipe
+  on Windows (via `interprocess`), so there is no stale socket file.
+- The shell serves the socket and forwards each request to the frontend
+  as a `muis-notify` event; the frontend routes it to the originating tab
+  through the same `NotifyRouter` as OSC notifications.
+- Env contract: ptys get `TERM_PROGRAM=muis`, `MUIS_TAB_ID` (the tab id),
+  and `MUIS_SOCKET` (inherited from the worker), so `muis-notify --body
+  "done"` from inside a muis terminal targets the right tab with no args.
+- Flatpak note: the socket lives in the sandbox, so host-side
+  `muis-notify` cannot reach it; OSC still works there.
+- **Test:** `muis-core::notify` serve/send roundtrip + request JSON;
+  `muis-notify` arg parsing; worker `shell_argv` env forwarding (native
+  and Flatpak); frontend `notifyEventFromCli` mapping.
+- **Verify:** `cargo test --workspace --locked`, `npm test --prefix src-ui`.
 
 ### Phase 6 — Agent integrations + docs `[ ]`
 

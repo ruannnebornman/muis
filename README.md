@@ -13,6 +13,7 @@ emulation is xterm.js, not ours.
 ```text
 crates/muis-core/    session model, config, shell probe, UI/worker IPC (no UI deps)
 crates/muis-worker/  muis-worker binary: one process per session, pty via portable-pty
+crates/muis-notify/  muis-notify binary: send a notification to the running window
 crates/muis-shell/   muis binary: Tauri 2 window (WebKitGTK on Linux, WebView2 on Windows)
 src-ui/              TypeScript + xterm.js frontend (Vite)
 tests/fixtures/      shared UI/worker IPC contract both sides test against
@@ -52,6 +53,11 @@ cargo run -p muis-shell
   (`~/.local/share/muis`, `%APPDATA%\muis` on Windows).
 - Tabs track `cd` via OSC 7; fish on Veldmuis needs no setup.
 - Quitting with busy tabs asks first.
+- Task notifications: terminal agents (Codex, Claude Code) are detected
+  from their OSC 9/777/99 escapes; anything with a hook command can call
+  `muis-notify --body "done"` (targets the current tab via `MUIS_TAB_ID`).
+  Off-screen tabs badge, and the OS toast fires while muis is unfocused.
+  See `docs/notifications.md`.
 
 ## Tests
 
@@ -95,6 +101,6 @@ PROMPT_COMMAND="muis_osc7${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 
 ## Windows portable
 
-Zip ships `muis.exe + muis-worker.exe` (per-user, no admin, uses the
-built-in WebView2). Same binaries, same protocol, shells probed as
-pwsh → powershell → cmd.
+Zip ships `muis.exe + muis-worker.exe + muis-notify.exe` (per-user, no
+admin, uses the built-in WebView2). Same binaries, same protocol, shells
+probed as pwsh → powershell → cmd.
