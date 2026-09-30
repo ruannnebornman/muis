@@ -141,9 +141,33 @@ jobs:
             muis-portable-*.zip
             muis-portable-*.zip.sha256
 
+  flatpak:
+    name: Flatpak
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: muis.flatpak
+          manifest-path: packaging/flatpak/org.veldmuislinux.muis.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+      - name: Name the bundle
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: mv muis.flatpak "muis-${VERSION}.flatpak"
+      - name: Checksum
+        run: sha256sum muis-*.flatpak > SHA256SUMS.flatpak
+      - uses: actions/upload-artifact@v6
+        with:
+          name: flatpak
+          path: |
+            muis-*.flatpak
+            SHA256SUMS.flatpak
+
   release:
     name: Publish GitHub Release
-    needs: [version, linux-tarball, appimage, windows]
+    needs: [version, linux-tarball, appimage, flatpak, windows]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -160,7 +184,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          find . -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.zip' \) -print0 \
+          find . -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.flatpak' \) -print0 \
             | sort -z | xargs -0 sha256sum > SHA256SUMS
           cat SHA256SUMS
       - name: Create the release
@@ -169,5 +193,5 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "${GITHUB_REF_NAME}" \
-            dist/*.AppImage dist/*.tar.gz dist/*.zip dist/SHA256SUMS \
+            dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.flatpak dist/SHA256SUMS \
             --title "muis ${GITHUB_REF_NAME}" --generate-notes
