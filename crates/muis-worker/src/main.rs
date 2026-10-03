@@ -24,6 +24,69 @@ fn in_flatpak() -> bool {
     std::path::Path::new("/.flatpak-info").exists()
 }
 
+/// True when the worker was started from an AppImage (`AppRun` exports these).
+fn in_appimage() -> bool {
+    std::env::var_os("APPIMAGE").is_some() || std::env::var_os("APPDIR").is_some()
+}
+
+/// Environment variables an AppImage's `AppRun` injects. Left alone they leak
+/// into the spawned shell, so host tools load the AppImage's bundled
+/// libraries: git warns about libpcre2, python3 fails to start, and GTK/Qt
+/// apps pick the wrong theme/modules. Removed from the child under AppImage.
+const APPIMAGE_ENV_REMOVE: &[&str] = &[
+    "APPIMAGE",
+    "APPDIR",
+    "ARGV0",
+    "OWD",
+    "LD_PRELOAD",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PERLLIB",
+    "GTK_DATA_PREFIX",
+    "GTK_EXE_PREFIX",
+    "GTK_PATH",
+    "GTK_IM_MODULE_FILE",
+    "GDK_PIXBUF_MODULE_FILE",
+    "GIO_MODULE_DIR",
+    "GSETTINGS_SCHEMA_DIR",
+    "GI_TYPELIB_PATH",
+    "QT_PLUGIN_PATH",
+    "GST_PLUGIN_SYSTEM_PATH",
+    "GST_PLUGIN_SYSTEM_PATH_1_0",
+];
+
+/// Colon-separated variables that may mix AppImage and host entries; AppImage
+/// entries are dropped, the rest kept.
+const APPIMAGE_ENV_PATHLIKE: &[&str] =
+    &["PATH", "LD_LIBRARY_PATH", "XDG_DATA_DIRS", "XDG_CONFIG_DIRS"];
+
+/// Drop AppImage mount paths from a colon-separated list. AppImage mounts live
+/// under `/.mount_*`, which host paths never contain.
+fn drop_appimage_paths(value: &str) -> String {
+    value
+        .split(':')
+        .filter(|entry| !entry.contains("/.mount_"))
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
+/// Strip AppImage-injected variables from the spawned shell's environment.
+fn sanitize_appimage_env(cmd: &mut CommandBuilder) {
+    for key in APPIMAGE_ENV_REMOVE {
+        cmd.env_remove(key);
+    }
+    for key in APPIMAGE_ENV_PATHLIKE {
+        if let Ok(value) = std::env::var(key) {
+            let cleaned = drop_appimage_paths(&value);
+            if cleaned.is_empty() {
+                cmd.env_remove(key);
+            } else {
+                cmd.env(key, cleaned);
+            }
+        }
+    }
+}
+
 /// Full argv used to spawn the shell. Inside a Flatpak sandbox the shell is
 /// run on the host via `flatpak-spawn --host` so the user gets their real
 /// environment and tools: the runtime has no fish and a sandboxed shell
@@ -173,6 +236,11 @@ fn spawn_session(
         cmd.cwd(cwd);
         for (key, value) in &envs {
             cmd.env(key, value);
+        }
+        // From an AppImage the bundled libs leak into the shell; keep the
+        // child on the host environment.
+        if in_appimage() {
+            sanitize_appimage_env(&mut cmd);
         }
     }
 
@@ -439,5 +507,18 @@ mod tests {
         let shell_at = argv.iter().position(|a| a == "/bin/bash").unwrap();
         let last_env = argv.iter().rposition(|a| a.starts_with("--env=")).unwrap();
         assert!(last_env < shell_at);
+    }
+
+    #[test]
+    fn drop_appimage_paths_keeps_host_entries() {
+        assert_eq!(
+            drop_appimage_paths("/usr/bin:/tmp/.mount_muis_x/usr/bin:/bin"),
+            "/usr/bin:/bin"
+        );
+        assert_eq!(drop_appimage_paths("/usr/lib"), "/usr/lib");
+        assert_eq!(
+            drop_appimage_paths("/tmp/.mount_a/lib:/tmp/.mount_b/lib"),
+            ""
+        );
     }
 }
