@@ -45,10 +45,12 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
       `WorkerPool` keeps one child per session, spawn is idempotent,
       and stopping one session leaves the others running (bridge tests
       via an injected event sink)
+- [x] Tauri 2 shell, worker binary resolved as a sibling sidecar: the
+      native Xvfb smoke stages `muis` + `muis-worker` like a package and
+      launches from there, proving resolution relative to the shell
 
 ## Decided (code done, coverage to verify)
 
-- [~] Tauri 2 shell, worker binary resolved as a sibling sidecar
 - [~] NVIDIA workarounds (dmabuf renderer off; canvas renderer until
       WebGL is proven in the WebKit window)
 - [~] Windows portable = three-exe zip (`muis`, `muis-worker`,
