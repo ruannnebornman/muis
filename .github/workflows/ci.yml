@@ -130,11 +130,11 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
-      - run: cargo build --release --locked -p muis-shell -p muis-worker
+      - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
       - name: Assemble portable zip
         run: >
           Compress-Archive -Path
-          target\release\muis.exe,target\release\muis-worker.exe
+          target\release\muis.exe,target\release\muis-worker.exe,target\release\muis-notify.exe
           -DestinationPath muis-portable.zip
       - uses: actions/upload-artifact@v6
         with:
