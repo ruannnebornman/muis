@@ -6,7 +6,6 @@ command: muis
 
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
-  - org.freedesktop.Sdk.Extension.node20
 
 finish-args:
   # Windowing
@@ -25,32 +24,14 @@ modules:
   - name: muis
     buildsystem: simple
     build-options:
-      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+      append-path: /usr/lib/sdk/rust-stable/bin
       env:
         CARGO_HOME: /run/build/muis/cargo
-        npm_config_cache: /run/build/muis/npm-cache
     build-commands:
-      # npm ci on node 20 / npm 10.8 can hit a registry timeout, then exit 0
-      # with node_modules incomplete ("Exit handler never called!"), leaving
-      # tsc missing. Retry with fetch retries and verify tsc actually landed.
-      - |
-        set -e
-        cd src-ui
-        for attempt in 1 2 3; do
-          if npm ci --no-audit --no-fund \
-              --fetch-retries=5 \
-              --fetch-retry-mintimeout=20000 \
-              --fetch-retry-maxtimeout=120000 \
-            && [ -x node_modules/.bin/tsc ]; then
-            break
-          fi
-          echo "npm ci attempt ${attempt} incomplete; retrying"
-          rm -rf node_modules
-          npm cache clean --force || true
-          sleep 5
-        done
-        [ -x node_modules/.bin/tsc ]
-      - cd src-ui && npm run build
+      # The frontend is built outside the sandbox (release.yml "frontend" job)
+      # and supplied as src-ui/dist. Running npm here hit an npm 10.8 bug
+      # (registry timeout -> incomplete install, "Exit handler never called!"),
+      # so no npm runs in the Flatpak build.
       # muis-notify is deliberately not built: the notification socket is
       # sandbox-local and the host shell cannot reach it (docs/packaging-flatpak.md).
       - cargo build --release --locked -p muis-shell -p muis-worker

@@ -141,15 +141,45 @@ jobs:
             muis-portable-*.zip
             muis-portable-*.zip.sha256
 
+  frontend:
+    name: Frontend dist
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src-ui/package-lock.json
+      - run: npm ci
+        working-directory: src-ui
+      - run: npm run build
+        working-directory: src-ui
+      - name: Package dist
+        run: tar -C src-ui/dist -czf ui-dist.tar.gz .
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ui-dist
+          path: ui-dist.tar.gz
+
   flatpak:
     name: Flatpak
-    needs: version
+    needs: [version, frontend]
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
       options: --privileged
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v7
+        with:
+          name: ui-dist
+      - name: Unpack frontend
+        run: |
+          mkdir -p src-ui/dist
+          tar -xzf ui-dist.tar.gz -C src-ui/dist
+          test -f src-ui/dist/index.html
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: muis.flatpak
