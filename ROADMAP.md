@@ -51,14 +51,16 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
 - [~] Tauri 2 shell, worker binary resolved as a sibling sidecar
 - [~] NVIDIA workarounds (dmabuf renderer off; canvas renderer until
       WebGL is proven in the WebKit window)
-- [~] Windows portable = three-exe zip (`muis`, `muis-worker`,
-      `muis-notify`; CI builds it; unverified on HW)
 
 ## To build (in suggested order)
 
-- [ ] Windows portable on-machine verification: run the CI
-      `muis-portable-*.zip` on a real work PC (portable, no install,
-      no admin). Keep portable as the supported artifact.
+- [ ] Nothing open here; the remaining coverage items sit under
+      "Decided" above.
+
+## Moved
+
+- Windows (portable three-exe zip, on-machine verification, and the
+  optional per-user installer): `docs/windows.md`.
 
 ## Deferred
 
