@@ -48,7 +48,8 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
 - [~] Tauri 2 shell, worker binary resolved as a sibling sidecar
 - [~] NVIDIA workarounds (dmabuf renderer off; canvas renderer until
       WebGL is proven in the WebKit window)
-- [~] Windows portable = two-exe zip (CI builds it; unverified on HW)
+- [~] Windows portable = three-exe zip (`muis`, `muis-worker`,
+      `muis-notify`; CI builds it; unverified on HW)
 
 ## To build (in suggested order)
 
