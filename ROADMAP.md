@@ -41,10 +41,13 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
       (`newTabCwd` + `sessions` tests)
 - [x] CI green: workflow runs on PRs and `main` pushes (rust, ui,
       browser-e2e, native-xvfb-e2e, windows-portable)
+- [x] One `muis-worker` process per session; UI holds no pty state:
+      `WorkerPool` keeps one child per session, spawn is idempotent,
+      and stopping one session leaves the others running (bridge tests
+      via an injected event sink)
 
 ## Decided (code done, coverage to verify)
 
-- [~] One `muis-worker` process per session; UI holds no pty state
 - [~] Tauri 2 shell, worker binary resolved as a sibling sidecar
 - [~] NVIDIA workarounds (dmabuf renderer off; canvas renderer until
       WebGL is proven in the WebKit window)

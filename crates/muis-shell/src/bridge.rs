@@ -2,17 +2,18 @@
 //!
 //! The shell owns one `muis-worker` child process per session and routes
 //! bytes: frontend UiToWorker JSON lines go to worker stdin, worker
-//! stdout lines come back as `muis-worker-event` Tauri events carrying a
-//! [`SessionEvent`]. The shell never interprets terminal state; a dead
-//! worker only ever affects its own session.
+//! stdout lines come back through an injected [`EventSink`] (in the app,
+//! `muis-worker-event` Tauri events carrying a [`SessionEvent`]). The
+//! shell never interprets terminal state; a dead worker only ever
+//! affects its own session.
 
 use muis_core::ipc::{decode_worker, WorkerToUi};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
 
 /// Frontend event name for everything arriving from any worker.
 pub const WORKER_EVENT: &str = "muis-worker-event";
@@ -22,6 +23,12 @@ pub struct SessionEvent {
     pub session_id: String,
     pub frame: WorkerToUi,
 }
+
+/// Delivers a worker event to the frontend. Returns `false` when the
+/// destination is gone, which stops the pump thread. The indirection
+/// keeps the pool testable without a Tauri runtime.
+pub type EventSink = Arc<dyn Fn(SessionEvent) -> bool + Send + Sync + 'static>;
+
 
 /// Pure parse step: worker stdout line -> frontend event payload.
 /// Unit-tested without a Tauri runtime.
@@ -40,15 +47,15 @@ struct Running {
 }
 
 pub struct WorkerPool {
-    app: AppHandle,
+    sink: EventSink,
     workers: Mutex<HashMap<String, Arc<Running>>>,
-    worker_bin: Option<std::path::PathBuf>,
+    worker_bin: Option<PathBuf>,
 }
 
 impl WorkerPool {
-    pub fn new(app: AppHandle, worker_bin: Option<std::path::PathBuf>) -> Self {
+    pub fn new(sink: EventSink, worker_bin: Option<PathBuf>) -> Self {
         Self {
-            app,
+            sink,
             workers: Mutex::new(HashMap::new()),
             worker_bin,
         }
@@ -95,7 +102,7 @@ impl WorkerPool {
         // Pump worker stdout -> frontend events until EOF, then report the
         // death so the UI can offer reconnect. EOF without Exited frames
         // means the worker crashed (see the per-session-process design).
-        let app = self.app.clone();
+        let sink = Arc::clone(&self.sink);
         let id = session_id.to_string();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
@@ -104,14 +111,14 @@ impl WorkerPool {
                 }
                 match parse_worker_line(&id, &line) {
                     Ok(event) => {
-                        if app.emit(WORKER_EVENT, &event).is_err() {
+                        if !sink(event) {
                             break;
                         }
                     }
                     Err(_) => continue,
                 }
             }
-            let _ = app.emit(WORKER_EVENT, Self::dead_worker_event(&id));
+            let _ = sink(Self::dead_worker_event(&id));
         });
         Ok(())
     }
@@ -182,5 +189,68 @@ mod tests {
         let v = serde_json::to_value(&e).unwrap();
         assert_eq!(v["session_id"], "s1");
         assert_eq!(v["frame"]["type"], "spawned");
+    }
+
+    /// One worker process per session, spawn is idempotent, and stopping
+    /// one session leaves the others running. Uses a fake worker script
+    /// that answers every input line with a `spawned` frame, so the pool
+    /// is exercised without a Tauri runtime or a real pty.
+    #[cfg(unix)]
+    #[test]
+    fn one_worker_per_session_and_stop_is_isolated() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::mpsc::channel;
+        use std::time::Duration;
+
+        let dir = std::env::temp_dir().join(format!("muis-pool-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let worker = dir.join("fake-worker.sh");
+        std::fs::write(
+            &worker,
+            "#!/bin/sh\nwhile IFS= read -r _line; do printf '{\"type\":\"spawned\",\"pty_id\":\"p1\"}\\n'; done\n",
+        )
+        .unwrap();
+        let mut perms = std::fs::metadata(&worker).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&worker, perms).unwrap();
+
+        let (tx, rx) = channel::<SessionEvent>();
+        let sink: EventSink = Arc::new(move |event| tx.send(event).is_ok());
+        let pool = WorkerPool::new(sink, Some(worker));
+
+        // Two sessions, one double-spawn to prove idempotency.
+        pool.spawn_session("s1").unwrap();
+        pool.spawn_session("s1").unwrap();
+        pool.spawn_session("s2").unwrap();
+
+        let write = r#"{"type":"write","pty_id":"p1","data":""}"#;
+        pool.send_line("s1", write).unwrap();
+        pool.send_line("s2", write).unwrap();
+
+        // Exactly one `spawned` frame per session, not two for s1.
+        let mut spawned: HashMap<String, usize> = HashMap::new();
+        while spawned.values().sum::<usize>() < 2 {
+            let event = rx.recv_timeout(Duration::from_secs(5)).expect("worker event");
+            if matches!(event.frame, WorkerToUi::Spawned { .. }) {
+                *spawned.entry(event.session_id).or_insert(0) += 1;
+            }
+        }
+        assert_eq!(spawned.get("s1"), Some(&1));
+        assert_eq!(spawned.get("s2"), Some(&1));
+
+        // Stopping s1 kills only its worker; s2 keeps answering.
+        pool.stop_session("s1");
+        assert!(pool.send_line("s1", write).is_err());
+        pool.send_line("s2", write).unwrap();
+        let mut s2_alive = false;
+        while !s2_alive {
+            let event = rx.recv_timeout(Duration::from_secs(5)).expect("s2 still alive");
+            if event.session_id == "s2" && matches!(event.frame, WorkerToUi::Spawned { .. }) {
+                s2_alive = true;
+            }
+        }
+
+        pool.stop_session("s2");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
