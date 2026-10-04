@@ -57,7 +57,7 @@ cargo run -p muis-shell
   from their OSC 9/777/99 escapes; anything with a hook command can call
   `muis-notify --body "done"` (targets the current tab via `MUIS_TAB_ID`).
   Off-screen tabs badge, and the OS toast fires while muis is unfocused.
-  See `docs/notifications.md`.
+  See `docs/archive/notifications.md`.
 
 ## Tests
 
