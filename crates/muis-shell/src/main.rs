@@ -11,11 +11,12 @@
 //! window or the other sessions.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 mod bridge;
 mod persist;
 
-use bridge::WorkerPool;
+use bridge::{EventSink, WorkerPool, WORKER_EVENT};
 use tauri::{Emitter, Manager};
 
 /// Locate the worker binary in `dir`. Prefers the plain `muis-worker`
@@ -241,7 +242,10 @@ fn main() {
                         .unwrap_or_else(|_| "<unknown>".to_string())
                 );
             }
-            app.handle().manage(WorkerPool::new(app.handle().clone(), worker_path()));
+            let handle = app.handle().clone();
+            let sink: EventSink =
+                Arc::new(move |event| handle.emit(WORKER_EVENT, &event).is_ok());
+            app.handle().manage(WorkerPool::new(sink, worker_path()));
 
             // Notification endpoint for `muis-notify` clients. One per-user
             // socket; each request is forwarded to the frontend, which routes
