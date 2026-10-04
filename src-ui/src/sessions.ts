@@ -29,6 +29,15 @@ export function isDefaultTitle(title: string): boolean {
   return /^Terminal \d+$/.test(title);
 }
 
+/**
+ * cwd for a tab spawned from the active tab: follow that tab's live
+ * shell-reported cwd (OSC 7), falling back to the workspace dir when
+ * there is no active tab to inherit from.
+ */
+export function newTabCwd(ws: Workspace): string {
+  return ws.tabs[ws.active]?.cwd || ws.dir;
+}
+
 export class SessionStore {  workspaces: Workspace[] = [];
   current = 0;
   private nextId = 1;

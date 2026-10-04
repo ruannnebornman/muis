@@ -5,7 +5,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { SessionStore, type Tab, type Workspace } from "./sessions";
+import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
 import { defaultConfig, configFromJSON, effectiveFontSize, type AppConfig } from "./config";
 import { WorkerClient, type Transport } from "./worker";
@@ -714,7 +714,7 @@ function renderTabs(): void {
   });
   const nb = el("button", "newtab", "+");
   nb.addEventListener("click", () => {
-    store.newTab(`Terminal ${ws.tabs.length + 1}`, ws.dir);
+    store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
     renderAll();
   });
   tabbar.append(nb);
@@ -944,7 +944,7 @@ const onShortcut = (e: KeyboardEvent): void => {
   switch (action.type) {
     case "new-tab":
       e.preventDefault();
-      store.newTab(`Terminal ${ws.tabs.length + 1}`, ws.dir);
+      store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
       renderAll();
       break;
     case "close-tab": {

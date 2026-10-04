@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SessionStore, isDefaultTitle, type Workspace } from "./sessions";
+import { SessionStore, isDefaultTitle, newTabCwd, type Workspace } from "./sessions";
 
 function store(): SessionStore {
   const s = new SessionStore();
@@ -115,5 +115,19 @@ describe("SessionStore", () => {
     if (t) t.manual = true;
     const back = SessionStore.fromJSON(s.toJSON());
     expect(back.activeTab()?.manual).toBe(true);
+  });
+
+  it("new tabs follow the active tab's live cwd", () => {
+    const s = store();
+    const tab = s.activeTab();
+    if (tab) tab.cwd = "/tmp/from-shell";
+    expect(newTabCwd(s.currentWorkspace()!)).toBe("/tmp/from-shell");
+  });
+
+  it("new tabs fall back to the workspace dir without a live tab", () => {
+    const ws: Workspace = { id: "w1", name: "home", dir: "/home/kaazrot", tabs: [], active: 0 };
+    expect(newTabCwd(ws)).toBe("/home/kaazrot");
+    ws.tabs.push({ id: "t1", title: "Terminal 1", cwd: "", manual: false });
+    expect(newTabCwd(ws)).toBe("/home/kaazrot");
   });
 });
