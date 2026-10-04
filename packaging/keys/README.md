@@ -24,10 +24,16 @@ the protected `release` GitHub Environment (`MUIS_GPG_PRIVATE_KEY`,
 
 ## Verify a release artifact
 
+Every artifact is published with a detached armored signature (`<artifact>.asc`),
+and the aggregate `SHA256SUMS` is signed too.
+
 ```sh
 gpgv --keyring packaging/keys/muis-release.gpg \
-  muis-<version>-x86_64-linux.tar.gz.sig \
+  muis-<version>-x86_64-linux.tar.gz.asc \
   muis-<version>-x86_64-linux.tar.gz
+
+gpgv --keyring packaging/keys/muis-release.gpg SHA256SUMS.asc SHA256SUMS
+sha256sum -c SHA256SUMS
 ```
 
 ## Rotation
