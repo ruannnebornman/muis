@@ -72,6 +72,18 @@ describe("tabLabel", () => {
     expect(tabLabel("~/code", undefined, null)).toBe("~/code");
   });
 
+  it("prefers a meaningful shell title over the last command", () => {
+    // opencode-style session title wins; fish's cwd path is ignored.
+    expect(tabLabel("opencode · fix bug", false, "opencode")).toBe("opencode · fix bug");
+    expect(tabLabel("~/Documents/code/muis", false, "ls")).toBe("ls");
+    expect(tabLabel("/etc", false, "ls")).toBe("ls");
+  });
+
+  it("keeps showing the last command while the title is the auto placeholder", () => {
+    expect(tabLabel("Terminal 1", false, "echo hi")).toBe("echo hi");
+    expect(tabLabel("Terminal 1", false, null)).toBe("Terminal 1");
+  });
+
   it("keeps a pinned (manual) name", () => {
     expect(tabLabel("deploy", true, "cargo test")).toBe("deploy");
   });

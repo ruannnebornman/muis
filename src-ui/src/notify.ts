@@ -59,4 +59,9 @@ export class NotifyRouter {
   forget(tabId: string): void {
     this.last.delete(tabId);
   }
+
+  /** Time of the tab's most recent notification, or undefined. */
+  lastAt(tabId: string): number | undefined {
+    return this.last.get(tabId)?.at;
+  }
 }

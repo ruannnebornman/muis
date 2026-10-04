@@ -50,6 +50,14 @@ describe("NotifyRouter", () => {
     r.forget("t1");
     expect(r.route("t1", osc9("x"), ctx(), 1)).not.toBeNull();
   });
+
+  it("reports the time of the last notification per tab", () => {
+    const r = new NotifyRouter();
+    expect(r.lastAt("t1")).toBeUndefined();
+    r.route("t1", osc9("a"), ctx(), 42);
+    expect(r.lastAt("t1")).toBe(42);
+    expect(r.lastAt("t2")).toBeUndefined();
+  });
 });
 
 describe("notifyEventFromCli", () => {
