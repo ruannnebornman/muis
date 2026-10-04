@@ -5,8 +5,9 @@
 - muis is a Rust/Tauri 2 terminal with a TypeScript/xterm.js frontend.
 - Keep one `muis-worker` process per session; do not move PTY ownership
   into the UI process.
-- Match the Breeze design target documented in `docs/build-progress.md`
-  and `docs/target-mockup.png`. `design/mock.html` is superseded.
+- Match the Breeze design target in `docs/target-mockup.png` (build
+  history in `docs/archive/build-progress.md`). `design/mock.html` is
+  superseded.
 - Keep terminal/session behavior testable independently of Tauri where
   practical.
 

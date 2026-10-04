@@ -6,9 +6,9 @@ core terminal feels good to use.
 ## Snor engine
 
 - The side-panel slot API is already in place (`SidePanelRegistry`:
-  register/toggle/single-visible/unregister, see `docs/build-progress.md`
-  Step 6). The docked right-side slot stays invisible until a panel
-  registers.
+  register/toggle/single-visible/unregister, see
+  `docs/archive/build-progress.md` Step 6). The docked right-side slot
+  stays invisible until a panel registers.
 - The engine itself is unwritten; no panel code exists yet.
 
 ## Make muis the default terminal on Veldmuis
@@ -46,3 +46,13 @@ Full plan: `docs/rollout-plan.md` Phase 3 (package) and Phase 4
 
 See `docs/windows.md`. Portable `muis-portable-*.zip` stays the supported
 artifact; the optional per-user NSIS installer lives in the Windows doc.
+
+## Remaining mock gaps
+
+The archived `docs/archive/missing-features.md` audit is otherwise stale,
+but two features it lists are genuinely still absent:
+
+- Export / import the whole session state as JSON (the mock's sidebar
+  export/import buttons). muis has automatic persistence only.
+- Split panes: the mock models 1–3 panes per tab; muis has one terminal
+  per tab.
