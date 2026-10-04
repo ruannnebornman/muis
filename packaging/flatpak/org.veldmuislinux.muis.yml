@@ -32,6 +32,8 @@ modules:
     build-commands:
       - npm ci --prefix src-ui
       - npm run build --prefix src-ui
+      # muis-notify is deliberately not built: the notification socket is
+      # sandbox-local and the host shell cannot reach it (docs/packaging-flatpak.md).
       - cargo build --release --locked -p muis-shell -p muis-worker
       - install -Dm755 target/release/muis /app/bin/muis
       - install -Dm755 target/release/muis-worker /app/bin/muis-worker

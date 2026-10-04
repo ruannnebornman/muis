@@ -46,6 +46,17 @@ The manifest requests, deliberately, for a terminal:
 Follows XDG. Under Flatpak, config is redirected to
 `~/.var/app/org.veldmuislinux.muis/config/muis/`.
 
+## Notifications
+
+OSC 9 / 777 / 99 notifications work: muis parses them in the sandbox and
+raises a desktop toast through the notification portal.
+
+The `muis-notify` CLI is **intentionally not shipped** in the Flatpak. The
+notification socket is created inside the sandbox, while the shell runs on
+the host via `flatpak-spawn --host`, so a host-side `muis-notify` cannot
+reach the sandbox socket. Hook-only tools should rely on their OSC or BEL
+fallback under Flatpak. See `docs/notifications.md`.
+
 ## Build
 
 CI builds this (`release.yml`, `flatpak` job) with
