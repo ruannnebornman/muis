@@ -1,5 +1,9 @@
 # Notification endpoint — plan
 
+> Archived 2026-10-04. All phases (1–7) shipped. Kept as the notification
+> reference: protocols, the `muis-notify` CLI, and agent configs. Current
+> remaining work lives in `docs/deferred.md`.
+
 Goal: make muis a first-class notification target for terminal agents and
 console tools, so a task that finishes while you are in another tab or app
 reaches you. One terminal-side endpoint, three ways for apps to use it:

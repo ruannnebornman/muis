@@ -1,5 +1,10 @@
 # muis rollout plan
 
+> Archived 2026-10-04. Rollout executed: Arch/Veldmuis package, AppImage,
+> Flatpak, AUR, and Windows zip all ship. Remaining items (website, code
+> signing, aarch64, auto-update, Flatpak distribution) are recorded in
+> `docs/deferred.md`.
+
 Goal: ship muis through these artifacts and one future channel.
 
 1. **Arch package (`veldmuis-muis`)** — a signed pacman package in the

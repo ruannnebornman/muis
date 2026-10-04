@@ -55,7 +55,7 @@ The `muis-notify` CLI is **intentionally not shipped** in the Flatpak. The
 notification socket is created inside the sandbox, while the shell runs on
 the host via `flatpak-spawn --host`, so a host-side `muis-notify` cannot
 reach the sandbox socket. Hook-only tools should rely on their OSC or BEL
-fallback under Flatpak. See `docs/notifications.md`.
+fallback under Flatpak. See `docs/archive/notifications.md`.
 
 ## Build
 
