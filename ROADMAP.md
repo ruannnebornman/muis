@@ -39,6 +39,8 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
 - [x] CWD-aware new tabs: new tabs inherit the active tab's live
       shell-reported cwd (OSC 7), falling back to the workspace dir
       (`newTabCwd` + `sessions` tests)
+- [x] CI green: workflow runs on PRs and `main` pushes (rust, ui,
+      browser-e2e, native-xvfb-e2e, windows-portable)
 
 ## Decided (code done, coverage to verify)
 
@@ -50,8 +52,15 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
 
 ## To build (in suggested order)
 
-- [ ] Snor engine (slot API is ready)
-- [ ] Windows per-user installer + on-machine verification
-- [ ] CI green on first push (workflow written, never run)
-- [ ] neofetch/fastfetch branding + Veldmuis default-terminal wiring
-      (packaging side, see veldmuis repo)
+- [ ] Windows portable on-machine verification: run the CI
+      `muis-portable-*.zip` on a real work PC (portable, no install,
+      no admin). Keep portable as the supported artifact.
+
+## Deferred
+
+Parked until the terminal itself is polished. See `docs/deferred.md`:
+
+- Snor engine (slot API is ready)
+- Make muis the default terminal on Veldmuis
+- neofetch/fastfetch branding
+- Windows per-user installer (optional; portable zip stays primary)
