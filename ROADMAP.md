@@ -36,6 +36,9 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
       (session/tab, cwd, git branch, user, clock, shell)
 - [x] Window commands (minimize/toggle-maximize/close) + capabilities
 - [x] git_branch + sys_info shell commands
+- [x] CWD-aware new tabs: new tabs inherit the active tab's live
+      shell-reported cwd (OSC 7), falling back to the workspace dir
+      (`newTabCwd` + `sessions` tests)
 
 ## Decided (code done, coverage to verify)
 
@@ -47,7 +50,6 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
 
 ## To build (in suggested order)
 
-- [ ] CWD-aware new tabs (open in active tab's cwd, not workspace dir)
 - [ ] Snor engine (slot API is ready)
 - [ ] Windows per-user installer + on-machine verification
 - [ ] CI green on first push (workflow written, never run)
