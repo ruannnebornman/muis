@@ -45,12 +45,13 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
       `WorkerPool` keeps one child per session, spawn is idempotent,
       and stopping one session leaves the others running (bridge tests
       via an injected event sink)
+- [x] NVIDIA workarounds: `WEBKIT_DISABLE_DMABUF_RENDERER=1` at startup
+      unless overridden (unit-tested), and xterm uses the WebGL renderer
+      with automatic fallback to canvas
 
 ## Decided (code done, coverage to verify)
 
 - [~] Tauri 2 shell, worker binary resolved as a sibling sidecar
-- [~] NVIDIA workarounds (dmabuf renderer off; canvas renderer until
-      WebGL is proven in the WebKit window)
 - [~] Windows portable = three-exe zip (`muis`, `muis-worker`,
       `muis-notify`; CI builds it; unverified on HW)
 

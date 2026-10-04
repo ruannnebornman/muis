@@ -85,6 +85,11 @@ the user already set it (falls back to shared-memory compositing,
 invisible for a terminal). Launching with `GDK_BACKEND=x11` is no
 longer needed.
 
+Renderer: xterm loads the WebGL addon and falls back to its built-in
+canvas renderer if WebGL is unavailable or the context is lost. The
+WebGL path was exercised in the Xvfb smoke (software GL) without
+breaking rendering; the dmabuf override above is unit-tested.
+
 ## 7. User answers (appended verbatim-ish, 2026-09-26)
 
 1. Portable needed for Windows, not Linux. Linux installs as a normal package and is the Veldmuis default.

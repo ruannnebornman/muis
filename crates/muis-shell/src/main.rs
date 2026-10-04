@@ -199,15 +199,23 @@ fn worker_stop(pool: tauri::State<WorkerPool>, session_id: String) {
     pool.stop_session(&session_id);
 }
 
-fn main() {
-    // NVIDIA + KWin explicit sync kills the dmabuf fast path with
-    // "explicit sync is used, but no acquire point is set" (native
-    // Wayland only; XWayland never hits it). Fall back to shared-memory
-    // compositing unless the user already chose. Invisible for a
-    // terminal, and the window actually opens.
+/// NVIDIA + KWin explicit sync kills WebKitGTK's dmabuf fast path with
+/// "explicit sync is used, but no acquire point is set" (native Wayland
+/// only; XWayland never hits it). Fall back to shared-memory compositing
+/// unless the user already chose. Invisible for a terminal, and the window
+/// actually opens. Returns true when this call set the variable.
+/// See docs/architecture-rust-xterm.md §8.
+fn ensure_dmabuf_disabled() -> bool {
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        true
+    } else {
+        false
     }
+}
+
+fn main() {
+    ensure_dmabuf_disabled();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -324,5 +332,23 @@ mod tests {
         let info = sys_info();
         assert!(!info.user.is_empty());
         assert!(!info.host.is_empty());
+    }
+
+    #[test]
+    fn dmabuf_workaround_respects_user_override() {
+        std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
+        assert!(ensure_dmabuf_disabled());
+        assert_eq!(
+            std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").as_deref(),
+            Ok("1")
+        );
+        // A value the user already chose is never overwritten.
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "0");
+        assert!(!ensure_dmabuf_disabled());
+        assert_eq!(
+            std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").as_deref(),
+            Ok("0")
+        );
+        std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
     }
 }
