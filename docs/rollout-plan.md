@@ -27,7 +27,7 @@ Veldmuis-only.
 - ✅ **Phase 1 — release automation** — `release.yml` ships the Linux tarball,
   AppImage, Windows portable zip, and Flatpak; **`v1.0.0` is released and
   verified** (assets + `SHA256SUMS`).
-- ✅ **Phase 2 — download hardening** — `packaging-windows.md`,
+- ✅ **Phase 2 — download hardening** — `windows.md`,
   `packaging-linux-appimage.md`, `packaging-flatpak.md`, and `SHA256SUMS`.
 - ✅ **Phase 2b — AUR package** — `aur/PKGBUILD` + `.SRCINFO` prepared
   (publishing to the AUR is the maintainer's step).
@@ -213,7 +213,7 @@ the AppImage, the Flatpak, and the Linux source artifacts, all checksummed.
 
 Windows:
 
-- Document the portable flow in `docs/packaging-windows.md`: unzip, run
+- Document the portable flow in `docs/windows.md`: unzip, run
   `muis.exe`, WebView2 requirement, state location `%APPDATA%\muis`, how to
   reset (delete the folder).
 - **(Optional, later)** code-sign `muis.exe`/`muis-worker.exe` to reduce
@@ -418,7 +418,7 @@ and run from the site without touching GitHub.
 | --- | --- | --- |
 | 0 | muis | `crates/muis-shell/tauri.conf.json`, `crates/muis-shell/src/main.rs`, `data/` |
 | 1 | muis | `.github/workflows/release.yml` (new), `.github/workflows/ci.yml` |
-| 2 | muis | `docs/packaging-windows.md`, `docs/packaging-linux-appimage.md` (new), `docs/packaging-flatpak.md` (new), `org.veldmuislinux.muis.yml` (new), release assets |
+| 2 | muis | `docs/windows.md`, `docs/packaging-linux-appimage.md` (new), `docs/packaging-flatpak.md` (new), `org.veldmuislinux.muis.yml` (new), release assets |
 | 2b | muis + AUR | `aur/PKGBUILD` (new) |
 | 3 | veldmuis | `packages/veldmuis-muis/PKGBUILD` (new), `development/muis-release.lock` (new), `development/resolve-muis-release.sh` (new), `development/package-manifest.sh`, `packages/veldmuis-terminal/PKGBUILD`, `packages/veldmuis-calamares-config/installer-package-sets.sh`, `development/run-ci-arch-builder.sh`, `.github/workflows/package-repo-refresh.yml`, `docs/packages.md` |
 | 4 | veldmuis | `packages/veldmuis-terminal/*`, `packages/veldmuis-branding/*`, `docs/*` |
