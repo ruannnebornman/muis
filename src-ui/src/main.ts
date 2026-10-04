@@ -1255,6 +1255,7 @@ function forgetTabState(tabId: string): void {
  * changed (tab badged done) so callers can re-render.
  */
 function applyNotification(tab: Tab, ev: NotifyEvent): boolean {
+  reportDebugStage("notify-received", { source: ev.source });
   const decision = notifyRouter.route(
     tab.id,
     ev,

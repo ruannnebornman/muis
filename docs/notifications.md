@@ -54,7 +54,81 @@ aider --notifications-command "muis-notify --title Aider --body 'ready'"
 ```
 
 `--socket` and `--tab` default to `MUIS_SOCKET` and `MUIS_TAB_ID`, which
-muis injects into every pty. See Phase 6 for full agent configs.
+muis injects into every pty.
+
+## Agent configs
+
+Copy-paste setups. All of them rely on `MUIS_TAB_ID`/`MUIS_SOCKET` being
+present in the pty, so `muis-notify` targets the current tab with no extra
+flags.
+
+### Codex CLI
+
+`~/.codex/config.toml` (root-level keys must come before any `[table]`):
+
+```toml
+notify = ["muis-notify", "--body", "Codex turn complete"]
+
+[tui]
+notification_method = "osc9"
+```
+
+Codex appends its event JSON as an extra positional argument; `muis-notify`
+ignores positionals, so the line above works as written.
+`notification_method = "osc9"` also makes the built-in TUI path emit OSC 9,
+which muis parses directly.
+
+### Claude Code
+
+`~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "muis-notify --title 'Claude Code' --body 'needs attention'" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "muis-notify --title 'Claude Code' --body 'done'" } ] }
+    ]
+  }
+}
+```
+
+Alternatively, set `"preferredNotifChannel": "iterm2"` to make Claude Code
+emit OSC 9 (muis parses it) instead of using hooks — its `auto` channel
+stays silent in terminals it does not recognize, and muis is not on that
+list.
+
+### Aider
+
+```sh
+aider --notifications --notifications-command "muis-notify --title Aider --body ready"
+```
+
+Or in `.aider.conf.yml`:
+
+```yaml
+notifications: true
+notifications-command: "muis-notify --title Aider --body ready"
+```
+
+### OpenCode
+
+`~/.config/opencode/plugin/notification.ts`:
+
+```ts
+export const MuisNotify = async ({ $ }) => ({
+  event: async ({ event }) => {
+    if (event.type === "session.idle") {
+      await $`muis-notify --title opencode --body "session idle"`;
+    }
+  },
+});
+```
+
+`session.idle` is deprecated in favour of `session.status` but still
+emitted; switch the condition when the replacement lands.
 
 ## Phases
 
@@ -129,15 +203,17 @@ Each phase is independently testable, mergeable, and leaves the app green.
   and Flatpak); frontend `notifyEventFromCli` mapping.
 - **Verify:** `cargo test --workspace --locked`, `npm test --prefix src-ui`.
 
-### Phase 6 — Agent integrations + docs `[ ]`
+### Phase 6 — Agent integrations + docs `[x]`
 
-- Ship copy-paste configs: OpenCode plugin, Claude `Notification` hook,
-  Codex `notify`, Aider `--notifications-command`, and the
-  `preferredNotifChannel` note for Claude/Codex OSC 9.
-- Document in `docs/notifications.md` (usage section) + README pointer.
-- **Test:** a scripted preview that emits each protocol and shows the
-  toast; docs commands exercised in CI where cheap.
-- **Verify:** `npm test --prefix tests/e2e`, manual on Veldmuis.
+- Shipped copy-paste configs in the "Agent configs" section above: Codex
+  CLI, Claude Code hooks, Aider, and an OpenCode plugin, plus the
+  `preferredNotifChannel` OSC 9 note.
+- `muis-notify` now ignores Codex's positional event JSON so
+  `notify = ["muis-notify", "--body", ...]` works as written.
+- README already points at this doc.
+- **Test:** the native Xvfb smoke emits OSC 9/777/99 into the real PTY and
+  asserts each reaches the frontend (`notify-received` debug stage).
+- **Verify:** `bash tests/e2e/live-x11.sh`, `cargo test --workspace --locked`.
 
 ### Phase 7 — Built-in long-command finish detection `[ ]`
 

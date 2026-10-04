@@ -27,7 +27,9 @@ cp "$ROOT/target/debug/muis" "$INSTALL_DIR/muis"
 cp "$ROOT/target/debug/muis-worker" "$INSTALL_DIR/muis-worker"
 
 export ROOT STATE_HOME CONFIG_HOME MARKER SCREENSHOT LOG RUN_DIR INSTALL_DIR
-export MUIS_TEST_COMMAND="echo $MARKER"
+# After the marker, emit each notification protocol so the frontend's OSC
+# observer exercises the real notify path (OSC 9, OSC 777, OSC 99).
+export MUIS_TEST_COMMAND="echo $MARKER; printf '\033]9;muis-osc9\007\033]777;notify;muis-osc777;body777\007\033]99;i=1:d=1;muis-osc99\007'"
 export GDK_BACKEND=x11
 export LIBGL_ALWAYS_SOFTWARE=1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
@@ -100,6 +102,25 @@ PY
     echo "test artifacts: $RUN_DIR" >&2
     exit 1
   fi
+
+  # Every notification protocol emitted by the test command must reach the
+  # frontend and be routed (applyNotification logs a debug stage).
+  notify_deadline=$((SECONDS + 20))
+  while (( SECONDS < notify_deadline )); do
+    if grep -Fq '"source":"osc9"' "$LOG" \
+      && grep -Fq '"source":"osc777"' "$LOG" \
+      && grep -Fq '"source":"osc99"' "$LOG"; then
+      break
+    fi
+    sleep 0.3
+  done
+  for source in osc9 osc777 osc99; do
+    if ! grep -Fq "\"source\":\"$source\"" "$LOG"; then
+      echo "notification protocol $source never reached the frontend" >&2
+      echo "test artifacts: $RUN_DIR" >&2
+      exit 1
+    fi
+  done
 
   if python3 - "$sessions_dir" <<"PY"
 import pathlib, sys

@@ -47,7 +47,13 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Cli, String> {
                 }
                 cli.urgency = Some(urgency);
             }
-            other => return Err(format!("unknown argument: {other}")),
+            other if other.starts_with('-') => {
+                return Err(format!("unknown argument: {other}"));
+            }
+            // Codex appends its event JSON as a positional argument; ignore
+            // positionals so `notify = ["muis-notify", "--body", "done"]`
+            // works as written. Unknown flags still error.
+            _ => {}
         }
     }
     Ok(cli)
@@ -128,5 +134,18 @@ mod tests {
     #[test]
     fn body_only_is_enough() {
         assert_eq!(parse_args(args(&["--body", "hi"])).unwrap().body.as_deref(), Some("hi"));
+    }
+
+    #[test]
+    fn ignores_positional_payload_but_rejects_unknown_flags() {
+        // Codex passes its event JSON as a positional argument.
+        let cli = parse_args(args(&[
+            "--body",
+            "done",
+            r#"{"type":"agent-turn-complete"}"#,
+        ]))
+        .unwrap();
+        assert_eq!(cli.body.as_deref(), Some("done"));
+        assert!(parse_args(args(&["--nope"])).is_err());
     }
 }
