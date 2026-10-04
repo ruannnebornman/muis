@@ -113,7 +113,18 @@ export class CommandTracker {
  * Label for a tab: the last command that ran, unless the user pinned a
  * name (manual), in which case the shell/user title wins.
  */
+/**
+ * A shell-reported title is worth showing when it carries information the
+ * last command does not — an app like opencode naming its session. Fish
+ * reports its abbreviated cwd (a path) as the title when idle, which is not
+ * useful on a tab, so path-looking titles are ignored.
+ */
+export function isMeaningfulShellTitle(title: string): boolean {
+  return title.length > 0 && !title.startsWith("~") && !title.startsWith("/");
+}
+
 export function tabLabel(title: string, manual: boolean | undefined, lastCmd: string | null): string {
   if (manual) return title;
+  if (isMeaningfulShellTitle(title)) return title;
   return lastCmd ?? title;
 }

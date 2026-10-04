@@ -139,12 +139,17 @@ Each phase is independently testable, mergeable, and leaves the app green.
   toast; docs commands exercised in CI where cheap.
 - **Verify:** `npm test --prefix tests/e2e`, manual on Veldmuis.
 
-### Phase 7 — Built-in long-command finish detection `[ ]`
+### Phase 7 — Built-in long-command finish detection `[x]`
 
-- Reuse OSC 133 `cmd-end` + busy tracking: if a foreground command ran
-  longer than a threshold and finished while unfocused, notify — covers
-  every console app, agent or not. Optional process-name filter.
-- **Test:** pure timing/policy unit tests with fake clock.
+- Reuses OSC 133 `cmd-end` + `CommandTracker` duration: a command that ran
+  ≥10s and finished while the window was unfocused raises a desktop toast,
+  covering every console app, agent or not. The in-app done badge is
+  unchanged and still fires for any background completion.
+- Suppressed when an agent already notified for the same run (no double
+  toast), and only trusted for real OSC 133 ends, not the idle fallback.
+  No process-name filter: the worker does not expose the foreground
+  process.
+- **Test:** `finish.test.ts` policy tests; `notify.test.ts` last-seen time.
 - **Verify:** `npm test --prefix src-ui`.
 
 ## Verification gates per phase

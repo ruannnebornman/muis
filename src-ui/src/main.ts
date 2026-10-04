@@ -15,6 +15,7 @@ import { SidePanelRegistry } from "./panels";
 import { newActivityState, isTabBusy, anyTabBusy, forgetTab } from "./activity";
 import { OscParser, type NotifyEvent } from "./osc";
 import { CommandTracker, tabLabel as tabLabelOf } from "./commandbar";
+import { shouldToastOnFinish } from "./finish";
 import { collectMatches, type SearchHit, type SearchScope, type SearchableTab } from "./searchall";
 import { resolveShortcut } from "./shortcuts";
 import { DoneTracker } from "./done";
@@ -1234,12 +1235,39 @@ function finishCommand(tabId: string, exit: number | null): void {
   renderCommandHead(tabId);
   // The tab now shows (and colors by) the command that just ran.
   renderTabs();
+  maybeNotifyFinished(tabId);
   if (!isTabVisible(tabId)) {
     doneTabs.mark(tabId);
     renderSessions();
     updateWindowTitle();
     scheduleSave();
   }
+}
+
+/**
+ * Toast when a long command ended while the window was unfocused. Skipped
+ * when an agent already notified for the same run, so there is never a
+ * double toast.
+ */
+function maybeNotifyFinished(tabId: string): void {
+  const st = commandTracker.state(tabId);
+  const startedAt = st.lastMs === null ? null : Date.now() - st.lastMs;
+  const agentNotified =
+    startedAt !== null && (notifyRouter.lastAt(tabId) ?? 0) >= startedAt;
+  if (
+    !shouldToastOnFinish({
+      durationMs: st.lastMs,
+      sawOsc: st.sawOsc,
+      windowFocused,
+      agentNotified,
+    })
+  ) {
+    return;
+  }
+  const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === tabId));
+  const tab = ws?.tabs.find((t) => t.id === tabId);
+  const label = tab ? tabLabelOf(tab.title, tab.manual, st.lastCmd) : "muis";
+  void sendDesktopNotification(label, `${st.lastCmd ?? "command"} finished`);
 }
 
 function forgetTabState(tabId: string): void {
