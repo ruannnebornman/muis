@@ -43,6 +43,7 @@ right without a full build.
 
 ## Notes
 
+- Ships `muis`, `muis-worker`, and `muis-notify` to `/usr/bin`.
 - `fish` is an optional dependency (the last-command bar uses fish's OSC 133
   events); the shell otherwise follows `$SHELL`.
 - Architecture: `x86_64` only for now.
