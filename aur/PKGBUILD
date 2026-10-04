@@ -28,13 +28,14 @@ build() {
   cd "$pkgname-$pkgver"
   npm ci --prefix src-ui
   npm run build --prefix src-ui
-  cargo build --release --locked -p muis-shell -p muis-worker
+  cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
 }
 
 package() {
   cd "$pkgname-$pkgver"
   install -Dm755 target/release/muis "${pkgdir}/usr/bin/muis"
   install -Dm755 target/release/muis-worker "${pkgdir}/usr/bin/muis-worker"
+  install -Dm755 target/release/muis-notify "${pkgdir}/usr/bin/muis-notify"
   install -Dm644 data/muis.desktop "${pkgdir}/usr/share/applications/muis.desktop"
   local size
   for size in 48 64 128 256 512; do

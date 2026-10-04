@@ -45,21 +45,21 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
       `WorkerPool` keeps one child per session, spawn is idempotent,
       and stopping one session leaves the others running (bridge tests
       via an injected event sink)
+- [x] Tauri 2 shell, worker binary resolved as a sibling sidecar: the
+      native Xvfb smoke stages `muis` + `muis-worker` like a package and
+      launches from there, proving resolution relative to the shell
 - [x] NVIDIA workarounds: `WEBKIT_DISABLE_DMABUF_RENDERER=1` at startup
       unless overridden (unit-tested), and xterm uses the WebGL renderer
       with automatic fallback to canvas
 
-## Decided (code done, coverage to verify)
-
-- [~] Tauri 2 shell, worker binary resolved as a sibling sidecar
-- [~] Windows portable = three-exe zip (`muis`, `muis-worker`,
-      `muis-notify`; CI builds it; unverified on HW)
-
 ## To build (in suggested order)
 
-- [ ] Windows portable on-machine verification: run the CI
-      `muis-portable-*.zip` on a real work PC (portable, no install,
-      no admin). Keep portable as the supported artifact.
+- [ ] Nothing open here.
+
+## Moved
+
+- Windows (portable three-exe zip, on-machine verification, and the
+  optional per-user installer): `docs/windows.md`.
 
 ## Deferred
 

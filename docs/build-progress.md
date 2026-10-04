@@ -69,7 +69,7 @@ STATUS: done
 
 ## Step 7 — Windows portable packaging config + CI workflow
 STATUS: done
-- docs/packaging-windows.md: portable zip recipe (two exes, WebView2
+- docs/windows.md: portable zip recipe (three exes, WebView2
   note, %APPDATA% state, per-user installer deferred to a Windows box).
 - .github/workflows/ci.yml: rust (cargo test --locked with WebKit
   deps), ui (npm test+build), windows-portable (release build + zip

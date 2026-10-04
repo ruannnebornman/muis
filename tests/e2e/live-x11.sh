@@ -17,7 +17,16 @@ MARKER="MUIS_XVFB_${RANDOM}_${RANDOM}_$(date +%s)"
 SCREENSHOT="$RUN_DIR/screenshot.png"
 LOG="$RUN_DIR/muis.log"
 
-export ROOT STATE_HOME CONFIG_HOME MARKER SCREENSHOT LOG RUN_DIR
+# Stage the binaries the way a package ships them: `muis` + a sibling
+# `muis-worker`. Running from this directory exercises worker_path()
+# resolving the sidecar relative to the shell's own location, instead of
+# the target/debug directory where cargo happens to leave both.
+INSTALL_DIR="$RUN_DIR/install"
+mkdir -p "$INSTALL_DIR"
+cp "$ROOT/target/debug/muis" "$INSTALL_DIR/muis"
+cp "$ROOT/target/debug/muis-worker" "$INSTALL_DIR/muis-worker"
+
+export ROOT STATE_HOME CONFIG_HOME MARKER SCREENSHOT LOG RUN_DIR INSTALL_DIR
 export MUIS_TEST_COMMAND="echo $MARKER"
 export GDK_BACKEND=x11
 export LIBGL_ALWAYS_SOFTWARE=1
@@ -26,7 +35,7 @@ export XDG_STATE_HOME="$STATE_HOME"
 export XDG_CONFIG_HOME="$CONFIG_HOME"
 
 xvfb-run -a -s "-screen 0 1280x800x24" bash -Eeuo pipefail -c '
-  "$ROOT/target/debug/muis" >"$LOG" 2>&1 &
+  "$INSTALL_DIR/muis" >"$LOG" 2>&1 &
   app_pid=$!
   cleanup() {
     if kill -0 "$app_pid" 2>/dev/null; then

@@ -44,10 +44,5 @@ Full plan: `docs/rollout-plan.md` Phase 3 (package) and Phase 4
 
 ## Windows per-user installer (optional)
 
-- Portable `muis-portable-*.zip` stays the supported artifact: nothing
-  installed, no admin, no registry, no Start Menu entry. Preferred for
-  locked-down/work machines.
-- A per-user NSIS installer (`crates/muis-shell/tauri.conf.json` is
-  intentionally `"windows": {}`) would not need admin either, but it does
-  install. Only worth doing if someone wants Start Menu integration.
-- Needs a real Windows box to build and verify.
+See `docs/windows.md`. Portable `muis-portable-*.zip` stays the supported
+artifact; the optional per-user NSIS installer lives in the Windows doc.
