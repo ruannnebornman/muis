@@ -32,3 +32,12 @@ Thumbs.db
 aur/*.tar.gz
 aur/pkg/
 aur/src/
+
+# Release signing secrets (public material lives in packaging/keys/)
+MUIS_GPG_PRIVATE_KEY.asc
+MUIS_GPG_PASSPHRASE*
+*-full-secret*.asc
+*-revoke.asc
+*.rev
+**/keyring-release/
+**/muis-release-key/
