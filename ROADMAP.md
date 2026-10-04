@@ -48,16 +48,13 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
 - [x] Tauri 2 shell, worker binary resolved as a sibling sidecar: the
       native Xvfb smoke stages `muis` + `muis-worker` like a package and
       launches from there, proving resolution relative to the shell
-
-## Decided (code done, coverage to verify)
-
-- [~] NVIDIA workarounds (dmabuf renderer off; canvas renderer until
-      WebGL is proven in the WebKit window)
+- [x] NVIDIA workarounds: `WEBKIT_DISABLE_DMABUF_RENDERER=1` at startup
+      unless overridden (unit-tested), and xterm uses the WebGL renderer
+      with automatic fallback to canvas
 
 ## To build (in suggested order)
 
-- [ ] Nothing open here; the remaining coverage items sit under
-      "Decided" above.
+- [ ] Nothing open here.
 
 ## Moved
 

@@ -2,6 +2,7 @@ import { Terminal } from "xterm";
 import "xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -428,6 +429,17 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(surface);
+
+  // Prefer the GPU renderer, fall back to xterm's built-in canvas renderer
+  // if WebGL is unavailable or the context is lost (some WebKitGTK/NVIDIA
+  // stacks). Canvas is correct, just slower for large scrollback.
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    term.loadAddon(webgl);
+  } catch {
+    /* canvas renderer stays active */
+  }
 
   // While replaying saved scrollback, xterm re-parses the shell's captured
   // terminal queries (OSC 11, CPR, DA) and would answer them into the live
