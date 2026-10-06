@@ -124,6 +124,30 @@ describe("SessionStore", () => {
     expect(newTabCwd(s.currentWorkspace()!)).toBe("/tmp/from-shell");
   });
 
+  it("reorders sessions and keeps the same workspace current", () => {
+    const s = store();
+    s.addWorkspace("b", "/tmp/b");
+    s.addWorkspace("c", "/tmp/c");
+    s.switch(2); // c current
+    expect(s.moveWorkspace(0, 2)).toBe(true); // home -> end
+    expect(s.workspaces.map((w) => w.name)).toEqual(["b", "c", "home"]);
+    expect(s.currentWorkspace()?.name).toBe("c");
+    expect(s.moveWorkspace(0, 9)).toBe(false);
+    expect(s.moveWorkspace(1, 1)).toBe(false);
+  });
+
+  it("reorders tabs and keeps the active tab active", () => {
+    const s = store();
+    s.newTab("T2", "/tmp");
+    s.newTab("T3", "/tmp");
+    // tabs [Terminal 1, T2, T3], active = T3
+    expect(s.moveTab(0, 0, 2)).toBe(true);
+    expect(s.currentWorkspace()!.tabs.map((t) => t.title)).toEqual(["T2", "T3", "Terminal 1"]);
+    expect(s.activeTab()?.title).toBe("T3");
+    expect(s.moveTab(0, 0, 9)).toBe(false);
+    expect(s.moveTab(0, 1, 1)).toBe(false);
+  });
+
   it("new tabs fall back to the workspace dir without a live tab", () => {
     const ws: Workspace = { id: "w1", name: "home", dir: "/home/kaazrot", tabs: [], active: 0 };
     expect(newTabCwd(ws)).toBe("/home/kaazrot");

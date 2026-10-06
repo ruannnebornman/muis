@@ -6,6 +6,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
 import { defaultConfig, configFromJSON, effectiveFontSize, type AppConfig } from "./config";
@@ -156,6 +157,24 @@ if (IN_TAURI) {
 
 /** View options; loaded from disk in init, edited in the settings dialog. */
 let cfg: AppConfig = defaultConfig();
+
+/** Whether the configured AI agent is on PATH (controls the AI tab option). */
+let agentReady = false;
+
+/** Tabs whose agent has already been launched this launch. */
+const agentLaunched = new Set<string>();
+
+/** Probe PATH for the configured agent; hide the AI option when absent. */
+async function refreshAgentReady(): Promise<void> {
+  agentReady = false;
+  const command = cfg.agentCommand.trim();
+  if (!IN_TAURI || !command) return;
+  try {
+    agentReady = await invoke<boolean>("command_available", { command });
+  } catch {
+    agentReady = false;
+  }
+}
 
 /** Pty liveness for dirty-tab / quit confirmations. */
 const activity = newActivityState();
@@ -506,13 +525,29 @@ function ensureView(sessionId: string, tab: Tab): TabView {
             renderTabs();
             renderSessions();
             updateWindowTitle();
+            // Deferred so the view's own exit callback finishes first.
+            window.setTimeout(() => dropSessionIfLastTab(sessionId, tab.id), 0);
           },
         );
+        // AI tab: after the shell (and any restored scrollback) is up,
+        // launch the configured agent once per launch.
+        const launchAgent = (): void => {
+          const command = cfg.agentCommand.trim();
+          if (!tab.agent || !command || agentLaunched.has(tab.id)) return;
+          agentLaunched.add(tab.id);
+          window.setTimeout(() => {
+            trackInput(tab.id, `${command}\n`);
+            void client.write(sessionId, tab.id, enc.encode(`${command}\n`)).catch(() => {});
+          }, 600);
+        };
         if (replay) {
           replaying = true;
           term.write(b64decode(replay), () => {
             replaying = false;
+            launchAgent();
           });
+        } else {
+          launchAgent();
         }
       } catch (e) {
         term.writeln(`\r\n[failed to spawn pty: ${String(e)}]`);
@@ -641,6 +676,35 @@ function closeSession(w: Workspace): void {
   renderAll();
 }
 
+/**
+ * A pty exited. If it was the session's only tab, tear the session down
+ * immediately (no grace period) so a dead shell does not leave an empty
+ * session behind. Background sessions are handled the same as the active
+ * one.
+ */
+function dropSessionIfLastTab(sessionId: string, tabId: string): void {
+  const ws = store.workspaces.find((w) => w.id === sessionId);
+  if (!ws) return;
+  const isLast = ws.tabs.length === 1 && ws.tabs[0]?.id === tabId;
+  if (!isLast) return;
+  if (IN_TAURI) {
+    void invoke("snapshot_remove", { tabId }).catch(() => {});
+    void client.stopSession(sessionId).catch(() => {});
+  }
+  const view = views.get(tabId);
+  if (view) {
+    view.term.dispose();
+    view.box.remove();
+    views.delete(tabId);
+  }
+  oscParsers.delete(tabId);
+  forgetTab(activity, tabId);
+  forgetTabState(tabId);
+  const idx = store.workspaces.findIndex((w) => w.id === sessionId);
+  if (idx >= 0) store.removeWorkspace(idx);
+  renderAll();
+}
+
 /* ---------------- chrome render ---------------- */
 
 function el(tag: string, cls: string, text?: string): HTMLElement {
@@ -687,7 +751,7 @@ function renderSessions(): void {
   });
   sidebar.append(list);
   const footer = el("div", "side-footer");
-  const addBtn = el("button", "btn primary", "＋ session");
+  const addBtn = el("button", "btn", "＋ session");
   addBtn.style.flex = "1";
   addBtn.addEventListener("click", () => {
     void addSession();
@@ -742,6 +806,73 @@ function renameSession(w: Workspace): void {
   }
 }
 
+/* ---------------- drag reorder (tabs + sessions) ---------------- */
+
+let dragKind: "session" | "tab" | null = null;
+let dragFrom = -1;
+
+function clearDropMarks(): void {
+  document
+    .querySelectorAll(".drop-before, .drop-after")
+    .forEach((elm) => elm.classList.remove("drop-before", "drop-after"));
+}
+
+/** Final index for a drop near `idx`; reorder only, never detach. */
+function dropIndex(idx: number, before: boolean): number {
+  if (before) return dragFrom < idx ? idx - 1 : idx;
+  return dragFrom < idx ? idx : idx + 1;
+}
+
+function attachReorder(
+  d: HTMLElement,
+  kind: "session" | "tab",
+  idx: number,
+  axis: "x" | "y",
+  apply: (from: number, to: number) => boolean,
+): void {
+  const beforeAt = (e: DragEvent): boolean => {
+    const rect = d.getBoundingClientRect();
+    return axis === "y"
+      ? e.clientY < rect.top + rect.height / 2
+      : e.clientX < rect.left + rect.width / 2;
+  };
+  d.draggable = true;
+  d.addEventListener("dragstart", (e) => {
+    dragKind = kind;
+    dragFrom = idx;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(idx));
+    }
+    d.classList.add("dragging");
+  });
+  d.addEventListener("dragend", () => {
+    dragKind = null;
+    dragFrom = -1;
+    d.classList.remove("dragging");
+    clearDropMarks();
+  });
+  d.addEventListener("dragover", (e) => {
+    if (dragKind !== kind) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    const before = beforeAt(e);
+    clearDropMarks();
+    d.classList.add(before ? "drop-before" : "drop-after");
+  });
+  d.addEventListener("drop", (e) => {
+    if (dragKind !== kind) return;
+    e.preventDefault();
+    if (idx === dragFrom) return; // dropped on itself
+    const to = dropIndex(idx, beforeAt(e));
+    const from = dragFrom;
+    clearDropMarks();
+    dragKind = null;
+    dragFrom = -1;
+    if (to !== from) apply(from, to);
+  });
+}
+
 function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   const idx = store.workspaces.indexOf(w);
   const d = el("div", "session" + (selected ? " active" : ""));
@@ -769,6 +900,11 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
     renderAll();
   });
   d.addEventListener("dblclick", () => renameSession(w));
+  attachReorder(d, "session", idx, "y", (from, to) => {
+    const moved = store.moveWorkspace(from, to);
+    if (moved) renderAll();
+    return moved;
+  });
   return d;
 }
 
@@ -780,11 +916,31 @@ function renderTabs(): void {
     tabbar.append(tabElement(ws, t, i === ws.active));
   });
   const nb = el("button", "newtab", "+");
-  nb.addEventListener("click", () => {
-    store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
-    renderAll();
-  });
+  nb.title = "New terminal";
+  nb.addEventListener("click", () => addShellTab(ws));
   tabbar.append(nb);
+  // The AI tab is only offered when the configured agent is on PATH.
+  if (agentReady) {
+    const ai = el("button", "newtab ai", "AI");
+    ai.title = `New ${cfg.agentCommand.trim()} tab`;
+    ai.addEventListener("click", () => addAgentTab(ws));
+    tabbar.append(ai);
+  }
+}
+
+function addShellTab(ws: Workspace): void {
+  store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
+  renderAll();
+}
+
+function addAgentTab(ws: Workspace): void {
+  const label = cfg.agentCommand.trim() || "AI";
+  const id = store.newTab(label, newTabCwd(ws));
+  if (id) {
+    const tab = ws.tabs.find((t) => t.id === id);
+    if (tab) tab.agent = true;
+  }
+  renderAll();
 }
 
 function renameTab(ws: Workspace, tab: Tab): void {
@@ -835,6 +991,11 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
     renderAll();
   });
   d.addEventListener("dblclick", () => renameTab(ws, tab));
+  attachReorder(d, "tab", ws.tabs.findIndex((t) => t.id === tab.id), "x", (from, to) => {
+    const moved = store.moveTab(store.workspaces.indexOf(ws), from, to);
+    if (moved) renderAll();
+    return moved;
+  });
   return d;
 }
 
@@ -868,9 +1029,26 @@ const stSessionTab = el("span", "pill");
 const stCwd = el("span", "", "");
 const stGit = el("span", "pill", "");
 const stUser = el("span", "pill", "");
+const stCpu = el("span", "pill", "");
+const stRam = el("span", "pill", "");
+const stGpu = el("span", "pill", "");
+const stVersion = el("span", "pill", "");
 const stClock = el("span", "", "");
 const stShell = el("span", "pill", "");
-statusbar.append(stSessionTab, stCwd, stGit, stUser, el("span", ""), stClock, stShell);
+// Left group order is deliberate: cwd, git, session·tab, user.
+statusbar.append(
+  stCwd,
+  stGit,
+  stSessionTab,
+  stUser,
+  el("span", ""),
+  stCpu,
+  stRam,
+  stGpu,
+  stVersion,
+  stClock,
+  stShell,
+);
 (statusbar.children[4] as HTMLElement).style.marginLeft = "auto";
 
 const gitCache = new Map<string, string>();
@@ -917,6 +1095,27 @@ interface SysInfo {
   host: string;
 }
 let sysInfo: SysInfo | null = null;
+
+interface SystemStats {
+  cpu: number;
+  mem_used: number;
+  mem_total: number;
+  gpu: number | null;
+}
+
+/** Render a stats push; the GPU pill is hidden entirely when unavailable. */
+function renderSystemStats(s: SystemStats): void {
+  stCpu.textContent = `CPU ${s.cpu}%`;
+  const pct = s.mem_total > 0 ? Math.round((s.mem_used / s.mem_total) * 100) : 0;
+  stRam.textContent = `RAM ${pct}%`;
+  stRam.title = `${(s.mem_used / 1e9).toFixed(1)} / ${(s.mem_total / 1e9).toFixed(1)} GB`;
+  if (s.gpu === null) {
+    stGpu.style.display = "none";
+  } else {
+    stGpu.style.display = "";
+    stGpu.textContent = `GPU ${s.gpu}%`;
+  }
+}
 
 /* ---------------- side panel slot ---------------- */
 
@@ -1098,6 +1297,10 @@ for (const name of themeNames()) {
   o.textContent = name;
   optTheme.append(o);
 }
+const optAgent = document.createElement("input");
+optAgent.type = "text";
+optAgent.placeholder = "opencode";
+optAgent.title = "Command for the New AI tab; empty disables it";
 
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
@@ -1111,6 +1314,7 @@ settingsBox.append(
   settingsRow("Show sessions panel", optSessions),
   settingsRow("Terminal font size", optFontSize),
   settingsRow("Theme", optTheme),
+  settingsRow("AI tab command", optAgent),
   settingsButtons,
 );
 settingsOverlay.append(settingsBox);
@@ -1120,6 +1324,7 @@ function openSettings(): void {
   optSessions.checked = cfg.showSessions;
   optFontSize.value = cfg.fontSize?.toString() ?? "";
   optTheme.value = cfg.theme ?? "default";
+  optAgent.value = cfg.agentCommand;
   settingsOverlay.style.display = "flex";
 }
 
@@ -1127,13 +1332,14 @@ function closeSettings(): void {
   settingsOverlay.style.display = "none";
 }
 
-function applySettings(): void {
+async function applySettings(): Promise<void> {
   const size = optFontSize.value.trim();
   cfg = {
     showSessions: optSessions.checked,
     tabsOnTop: cfg.tabsOnTop,
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
+    agentCommand: optAgent.value.trim(),
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);
@@ -1143,11 +1349,12 @@ function applySettings(): void {
     view.term.options.fontSize = px;
     view.term.options.theme = nextTheme;
   }
+  await refreshAgentReady();
   closeSettings();
   renderAll();
 }
 
-settingsSave.addEventListener("click", applySettings);
+settingsSave.addEventListener("click", () => void applySettings());
 settingsCancel.addEventListener("click", closeSettings);
 settingsOverlay.addEventListener("click", (e) => {
   if (e.target === settingsOverlay) closeSettings();
@@ -1563,6 +1770,19 @@ async function init(): Promise<void> {
     } catch {
       reportDebugStage("system-info-failed");
     }
+    try {
+      stVersion.textContent = `v${await getVersion()}`;
+    } catch {
+      /* version is best-effort */
+    }
+    try {
+      await listen<SystemStats>("system-stats", (e) => renderSystemStats(e.payload));
+      document.addEventListener("visibilitychange", () => {
+        void invoke("system_stats_active", { active: !document.hidden }).catch(() => {});
+      });
+    } catch {
+      /* system monitor is best-effort */
+    }
     // Resume where we left off; corrupt files start fresh (never broken).
     try {
       const saved = await invoke<string>("sessions_load");
@@ -1586,6 +1806,7 @@ async function init(): Promise<void> {
   // Only mint a default session on a fresh start. A resumed empty store
   // means the user closed every session and quit that way on purpose.
   if (store.workspaces.length === 0 && !resumed) store.ensureDefault("home", home);
+  await refreshAgentReady();
   applyTheme(cfg.theme);
   renderAll();
   reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });

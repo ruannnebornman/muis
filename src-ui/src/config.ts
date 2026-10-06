@@ -6,10 +6,12 @@ export interface AppConfig {
   fontSize: number | null;
   /** Accent theme name; null keeps the default look. */
   theme: string | null;
+  /** Command the "new AI tab" action runs. Empty disables the AI option. */
+  agentCommand: string;
 }
 
 export function defaultConfig(): AppConfig {
-  return { showSessions: true, tabsOnTop: false, fontSize: null, theme: null };
+  return { showSessions: true, tabsOnTop: false, fontSize: null, theme: null, agentCommand: "opencode" };
 }
 
 export function configFromJSON(json: string): AppConfig {
@@ -31,6 +33,8 @@ export function configFromJSON(json: string): AppConfig {
         ? Math.floor(r.fontSize)
         : base.fontSize,
     theme: typeof r.theme === "string" ? r.theme : base.theme,
+    agentCommand:
+      typeof r.agentCommand === "string" ? r.agentCommand : base.agentCommand,
   };
 }
 
