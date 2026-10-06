@@ -358,6 +358,26 @@ the tab is active. Seen with two opencode tabs open.
 - Reproduce: open opencode in a tab, open a second opencode tab, switch
   between them, observe whether the pane fills.
 
+### opencode does not notify the tab when it finishes
+
+When opencode finishes a task, nothing happens on the tab: no `✓ done`
+badge, no desktop toast, no window-title count. Other agents report
+completion with OSC 9/777/99, which muis already turns into a done
+badge/toast. opencode appears not to emit one (or emits something muis
+does not classify as a completion), so the finish is invisible unless you
+are looking at the tab.
+
+- Reproduce: run opencode in a background tab, trigger a task, switch to
+  another tab/session, wait for it to finish; no badge or toast appears.
+- Direction to investigate: confirm what OSC opencode emits on completion
+  (it may only set the title, `OC | …`, not a notification escape); if it
+  emits none, either teach muis to infer "done" for known agents or use
+  the `muis-notify` hook. See the notification/agent handling in
+  `src-ui/src/osc.ts` and `src-ui/src/notify.ts`.
+- Note: the automatic tab title from opencode's OSC title does work (see
+  the title section); it is specifically the *completion notification*
+  that is missing.
+
 ## Proposals
 
 Ideas worth considering, roughly grouped. None are committed.
