@@ -119,11 +119,41 @@ export class AcpClient {
     );
   }
 
-  async initialize(): Promise<void> {
-    await this.send("initialize", {
-      protocolVersion: 1,
-      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
-      clientInfo: { name: "muis", version: "0.1.0" },
+  /**
+   * Handshake. opencode acp can drop stdin written before it is ready, so
+   * the caller retries; a per-attempt timeout keeps a dropped line from
+   * hanging forever (the pending entry is cleared so a late reply is
+   * ignored rather than resolving a stale promise).
+   */
+  initialize(timeoutMs = 1500): Promise<void> {
+    const id = this.nextId++;
+    this.write(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        method: "initialize",
+        params: {
+          protocolVersion: 1,
+          clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+          clientInfo: { name: "muis", version: "0.1.0" },
+        },
+      }),
+    );
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error("initialize timed out"));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        reject: (reason) => {
+          clearTimeout(timer);
+          reject(reason);
+        },
+      });
     });
   }
 

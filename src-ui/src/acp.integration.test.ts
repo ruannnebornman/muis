@@ -46,10 +46,18 @@ describe.skipIf(!enabled)("AcpClient against real opencode acp", () => {
     });
 
     try {
-      // opencode acp drops stdin written in the first moments after spawn;
-      // wait briefly before the first line (see startAgent in main.ts).
-      await new Promise((r) => setTimeout(r, 700));
-      await client.initialize();
+      // opencode acp can drop stdin written before it is ready; retry the
+      // handshake exactly like startAgent in main.ts does.
+      let handshaken = false;
+      for (let attempt = 0; attempt < 8 && !handshaken; attempt++) {
+        try {
+          await client.initialize(1500);
+          handshaken = true;
+        } catch {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+      expect(handshaken).toBe(true);
       const sid = await client.newSession(process.env.TMPDIR ?? "/tmp");
       expect(sid).toMatch(/^ses_/);
       expect(client.session).toBe(sid);

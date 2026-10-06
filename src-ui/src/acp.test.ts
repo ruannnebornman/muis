@@ -32,6 +32,22 @@ describe("AcpClient", () => {
     await p;
   });
 
+  it("times out initialize when the agent never answers", async () => {
+    const h = harness();
+    await expect(h.client.initialize(20)).rejects.toThrow(/timed out/);
+  });
+
+  it("ignores a late initialize reply after a timeout", async () => {
+    const h = harness();
+    const p = h.client.initialize(20);
+    const id = h.last().id;
+    await expect(p).rejects.toThrow(/timed out/);
+    // A reply that arrives after the timeout must be dropped, not throw.
+    expect(() =>
+      h.client.receive(JSON.stringify({ jsonrpc: "2.0", id, result: {} })),
+    ).not.toThrow();
+  });
+
   it("creates a session and records its id", async () => {
     const h = harness();
     const p = h.client.newSession("/tmp/proj");

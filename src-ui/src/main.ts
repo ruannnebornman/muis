@@ -445,10 +445,21 @@ async function startAgent(v: AgentView, tab: Tab): Promise<void> {
       pendingAgentMsgs.delete(id);
       for (const line of buffered) v.client.receive(line);
     }
-    // opencode acp drops stdin written in the first moments after spawn,
-    // so give it a beat before the initialize line.
-    await new Promise((r) => setTimeout(r, 700));
-    await v.client.initialize();
+    // opencode acp can drop stdin written before it is ready; retry the
+    // handshake until it answers instead of hanging on a single attempt.
+    let handshaken = false;
+    for (let attempt = 0; attempt < 8 && !handshaken; attempt++) {
+      try {
+        await v.client.initialize(1500);
+        handshaken = true;
+      } catch {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    if (!handshaken) {
+      appendAgentNode(v, "a-msg error", "agent did not respond to initialize");
+      return;
+    }
     if (tab.acpSessionId) {
       await v.client.loadSession(tab.cwd, tab.acpSessionId);
       appendAgentNode(v, "a-sys", `resumed ${tab.acpSessionId}`);
@@ -1487,6 +1498,10 @@ const onShortcut = (e: KeyboardEvent): void => {
       e.preventDefault();
       store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
       renderAll();
+      break;
+    case "new-agent-tab":
+      e.preventDefault();
+      if (agentReady) addAgentTab(ws);
       break;
     case "close-tab": {
       e.preventDefault();
