@@ -431,6 +431,10 @@ function ensureAgentView(tab: Tab): AgentView {
 }
 
 async function startAgent(v: AgentView, tab: Tab): Promise<void> {
+  if (!IN_TAURI) {
+    appendAgentNode(v, "a-sys", "ACP panes need the desktop app");
+    return;
+  }
   try {
     const command = cfg.agentCommand.trim() || "opencode";
     const id = await invoke<string>("agent_spawn", { cwd: tab.cwd, command });
@@ -480,7 +484,7 @@ async function sendPrompt(v: AgentView): Promise<void> {
 function disposeAgentView(v: AgentView): void {
   if (v.agentId) {
     agentById.delete(v.agentId);
-    void invoke("agent_kill", { id: v.agentId }).catch(() => {});
+    if (IN_TAURI) void invoke("agent_kill", { id: v.agentId }).catch(() => {});
   }
   v.box.remove();
   agentViews.delete(v.tabId);
