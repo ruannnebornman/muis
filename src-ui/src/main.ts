@@ -297,7 +297,12 @@ winClose.className = "win-btn close";
 winClose.textContent = "✕";
 winClose.title = "Close";
 winControls.append(winMin, winMax, winClose);
-tbRight.append(searchBox, winControls);
+const settingsBtn = document.createElement("div");
+settingsBtn.className = "win-btn settings";
+settingsBtn.textContent = "⚙";
+settingsBtn.title = "Settings (ctrl + ,)";
+settingsBtn.addEventListener("click", () => openSettings());
+tbRight.append(searchBox, settingsBtn, winControls);
 titlebar.append(tbLeft, tbRight);
 
 const mainRow = document.createElement("div");
@@ -810,6 +815,17 @@ function renameSession(w: Workspace): void {
 
 let dragKind: "session" | "tab" | null = null;
 let dragFrom = -1;
+let dragTabId: string | null = null;
+
+/** Move a dragged tab into another session (append); switch to the target. */
+function moveTabToSession(tabId: string, toSessionId: string): void {
+  const fromWsIndex = store.workspaces.findIndex((w) => w.tabs.some((t) => t.id === tabId));
+  if (fromWsIndex < 0) return;
+  const toWsIndex = store.workspaces.findIndex((w) => w.id === toSessionId);
+  if (toWsIndex < 0 || toWsIndex === fromWsIndex) return;
+  const tabIndex = store.workspaces[fromWsIndex].tabs.findIndex((t) => t.id === tabId);
+  if (store.moveTabToWorkspace(fromWsIndex, tabIndex, toWsIndex)) renderAll();
+}
 
 function clearDropMarks(): void {
   document
@@ -905,6 +921,24 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
     if (moved) renderAll();
     return moved;
   });
+  // A tab dragged over a session drops into that session.
+  d.addEventListener("dragover", (e) => {
+    if (dragKind !== "tab") return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    clearDropMarks();
+    d.classList.add("drop-into");
+  });
+  d.addEventListener("drop", (e) => {
+    if (dragKind !== "tab") return;
+    e.preventDefault();
+    const tabId = dragTabId;
+    clearDropMarks();
+    dragKind = null;
+    dragFrom = -1;
+    dragTabId = null;
+    if (tabId) moveTabToSession(tabId, w.id);
+  });
   return d;
 }
 
@@ -995,6 +1029,12 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
     const moved = store.moveTab(store.workspaces.indexOf(ws), from, to);
     if (moved) renderAll();
     return moved;
+  });
+  d.addEventListener("dragstart", () => {
+    dragTabId = tab.id;
+  });
+  d.addEventListener("dragend", () => {
+    dragTabId = null;
   });
   return d;
 }
