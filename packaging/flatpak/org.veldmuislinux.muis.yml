@@ -25,6 +25,10 @@ modules:
     buildsystem: simple
     build-options:
       append-path: /usr/lib/sdk/rust-stable/bin
+      # The flatpak-builder sandbox has no network by default, so cargo
+      # cannot reach crates.io. Share the runner network for the build.
+      build-args:
+        - --share=network
       env:
         CARGO_HOME: /run/build/muis/cargo
     build-commands:
