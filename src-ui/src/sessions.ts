@@ -12,6 +12,10 @@ export interface Tab {
   manual?: boolean;
   /** AI tab: relaunch the configured agent when the tab starts. */
   agent?: boolean;
+  /** "terminal" (pty, default) or "agent" (ACP pane). */
+  kind?: "terminal" | "agent";
+  /** ACP session id, persisted so an agent tab resumes its session. */
+  acpSessionId?: string;
 }
 
 export interface Workspace {
@@ -116,11 +120,11 @@ export class SessionStore {  workspaces: Workspace[] = [];
     return this.workspaces[this.current];
   }
 
-  newTab(title: string, cwd: string): string | undefined {
+  newTab(title: string, cwd: string, kind?: "agent"): string | undefined {
     const ws = this.currentWorkspace();
     if (!ws) return undefined;
     const id = this.mint("t");
-    ws.tabs.push({ id, title, cwd, manual: false });
+    ws.tabs.push({ id, title, cwd, manual: false, ...(kind ? { kind } : {}) });
     ws.active = ws.tabs.length - 1;
     return id;
   }

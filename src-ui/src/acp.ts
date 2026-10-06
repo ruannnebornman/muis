@@ -1,0 +1,161 @@
+/**
+ * Minimal ACP (Agent Client Protocol) client.
+ *
+ * Transport-agnostic: it is handed a `write` function (one JSON-RPC line
+ * out) and fed incoming lines via `receive`, so it can be unit-tested with
+ * a fake transport and wired to Tauri separately. Protocol: JSON-RPC 2.0.
+ */
+
+export interface PermissionOption {
+  optionId: string;
+  name?: string;
+  kind?: string;
+}
+
+export interface PermissionRequest {
+  requestId: number;
+  sessionId: string;
+  toolCall?: unknown;
+  options: PermissionOption[];
+}
+
+export interface AcpHandlers {
+  /** session/update notification (agent_message_chunk, tool_call, …). */
+  onUpdate: (update: Record<string, unknown>) => void;
+  /** Agent asks the user to authorise a tool call. */
+  onPermission: (req: PermissionRequest) => void;
+  /** Session id assigned/confirmed by the agent. */
+  onSession: (sessionId: string) => void;
+  /** Transport/agent error worth showing in the pane. */
+  onError: (message: string) => void;
+}
+
+interface Pending {
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
+}
+
+type Json = Record<string, unknown>;
+
+export class AcpClient {
+  private nextId = 1;
+  private readonly pending = new Map<number, Pending>();
+  private sessionId = "";
+
+  constructor(
+    private readonly write: (line: string) => void,
+    private readonly handlers: AcpHandlers,
+  ) {}
+
+  get session(): string {
+    return this.sessionId;
+  }
+
+  /** Feed one line of agent stdout. Unknown/garbled lines are ignored. */
+  receive(line: string): void {
+    let msg: Json;
+    try {
+      msg = JSON.parse(line) as Json;
+    } catch {
+      return; // stderr diagnostics and non-JSON noise
+    }
+    const id = msg.id;
+    const method = msg.method;
+    // Response to one of our requests.
+    if (id !== undefined && method === undefined) {
+      const p = this.pending.get(id as number);
+      if (!p) return;
+      this.pending.delete(id as number);
+      if (msg.error) p.reject(msg.error);
+      else p.resolve(msg.result);
+      return;
+    }
+    // Notification from the agent.
+    if (method === "session/update") {
+      const params = (msg.params ?? {}) as Json;
+      this.handlers.onUpdate((params.update ?? {}) as Record<string, unknown>);
+      return;
+    }
+    // Request from the agent that we must answer.
+    if (id !== undefined && typeof method === "string") {
+      this.handleRequest(id as number, method, (msg.params ?? {}) as Json);
+    }
+  }
+
+  private send(method: string, params: unknown): Promise<unknown> {
+    const id = this.nextId++;
+    this.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+  }
+
+  private reply(id: number, result: unknown): void {
+    this.write(JSON.stringify({ jsonrpc: "2.0", id, result }));
+  }
+
+  private handleRequest(id: number, method: string, params: Json): void {
+    if (method === "session/request_permission") {
+      this.handlers.onPermission({
+        requestId: id,
+        sessionId: String(params.sessionId ?? this.sessionId),
+        toolCall: params.toolCall,
+        options: (params.options ?? []) as PermissionOption[],
+      });
+      return;
+    }
+    // We advertise no fs/terminal capabilities, so anything else is
+    // unsupported; answer so the agent is never left waiting.
+    this.write(
+      JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32601, message: "unsupported" } }),
+    );
+  }
+
+  /** Answer a permission request. `optionId` null cancels. */
+  resolvePermission(requestId: number, optionId: string | null): void {
+    this.reply(
+      requestId,
+      optionId
+        ? { outcome: { outcome: "selected", optionId } }
+        : { outcome: { outcome: "cancelled" } },
+    );
+  }
+
+  async initialize(): Promise<void> {
+    await this.send("initialize", {
+      protocolVersion: 1,
+      clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+      clientInfo: { name: "muis", version: "0.1.0" },
+    });
+  }
+
+  async newSession(cwd: string): Promise<string> {
+    const res = (await this.send("session/new", { cwd, mcpServers: [] })) as Json;
+    this.sessionId = String(res.sessionId ?? "");
+    this.handlers.onSession(this.sessionId);
+    return this.sessionId;
+  }
+
+  async loadSession(cwd: string, sessionId: string): Promise<void> {
+    await this.send("session/load", { sessionId, cwd, mcpServers: [] });
+    this.sessionId = sessionId;
+    this.handlers.onSession(sessionId);
+  }
+
+  /** Send a prompt; resolves with the stop reason when the turn ends. */
+  async prompt(text: string): Promise<string> {
+    const res = (await this.send("session/prompt", {
+      sessionId: this.sessionId,
+      prompt: [{ type: "text", text }],
+    })) as Json;
+    return String(res?.stopReason ?? "end_turn");
+  }
+
+  cancel(): void {
+    this.write(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/cancel",
+        params: { sessionId: this.sessionId },
+      }),
+    );
+  }
+}

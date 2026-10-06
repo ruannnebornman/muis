@@ -23,6 +23,7 @@ import { DoneTracker } from "./done";
 import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
+import { AcpClient, type PermissionRequest } from "./acp";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
@@ -224,6 +225,266 @@ interface TabView {
 }
 
 const views = new Map<string, TabView>();
+
+/* ---------------- agent (ACP) panes ---------------- */
+
+interface AgentView {
+  box: HTMLElement;
+  log: HTMLElement;
+  input: HTMLInputElement;
+  send: HTMLButtonElement;
+  stop: HTMLButtonElement;
+  status: HTMLElement;
+  client: AcpClient;
+  agentId: string;
+  tabId: string;
+  sessionId: string;
+  started: boolean;
+  running: boolean;
+  ready: boolean;
+  /** Streaming nodes keyed by message/tool id. */
+  nodes: Map<string, HTMLElement>;
+}
+
+const agentViews = new Map<string, AgentView>();
+const agentById = new Map<string, AgentView>();
+/** Lines that arrived before the view registered its agent id. */
+const pendingAgentMsgs = new Map<string, string[]>();
+
+function findTab(tabId: string): Tab | undefined {
+  for (const w of store.workspaces) {
+    const t = w.tabs.find((x) => x.id === tabId);
+    if (t) return t;
+  }
+  return undefined;
+}
+
+function appendAgentNode(v: AgentView, cls: string, text: string): HTMLElement {
+  const d = document.createElement("div");
+  d.className = cls;
+  d.textContent = text;
+  v.log.append(d);
+  v.log.scrollTop = v.log.scrollHeight;
+  return d;
+}
+
+function renderAgentUpdate(v: AgentView, u: Record<string, unknown>): void {
+  const kind = String(u.sessionUpdate ?? "");
+  const textOf = (c: unknown): string => {
+    const content = c as { type?: string; text?: string } | undefined;
+    return content?.type === "text" ? content.text ?? "" : "";
+  };
+  switch (kind) {
+    case "agent_message_chunk": {
+      const id = String(u.messageId ?? "msg");
+      let node = v.nodes.get(id);
+      if (!node) {
+        node = appendAgentNode(v, "a-msg agent", "");
+        v.nodes.set(id, node);
+      }
+      node.textContent += textOf(u.content);
+      v.log.scrollTop = v.log.scrollHeight;
+      break;
+    }
+    case "agent_thought_chunk": {
+      const id = String(u.messageId ?? "thought");
+      let node = v.nodes.get(id);
+      if (!node) {
+        node = appendAgentNode(v, "a-thought", "");
+        v.nodes.set(id, node);
+      }
+      node.textContent += textOf(u.content);
+      v.log.scrollTop = v.log.scrollHeight;
+      break;
+    }
+    case "tool_call":
+    case "tool_call_update": {
+      const title = String(u.title ?? u.kind ?? "tool");
+      const status = String(u.status ?? "");
+      const id = String(u.toolCallId ?? title);
+      const line = `⚙ ${title}${status ? ` · ${status}` : ""}`;
+      const node = v.nodes.get(id);
+      if (!node) v.nodes.set(id, appendAgentNode(v, "a-tool", line));
+      else node.textContent = line;
+      break;
+    }
+    case "usage_update": {
+      const used = Number(u.used ?? 0);
+      const size = Number(u.size ?? 0);
+      v.status.textContent = size ? `${used.toLocaleString()} / ${size.toLocaleString()} tokens` : "";
+      break;
+    }
+    default:
+      break; // available_commands_update, plan, … ignored for now
+  }
+}
+
+function renderPermission(v: AgentView, req: PermissionRequest): void {
+  const card = document.createElement("div");
+  card.className = "a-perm";
+  const title = document.createElement("div");
+  title.className = "a-perm-title";
+  title.textContent = "Permission requested";
+  card.append(title);
+  const row = document.createElement("div");
+  row.className = "a-perm-row";
+  const answer = (optionId: string | null) => {
+    v.client.resolvePermission(req.requestId, optionId);
+    card.remove();
+  };
+  for (const opt of req.options) {
+    const b = el("button", "btn", opt.name ?? opt.optionId);
+    b.addEventListener("click", () => answer(opt.optionId));
+    row.append(b);
+  }
+  const deny = el("button", "btn", "Deny");
+  deny.addEventListener("click", () => answer(null));
+  row.append(deny);
+  card.append(row);
+  v.log.append(card);
+  v.log.scrollTop = v.log.scrollHeight;
+}
+
+function ensureAgentView(tab: Tab): AgentView {
+  const existing = agentViews.get(tab.id);
+  if (existing) {
+    if (!existing.box.isConnected) termWrap.append(existing.box);
+    return existing;
+  }
+  const box = document.createElement("div");
+  box.className = "tabbox agent";
+  const head = document.createElement("div");
+  head.className = "pane-head";
+  head.textContent = `${cfg.agentCommand.trim() || "agent"} · ACP`;
+  const log = document.createElement("div");
+  log.className = "agent-log";
+  const inputRow = document.createElement("div");
+  inputRow.className = "agent-input";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "agent-field";
+  input.placeholder = "Message the agent…";
+  input.disabled = true;
+  const send = document.createElement("button");
+  send.className = "btn";
+  send.textContent = "Send";
+  send.disabled = true;
+  const stop = document.createElement("button");
+  stop.className = "btn";
+  stop.textContent = "Stop";
+  stop.style.display = "none";
+  const status = document.createElement("div");
+  status.className = "a-status";
+  inputRow.append(input, send, stop, status);
+  box.append(head, log, inputRow);
+  termWrap.append(box);
+
+  let v!: AgentView;
+  const client = new AcpClient(
+    (line) => {
+      if (v.agentId) void invoke("agent_write", { id: v.agentId, line }).catch(() => {});
+    },
+    {
+      onUpdate: (u) => renderAgentUpdate(v, u),
+      onPermission: (req) => renderPermission(v, req),
+      onSession: (sid) => {
+        v.sessionId = sid;
+        const t = findTab(v.tabId);
+        if (t) {
+          t.acpSessionId = sid;
+          scheduleSave();
+        }
+      },
+      onError: (m) => appendAgentNode(v, "a-msg error", m),
+    },
+  );
+  v = {
+    box,
+    log,
+    input,
+    send,
+    stop,
+    status,
+    client,
+    agentId: "",
+    tabId: tab.id,
+    sessionId: "",
+    started: false,
+    running: false,
+    ready: false,
+    nodes: new Map(),
+  };
+  agentViews.set(tab.id, v);
+
+  const submit = () => void sendPrompt(v);
+  send.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  });
+  stop.addEventListener("click", () => {
+    if (v.agentId) v.client.cancel();
+  });
+  return v;
+}
+
+async function startAgent(v: AgentView, tab: Tab): Promise<void> {
+  try {
+    const command = cfg.agentCommand.trim() || "opencode";
+    const id = await invoke<string>("agent_spawn", { cwd: tab.cwd, command });
+    v.agentId = id;
+    agentById.set(id, v);
+    const buffered = pendingAgentMsgs.get(id);
+    if (buffered) {
+      pendingAgentMsgs.delete(id);
+      for (const line of buffered) v.client.receive(line);
+    }
+    // opencode acp drops stdin written in the first moments after spawn,
+    // so give it a beat before the initialize line.
+    await new Promise((r) => setTimeout(r, 700));
+    await v.client.initialize();
+    if (tab.acpSessionId) {
+      await v.client.loadSession(tab.cwd, tab.acpSessionId);
+      appendAgentNode(v, "a-sys", `resumed ${tab.acpSessionId}`);
+    } else {
+      await v.client.newSession(tab.cwd);
+    }
+    v.ready = true;
+    v.input.disabled = false;
+    v.send.disabled = false;
+    v.input.focus();
+  } catch (e) {
+    appendAgentNode(v, "a-msg error", `failed to start agent: ${String(e)}`);
+  }
+}
+
+async function sendPrompt(v: AgentView): Promise<void> {
+  const text = v.input.value.trim();
+  if (!text || !v.ready || v.running) return;
+  v.input.value = "";
+  appendAgentNode(v, "a-msg user", text);
+  v.running = true;
+  v.stop.style.display = "";
+  try {
+    await v.client.prompt(text);
+  } catch (e) {
+    appendAgentNode(v, "a-msg error", String((e as { message?: string })?.message ?? e));
+  } finally {
+    v.running = false;
+    v.stop.style.display = "none";
+  }
+}
+
+function disposeAgentView(v: AgentView): void {
+  if (v.agentId) {
+    agentById.delete(v.agentId);
+    void invoke("agent_kill", { id: v.agentId }).catch(() => {});
+  }
+  v.box.remove();
+  agentViews.delete(v.tabId);
+}
 
 /** Scrollback search follows the visible tab. */
 function activeSearch() {
@@ -934,12 +1195,9 @@ function addShellTab(ws: Workspace): void {
 }
 
 function addAgentTab(ws: Workspace): void {
+  // AI button opens an ACP pane, not a shell running the agent.
   const label = cfg.agentCommand.trim() || "AI";
-  const id = store.newTab(label, newTabCwd(ws));
-  if (id) {
-    const tab = ws.tabs.find((t) => t.id === id);
-    if (tab) tab.agent = true;
-  }
+  store.newTab(label, newTabCwd(ws), "agent");
   renderAll();
 }
 
@@ -1013,13 +1271,30 @@ function renderTerms(ws: Workspace | undefined): void {
       view.box.classList.remove("active");
     }
   }
+  for (const [id, v] of agentViews) {
+    if (!store.workspaces.some((w) => w.tabs.some((t) => t.id === id))) {
+      disposeAgentView(v);
+    } else {
+      v.box.classList.remove("active");
+    }
+  }
   // No sessions: every terminal view was just disposed above.
   if (!ws) return;
   for (const t of ws.tabs) {
-    const view = ensureView(ws.id, t);
     const show = ws.tabs[ws.active]?.id === t.id;
-    view.box.classList.toggle("active", show);
-    if (show) fitShown(ws.id, t, view);
+    if (t.kind === "agent") {
+      const v = ensureAgentView(t);
+      v.box.classList.toggle("active", show);
+      // Start the ACP process lazily, once, when the tab is first shown.
+      if (show && !v.started) {
+        v.started = true;
+        void startAgent(v, t);
+      }
+    } else {
+      const view = ensureView(ws.id, t);
+      view.box.classList.toggle("active", show);
+      if (show) fitShown(ws.id, t, view);
+    }
   }
 }
 
@@ -1782,6 +2057,24 @@ async function init(): Promise<void> {
       });
     } catch {
       /* system monitor is best-effort */
+    }
+    // ACP agent bridge: route stdout lines to the owning pane.
+    try {
+      await listen<{ id: string; line: string }>("agent-msg", (e) => {
+        const v = agentById.get(e.payload.id);
+        if (v) v.client.receive(e.payload.line);
+        else {
+          const arr = pendingAgentMsgs.get(e.payload.id) ?? [];
+          arr.push(e.payload.line);
+          pendingAgentMsgs.set(e.payload.id, arr);
+        }
+      });
+      await listen<{ id: string }>("agent-exit", (e) => {
+        const v = agentById.get(e.payload.id);
+        if (v) appendAgentNode(v, "a-sys", "agent exited");
+      });
+    } catch {
+      /* agent bridge is best-effort */
     }
     // Resume where we left off; corrupt files start fresh (never broken).
     try {

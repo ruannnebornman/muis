@@ -14,9 +14,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+mod agent;
 mod bridge;
 mod persist;
 
+use agent::AgentPool;
 use bridge::{EventSink, WorkerPool, WORKER_EVENT};
 use tauri::{Emitter, Manager};
 
@@ -322,7 +324,10 @@ fn main() {
             command_available,
             worker_spawn,
             worker_send,
-            worker_stop
+            worker_stop,
+            agent::agent_spawn,
+            agent::agent_write,
+            agent::agent_kill
         ])
         .setup(|app| {
             // Fail visibly in dev when the sidecar is missing; the release
@@ -339,6 +344,7 @@ fn main() {
             let sink: EventSink =
                 Arc::new(move |event| handle.emit(WORKER_EVENT, &event).is_ok());
             app.handle().manage(WorkerPool::new(sink, worker_path()));
+            app.handle().manage(AgentPool::new());
 
             // Notification endpoint for `muis-notify` clients. One per-user
             // socket; each request is forwarded to the frontend, which routes
