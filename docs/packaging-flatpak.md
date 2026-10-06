@@ -67,6 +67,7 @@ flatpak-builder --user --install --force-clean build-dir \
   packaging/flatpak/org.veldmuislinux.muis.yml
 ```
 
-Requires `flatpak-builder`, `org.gnome.Sdk//48`, and the `rust-stable` and
-`node20` SDK extensions. The build fetches crates and npm packages, so it
-needs network access.
+Requires `flatpak-builder`, `org.gnome.Sdk//49`, and the `rust-stable`
+SDK extension. The module shares the network so cargo can fetch crates; the
+frontend `src-ui/dist` is built outside the sandbox by the `frontend` job
+(no npm runs inside Flatpak).
