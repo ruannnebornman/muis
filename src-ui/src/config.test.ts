@@ -9,6 +9,7 @@ describe("AppConfig", () => {
       fontSize: null,
       theme: null,
       agentCommand: "opencode",
+      agentResumeCommand: "opencode --continue",
     });
     expect(configFromJSON("")).toEqual(defaultConfig());
   });
@@ -20,13 +21,18 @@ describe("AppConfig", () => {
       fontSize: 13,
       theme: "nord",
       agentCommand: "aider",
+      agentResumeCommand: "aider --resume",
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
   });
 
-  it("reads the AI tab command and falls back on junk", () => {
+  it("reads the AI tab commands and falls back on junk", () => {
     expect(configFromJSON('{"agentCommand":"claude"}').agentCommand).toBe("claude");
     expect(configFromJSON("").agentCommand).toBe("opencode");
+    expect(configFromJSON('{"agentResumeCommand":"claude -c"}').agentResumeCommand).toBe(
+      "claude -c",
+    );
+    expect(configFromJSON("").agentResumeCommand).toBe("opencode --continue");
   });
 
   it("ignores corrupt values field by field, never entirely", () => {

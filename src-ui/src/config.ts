@@ -8,10 +8,19 @@ export interface AppConfig {
   theme: string | null;
   /** Command the "new AI tab" action runs. Empty disables the AI option. */
   agentCommand: string;
+  /** Command an AI tab runs when restored, so it resumes its last session. */
+  agentResumeCommand: string;
 }
 
 export function defaultConfig(): AppConfig {
-  return { showSessions: true, tabsOnTop: false, fontSize: null, theme: null, agentCommand: "opencode" };
+  return {
+    showSessions: true,
+    tabsOnTop: false,
+    fontSize: null,
+    theme: null,
+    agentCommand: "opencode",
+    agentResumeCommand: "opencode --continue",
+  };
 }
 
 export function configFromJSON(json: string): AppConfig {
@@ -35,6 +44,10 @@ export function configFromJSON(json: string): AppConfig {
     theme: typeof r.theme === "string" ? r.theme : base.theme,
     agentCommand:
       typeof r.agentCommand === "string" ? r.agentCommand : base.agentCommand,
+    agentResumeCommand:
+      typeof r.agentResumeCommand === "string"
+        ? r.agentResumeCommand
+        : base.agentResumeCommand,
   };
 }
 

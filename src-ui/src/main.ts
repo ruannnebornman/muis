@@ -164,6 +164,9 @@ let agentReady = false;
 /** Tabs whose agent has already been launched this launch. */
 const agentLaunched = new Set<string>();
 
+/** Tab ids that came back from a saved session (restored on this launch). */
+const restoredTabs = new Set<string>();
+
 /** Probe PATH for the configured agent; hide the AI option when absent. */
 async function refreshAgentReady(): Promise<void> {
   agentReady = false;
@@ -537,7 +540,10 @@ function ensureView(sessionId: string, tab: Tab): TabView {
         // AI tab: after the shell (and any restored scrollback) is up,
         // launch the configured agent once per launch.
         const launchAgent = (): void => {
-          const command = cfg.agentCommand.trim();
+          // Restored tabs resume the agent's last session; new tabs start fresh.
+          const command = (
+            restoredTabs.has(tab.id) ? cfg.agentResumeCommand : cfg.agentCommand
+          ).trim();
           if (!tab.agent || !command || agentLaunched.has(tab.id)) return;
           agentLaunched.add(tab.id);
           window.setTimeout(() => {
@@ -1341,6 +1347,10 @@ const optAgent = document.createElement("input");
 optAgent.type = "text";
 optAgent.placeholder = "opencode";
 optAgent.title = "Command for the New AI tab; empty disables it";
+const optAgentResume = document.createElement("input");
+optAgentResume.type = "text";
+optAgentResume.placeholder = "opencode --continue";
+optAgentResume.title = "Command run when an AI tab is restored";
 
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
@@ -1355,6 +1365,7 @@ settingsBox.append(
   settingsRow("Terminal font size", optFontSize),
   settingsRow("Theme", optTheme),
   settingsRow("AI tab command", optAgent),
+  settingsRow("AI resume command", optAgentResume),
   settingsButtons,
 );
 settingsOverlay.append(settingsBox);
@@ -1365,6 +1376,7 @@ function openSettings(): void {
   optFontSize.value = cfg.fontSize?.toString() ?? "";
   optTheme.value = cfg.theme ?? "default";
   optAgent.value = cfg.agentCommand;
+  optAgentResume.value = cfg.agentResumeCommand;
   settingsOverlay.style.display = "flex";
 }
 
@@ -1380,6 +1392,7 @@ async function applySettings(): Promise<void> {
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
     agentCommand: optAgent.value.trim(),
+    agentResumeCommand: optAgentResume.value.trim(),
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);
@@ -1829,6 +1842,9 @@ async function init(): Promise<void> {
       if (saved) {
         store = SessionStore.fromJSON(saved);
         resumed = true;
+        for (const w of store.workspaces) {
+          for (const t of w.tabs) restoredTabs.add(t.id);
+        }
       }
       reportDebugStage("sessions-loaded", Boolean(saved));
     } catch {
