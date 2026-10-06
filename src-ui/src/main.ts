@@ -300,12 +300,7 @@ winClose.className = "win-btn close";
 winClose.textContent = "✕";
 winClose.title = "Close";
 winControls.append(winMin, winMax, winClose);
-const settingsBtn = document.createElement("div");
-settingsBtn.className = "win-btn settings";
-settingsBtn.textContent = "⚙";
-settingsBtn.title = "Settings (ctrl + ,)";
-settingsBtn.addEventListener("click", () => openSettings());
-tbRight.append(searchBox, settingsBtn, winControls);
+tbRight.append(searchBox, winControls);
 titlebar.append(tbLeft, tbRight);
 
 const mainRow = document.createElement("div");
@@ -966,6 +961,11 @@ function renderTabs(): void {
     ai.addEventListener("click", () => addAgentTab(ws));
     tabbar.append(ai);
   }
+  const gear = el("button", "newtab settings", "⚙");
+  gear.title = "Settings (ctrl + ,)";
+  gear.style.marginLeft = "auto";
+  gear.addEventListener("click", () => openSettings());
+  tabbar.append(gear);
 }
 
 function addShellTab(ws: Workspace): void {
