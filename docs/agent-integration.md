@@ -68,6 +68,11 @@ agent is left exactly as the user ran it.
 
 ## Phase 1 — ACP pane (opencode)
 
+**Implemented** (PR #50): Rust ACP bridge, `AcpClient`, agent tabs with
+persisted `acpSessionId` and `session/load` resume. First slice only —
+streaming text/thoughts/tool lines, permissions, stop; diffs, plan cards,
+and attachments still to come.
+
 - `AI` opens an ACP pane: muis spawns `opencode acp` and renders the
   protocol over JSON-RPC (stdio).
 - Rendering scope (approx): streaming assistant text, reasoning, tool-call
