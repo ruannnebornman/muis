@@ -157,11 +157,12 @@ jobs:
       - run: npm run build
         working-directory: src-ui
       - name: Package dist
-        run: tar -C src-ui/dist -czf ui-dist.tar.gz .
+        # .tgz, not .tar.gz, so the release job's *.tar.gz glob never picks it up.
+        run: tar -C src-ui/dist -czf ui-dist.tgz .
       - uses: actions/upload-artifact@v6
         with:
           name: ui-dist
-          path: ui-dist.tar.gz
+          path: ui-dist.tgz
 
   flatpak:
     name: Flatpak
@@ -178,13 +179,16 @@ jobs:
       - name: Unpack frontend
         run: |
           mkdir -p src-ui/dist
-          tar -xzf ui-dist.tar.gz -C src-ui/dist
+          tar -xzf ui-dist.tgz -C src-ui/dist
           test -f src-ui/dist/index.html
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: muis.flatpak
           manifest-path: packaging/flatpak/org.veldmuislinux.muis.yml
           cache-key: flatpak-builder-${{ github.sha }}
+          # We upload our own versioned bundle; the action's default artifact
+          # would otherwise duplicate muis.flatpak into the release.
+          upload-artifact: false
       - name: Name the bundle
         env:
           VERSION: ${{ needs.version.outputs.version }}
