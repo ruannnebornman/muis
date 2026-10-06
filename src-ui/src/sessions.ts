@@ -10,6 +10,8 @@ export interface Tab {
   cwd: string;
   /** User pinned the title; shell OSC 0/2 must not overwrite it. */
   manual?: boolean;
+  /** AI tab: relaunch the configured agent when the tab starts. */
+  agent?: boolean;
 }
 
 export interface Workspace {
@@ -71,6 +73,43 @@ export class SessionStore {  workspaces: Workspace[] = [];
     if (index >= this.workspaces.length) return false;
     this.current = index;
     return true;
+  }
+
+  /**
+   * Reorder sessions by moving `from` to final index `to`. The same
+   * workspace stays current after the move. Reorder only — never detachable.
+   */
+  moveWorkspace(from: number, to: number): boolean {
+    if (from === to) return false;
+    if (!this.inRange(from, this.workspaces.length) || !this.inRange(to, this.workspaces.length)) {
+      return false;
+    }
+    const [w] = this.workspaces.splice(from, 1);
+    this.workspaces.splice(to, 0, w);
+    if (this.current === from) this.current = to;
+    else if (from < this.current && to >= this.current) this.current--;
+    else if (from > this.current && to <= this.current) this.current++;
+    return true;
+  }
+
+  /**
+   * Reorder the tabs of one workspace. The dragged active tab stays active.
+   */
+  moveTab(wsIndex: number, from: number, to: number): boolean {
+    const ws = this.workspaces[wsIndex];
+    if (!ws) return false;
+    if (from === to) return false;
+    if (!this.inRange(from, ws.tabs.length) || !this.inRange(to, ws.tabs.length)) return false;
+    const [t] = ws.tabs.splice(from, 1);
+    ws.tabs.splice(to, 0, t);
+    if (ws.active === from) ws.active = to;
+    else if (from < ws.active && to >= ws.active) ws.active--;
+    else if (from > ws.active && to <= ws.active) ws.active++;
+    return true;
+  }
+
+  private inRange(i: number, len: number): boolean {
+    return Number.isInteger(i) && i >= 0 && i < len;
   }
 
   currentWorkspace(): Workspace | undefined {

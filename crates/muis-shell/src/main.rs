@@ -11,6 +11,7 @@
 //! window or the other sessions.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 mod bridge;
@@ -180,6 +181,87 @@ fn sys_info() -> SysInfo {
     SysInfo { user, host }
 }
 
+/// Live system-monitor snapshot pushed to the frontend every 2 s.
+#[derive(serde::Serialize, Clone)]
+struct SystemStats {
+    /// Whole-percent total CPU (not per-core).
+    cpu: u8,
+    mem_used: u64,
+    mem_total: u64,
+    /// Whole-percent GPU, or None when no reading is available.
+    gpu: Option<u8>,
+}
+
+/// Sampler pauses while the window is hidden (set by the frontend).
+static STATS_ACTIVE: AtomicBool = AtomicBool::new(true);
+
+/// Whole-percent GPU utilisation, best effort. NVIDIA first, then the
+/// AMD/Intel DRM counter. None when nothing can be read.
+fn gpu_usage() -> Option<u8> {
+    if let Ok(out) = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"])
+        .output()
+    {
+        if out.status.success() {
+            if let Ok(text) = String::from_utf8(out.stdout) {
+                if let Some(v) = text.lines().find_map(|l| l.trim().parse::<u8>().ok()) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
+        for entry in entries.flatten() {
+            let path = entry.path().join("device/gpu_busy_percent");
+            if let Ok(text) = std::fs::read_to_string(path) {
+                if let Ok(v) = text.trim().parse::<u8>() {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+fn system_stats_active(active: bool) {
+    STATS_ACTIVE.store(active, Ordering::Relaxed);
+}
+
+/// Whether `command` resolves to an executable on PATH (or an existing
+/// file path). Decides if the New AI tab option is offered.
+#[tauri::command]
+fn command_available(command: String) -> bool {
+    let command = command.trim();
+    if command.is_empty() {
+        return false;
+    }
+    if command.contains('/') || command.contains('\\') {
+        return Path::new(command).is_file();
+    }
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    let exts: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_string())
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_lowercase())
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    for dir in std::env::split_paths(&path) {
+        for ext in &exts {
+            if dir.join(format!("{command}{ext}")).is_file() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[tauri::command]
 fn worker_spawn(pool: tauri::State<WorkerPool>, session_id: String) -> Result<(), String> {
     pool.spawn_session(&session_id)
@@ -236,6 +318,8 @@ fn main() {
             snapshot_remove,
             git_branch,
             sys_info,
+            system_stats_active,
+            command_available,
             worker_spawn,
             worker_send,
             worker_stop
@@ -267,6 +351,29 @@ fn main() {
             }) {
                 eprintln!("muis: notification endpoint unavailable ({socket}): {e}");
             }
+
+            // System monitor: one sampler for the window, pushing stats
+            // events. The frontend pauses it while the window is hidden.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut sys = sysinfo::System::new();
+                sys.refresh_cpu_usage();
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                loop {
+                    if STATS_ACTIVE.load(Ordering::Relaxed) {
+                        sys.refresh_cpu_usage();
+                        sys.refresh_memory();
+                        let stats = SystemStats {
+                            cpu: sys.global_cpu_usage().round().clamp(0.0, 100.0) as u8,
+                            mem_used: sys.used_memory(),
+                            mem_total: sys.total_memory(),
+                            gpu: gpu_usage(),
+                        };
+                        let _ = handle.emit("system-stats", &stats);
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+            });
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -333,6 +440,20 @@ mod tests {
         let info = sys_info();
         assert!(!info.user.is_empty());
         assert!(!info.host.is_empty());
+    }
+
+    #[test]
+    fn command_available_rejects_missing_and_accepts_paths() {
+        assert!(!command_available("this-command-does-not-exist-9f3a".to_string()));
+        assert!(!command_available("   ".to_string()));
+        let exe = std::env::current_exe().unwrap();
+        assert!(command_available(exe.to_string_lossy().into_owned()));
+    }
+
+    #[test]
+    fn gpu_usage_never_panics() {
+        // Best effort: Some(percent) or None; just must not panic.
+        let _ = gpu_usage();
     }
 
     #[test]

@@ -3,13 +3,30 @@ import { configFromJSON, defaultConfig, effectiveFontSize } from "./config";
 
 describe("AppConfig", () => {
   it("defaults to sessions shown, side tabs, system font", () => {
-    expect(defaultConfig()).toEqual({ showSessions: true, tabsOnTop: false, fontSize: null, theme: null });
+    expect(defaultConfig()).toEqual({
+      showSessions: true,
+      tabsOnTop: false,
+      fontSize: null,
+      theme: null,
+      agentCommand: "opencode",
+    });
     expect(configFromJSON("")).toEqual(defaultConfig());
   });
 
   it("loads what it saves", () => {
-    const cfg = { showSessions: false, tabsOnTop: true, fontSize: 13, theme: "nord" };
+    const cfg = {
+      showSessions: false,
+      tabsOnTop: true,
+      fontSize: 13,
+      theme: "nord",
+      agentCommand: "aider",
+    };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
+  });
+
+  it("reads the AI tab command and falls back on junk", () => {
+    expect(configFromJSON('{"agentCommand":"claude"}').agentCommand).toBe("claude");
+    expect(configFromJSON("").agentCommand).toBe("opencode");
   });
 
   it("ignores corrupt values field by field, never entirely", () => {

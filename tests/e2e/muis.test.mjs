@@ -217,7 +217,7 @@ describe("muis chrome", () => {
   });
 
   it("keeps one terminal visible while switching sessions and tabs", async () => {
-    await driver.findElement(By.css(".side-footer .btn.primary")).click();
+    await driver.findElement(By.css(".side-footer .btn")).click();
     await driver.wait(until.alertIsPresent(), 5000);
     const nameDialog = await driver.switchTo().alert();
     await nameDialog.sendKeys("e2e-second");
@@ -310,7 +310,7 @@ describe("muis chrome", () => {
     await shot("14-no-sessions");
 
     // The empty state recovers: "+ session" mints a fresh session + tab.
-    await driver.findElement(By.css(".side-footer .btn.primary")).click();
+    await driver.findElement(By.css(".side-footer .btn")).click();
     await driver.wait(until.alertIsPresent(), 5000);
     const nameDialog = await driver.switchTo().alert();
     await nameDialog.sendKeys("e2e-fresh");
