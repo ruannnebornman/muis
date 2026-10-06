@@ -31,25 +31,28 @@ session; check each once it is merged/released.
   right-click close for a tab and a session, busy confirmation, and that
   a background session's worker is stopped.
 
-### Decided — answers recorded, ready to build
+### Implemented — PR #46 (test when it lands in the client)
 
-- **System monitor (CPU / RAM / GPU)** — total CPU %, whole percent, GPU
-  pill hidden when unreadable, Rust background task emits events. See the
-  section below.
-- **Kill the session when its last tab exits** — remove the session
-  immediately when its last tab's process exits (no grace period), same
-  as the user-close case.
-- **Version in the status bar** — authority is `tauri.conf.json`; align
-  `crates/muis-shell/Cargo.toml` and `src-ui/package.json` to it.
-- **Split new-tab (shell vs AI)** — one configured agent; hide the AI
-  option when it is not on PATH; on restart restore scrollback and
-  relaunch the agent. See the section below.
-- **Less blue `＋ session` button** — neutral button, accent only on
-  hover. See the section below.
-- **Reorder bottom-left items** — statusbar left group, fixed order
-  `cwd → git → session·tab → user`. See the section below.
-- **Drag-and-drop reorder** — drop between items (insertion line); the
-  dragged active item stays active. See the section below.
+Branch `feature/decided-ux`. Also not yet exercised in a real client.
+
+- **System monitor (CPU / RAM / GPU)** — total CPU %, whole percent;
+  GPU pill hidden when unreadable; Rust sampler pushes events and pauses
+  while the window is hidden. Test: values track reality; GPU pill
+  appears only when a reading exists.
+- **Kill the session when its last tab exits** — done, immediate (no
+  grace). Test: `exit` in a session's only tab removes the session.
+- **Version in the status bar** — done (`v1.1.2` from the Tauri bundle
+  version). Crate/package dev versions are left alone: releases bump only
+  `tauri.conf.json`, so aligning them would drift again each release.
+- **Split new-tab (shell vs AI)** — done: `+` shell, `AI` agent tab,
+  hidden unless the agent is on PATH; restores scrollback then relaunches
+  the agent. Test: option hidden without the agent; agent launches on a
+  new and a restored AI tab.
+- **Less blue `＋ session` button** — done (neutral, accent on hover).
+- **Reorder bottom-left items** — done, fixed order
+  `cwd → git → session·tab → user`.
+- **Drag-and-drop reorder** — done: drop between items; dragged active
+  item stays active. Test: reorder tabs and sessions, active follows.
 
 ### Cannot be verified here
 
@@ -116,16 +119,15 @@ Show the muis version at the bottom right (with the clock / system-info
 group, `src-ui/src/main.ts:795-847`). Nothing currently surfaces the
 version.
 
-- Source of truth should be the Tauri bundle version
-  (`crates/muis-shell/tauri.conf.json`, currently `1.1.2`); read it in the
-  UI via `@tauri-apps/api/app` `getVersion()`, or add a small shell
-  command returning it.
-- Note the versions currently drift: `tauri.conf.json` `1.1.2`,
-  `crates/muis-shell/Cargo.toml` `0.1.0`, `src-ui/package.json` `1.0.0`.
-  Pick one authority and align the others, or the displayed version will
-  disagree with the release artifact.
-- Format suggestion: `v1.1.2` as a dim pill, tooltip showing more
-  (commit/build date) if available.
+Implemented (PR #46): the statusbar shows `v<version>` read from the Tauri
+bundle version via `@tauri-apps/api/app` `getVersion()` (needs
+`core:app:allow-version`).
+
+- `crates/muis-shell/tauri.conf.json` is the single version authority;
+  releases bump only that file.
+- The dev versions (`crates/muis-shell/Cargo.toml` `0.1.0`,
+  `src-ui/package.json` `1.0.0`) are intentionally left alone — aligning
+  them would just drift again at the next release.
 
 ### Split "new tab" button: shell vs AI
 
