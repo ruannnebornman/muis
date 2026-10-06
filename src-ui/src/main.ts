@@ -21,6 +21,8 @@ import { resolveShortcut } from "./shortcuts";
 import { DoneTracker } from "./done";
 import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
+import { clockText } from "./clock";
+import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
 import "./style.css";
@@ -233,7 +235,10 @@ tbLeft.className = "tb-left";
 if (IN_TAURI) tbLeft.setAttribute("data-tauri-drag-region", "");
 const appIcon = document.createElement("div");
 appIcon.className = "app-icon";
-appIcon.textContent = "❯_";
+const appIconImg = document.createElement("img");
+appIconImg.src = muisIcon;
+appIconImg.alt = "";
+appIcon.append(appIconImg);
 const appTitle = document.createElement("div");
 appTitle.className = "app-title";
 appTitle.textContent = "muis";
@@ -611,6 +616,31 @@ function closeTab(sessionId: string, tabId: string): void {
   renderAll();
 }
 
+function closeSession(w: Workspace): void {
+  const busy = w.tabs.some((t) => isTabBusy(activity, t.id, Date.now()));
+  if (busy && !window.confirm(`Close session "${w.name}"? A process is still running.`)) return;
+  for (const t of w.tabs) {
+    // Background sessions have no view yet; still tear down their pty.
+    if (IN_TAURI) {
+      void client.kill(w.id, t.id).catch(() => {});
+      void invoke("snapshot_remove", { tabId: t.id }).catch(() => {});
+    }
+    const view = views.get(t.id);
+    if (view) {
+      view.term.dispose();
+      view.box.remove();
+      views.delete(t.id);
+    }
+    oscParsers.delete(t.id);
+    forgetTab(activity, t.id);
+    forgetTabState(t.id);
+  }
+  if (IN_TAURI) void client.stopSession(w.id).catch(() => {});
+  const idx = store.workspaces.findIndex((x) => x.id === w.id);
+  if (idx >= 0) store.removeWorkspace(idx);
+  renderAll();
+}
+
 /* ---------------- chrome render ---------------- */
 
 function el(tag: string, cls: string, text?: string): HTMLElement {
@@ -660,16 +690,40 @@ function renderSessions(): void {
   const addBtn = el("button", "btn primary", "＋ session");
   addBtn.style.flex = "1";
   addBtn.addEventListener("click", () => {
-    const name = window.prompt("Session name:", `session-${store.workspaces.length + 1}`);
-    if (!name) return;
-    const dirRaw = window.prompt("Session directory:", store.currentWorkspace()?.dir ?? "~") ?? "~";
-    const dir = expandHome(dirRaw, homeDir);
-    const idx = store.addWorkspace(name, dir);
-    store.switch(idx);
-    renderAll();
+    void addSession();
   });
   footer.append(addBtn);
   sidebar.append(footer);
+}
+
+/**
+ * Directory chooser for a new session. Inside Tauri this opens the native
+ * folder picker; the browser preview keeps the typed-path prompt so the
+ * Selenium suite and plain `vite dev` still work.
+ */
+async function pickDirectory(start: string): Promise<string | null> {
+  const typed = (): string | null => window.prompt("Session directory:", start);
+  if (!IN_TAURI) return typed();
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ directory: true, multiple: false, defaultPath: start });
+    if (typeof picked === "string") return picked;
+    if (Array.isArray(picked) && typeof picked[0] === "string") return picked[0];
+    return null;
+  } catch {
+    return typed();
+  }
+}
+
+async function addSession(): Promise<void> {
+  const name = window.prompt("Session name:", `session-${store.workspaces.length + 1}`);
+  if (!name) return;
+  const dirRaw = await pickDirectory(store.currentWorkspace()?.dir ?? "~");
+  if (dirRaw === null) return;
+  const dir = expandHome(dirRaw, homeDir);
+  const idx = store.addWorkspace(name, dir);
+  store.switch(idx);
+  renderAll();
 }
 
 /** Stable per-session glyph (mock shows an icon per session). */
@@ -852,11 +906,7 @@ function renderStatusbar(): void {
 
 function tickClock(): void {
   const f = () => {
-    stClock.textContent = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
+    stClock.textContent = clockText(new Date());
   };
   f();
   setInterval(f, 1000);
@@ -1455,7 +1505,12 @@ document.addEventListener("contextmenu", (e) => {
   if (sEl) {
     e.preventDefault();
     const w = store.workspaces[Number(sEl.dataset.i)];
-    if (w) openCtx(e.clientX, e.clientY, [{ label: "Rename session", fn: () => renameSession(w) }]);
+    if (w) {
+      openCtx(e.clientX, e.clientY, [
+        { label: "Rename session", fn: () => renameSession(w) },
+        { label: "Close session", fn: () => closeSession(w) },
+      ]);
+    }
   } else if (tEl) {
     e.preventDefault();
     const ws = store.currentWorkspace();
@@ -1467,6 +1522,7 @@ document.addEventListener("contextmenu", (e) => {
           label: tab.manual ? "Use automatic title" : "Freeze current title",
           fn: () => toggleFreezeTitle(ws, tab),
         },
+        { label: "Close tab", fn: () => closeTab(ws.id, tab.id) },
       ]);
     }
   } else {

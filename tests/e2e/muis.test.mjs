@@ -327,4 +327,35 @@ describe("muis chrome", () => {
     await assertOneVisibleTerminal();
     await shot("15-empty-state-recovers");
   });
+
+  it("closes tabs and sessions from the context menu", async () => {
+    await driver.findElement(By.css("#tabbar .newtab")).click();
+    await driver.wait(async () => (await tabs()).length === 2, 5000);
+
+    await driver.actions().contextClick((await tabs())[1]).perform();
+    const closeTab = await driver.wait(
+      until.elementLocated(
+        By.xpath("//div[contains(@class,'ctx-item')][.//span[text()='Close tab']]"),
+      ),
+      3000,
+    );
+    await closeTab.click();
+    await driver.wait(async () => (await tabs()).length === 1, 5000);
+    await shot("16-ctx-close-tab");
+
+    await driver.actions().contextClick(await driver.findElement(By.css(".session"))).perform();
+    const closeSession = await driver.wait(
+      until.elementLocated(
+        By.xpath("//div[contains(@class,'ctx-item')][.//span[text()='Close session']]"),
+      ),
+      3000,
+    );
+    await closeSession.click();
+    await driver.wait(
+      async () => (await driver.findElements(By.css(".session"))).length === 0,
+      5000,
+    );
+    assert.equal((await tabs()).length, 0);
+    await shot("17-ctx-close-session");
+  });
 });
