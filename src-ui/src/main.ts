@@ -795,6 +795,23 @@ tabbar.className = "tabbar";
 tabbar.id = "tabbar";
 const termWrap = document.createElement("div");
 termWrap.className = "term-wrap";
+
+// Detect-and-offer chip: shown when a known agent is run in a shell tab,
+// offering to open it in the AI panel instead (Phase 2).
+const agentOffer = document.createElement("div");
+agentOffer.className = "agent-offer";
+agentOffer.style.display = "none";
+const agentOfferText = document.createElement("span");
+agentOfferText.className = "agent-offer-text";
+const agentOfferOpen = document.createElement("button");
+agentOfferOpen.className = "btn";
+agentOfferOpen.textContent = "Open AI tab";
+const agentOfferDismiss = document.createElement("button");
+agentOfferDismiss.className = "btn";
+agentOfferDismiss.textContent = "Not now";
+agentOffer.append(agentOfferText, agentOfferOpen, agentOfferDismiss);
+termWrap.append(agentOffer);
+
 const statusbar = document.createElement("div");
 statusbar.className = "statusbar";
 center.append(tabbar, termWrap, statusbar);
@@ -2013,6 +2030,35 @@ function markAgentTab(tabId: string): void {
   tab.agentResume = resume;
   scheduleSave();
   renderTabs();
+  showAgentOffer(tabId, resume.split(" ")[0]);
+}
+
+/** Tabs already offered the "open in AI panel" chip. */
+const agentOffered = new Set<string>();
+
+/**
+ * Offer to open a detected agent in the AI panel instead of the terminal.
+ * Post-exec (we can't intercept before the shell runs it), so this opens a
+ * new ACP tab rather than converting the running one; dismiss once per tab.
+ */
+function showAgentOffer(tabId: string, agentName: string): void {
+  if (agentOffered.has(tabId) || !agentReady) return;
+  agentOffered.add(tabId);
+  const tab = findTab(tabId);
+  if (!tab) return;
+  agentOfferText.textContent = `${agentName} detected — open in the AI panel?`;
+  agentOffer.style.display = "";
+  agentOfferOpen.onclick = () => {
+    agentOffer.style.display = "none";
+    const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === tabId));
+    if (ws) {
+      store.current = store.workspaces.indexOf(ws);
+      addAgentTab(ws);
+    }
+  };
+  agentOfferDismiss.onclick = () => {
+    agentOffer.style.display = "none";
+  };
 }
 
 function finishCommand(tabId: string, exit: number | null): void {
