@@ -12,6 +12,8 @@ export interface Tab {
   manual?: boolean;
   /** AI tab: relaunch the configured agent when the tab starts. */
   agent?: boolean;
+  /** Resume command for an auto-detected agent tab (overrides config). */
+  agentResume?: string;
   /** "terminal" (pty, default) or "agent" (ACP pane). */
   kind?: "terminal" | "agent";
   /** ACP session id, persisted so an agent tab resumes its session. */

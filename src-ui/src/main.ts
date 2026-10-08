@@ -24,6 +24,7 @@ import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
 import { AcpClient, diffLines, type PermissionRequest } from "./acp";
+import { agentResumeForCommand } from "./agents";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
@@ -915,7 +916,9 @@ function ensureView(sessionId: string, tab: Tab): TabView {
         // AI tab: after the shell (and any restored scrollback) is up,
         // launch the configured agent once per launch.
         const launchAgent = (): void => {
-          const command = cfg.agentCommand.trim();
+          // A tab auto-marked from a typed agent keeps that agent's own
+          // resume command; otherwise use the configured command.
+          const command = (tab.agentResume ?? cfg.agentCommand).trim();
           if (!tab.agent || !command || agentLaunched.has(tab.id)) return;
           agentLaunched.add(tab.id);
           window.setTimeout(() => {
@@ -985,6 +988,7 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
       const cmd = ev.cmd || st.input.trim() || currentInputLine(tabNow.id);
       commandTracker.onCmdStart(tabNow.id, cmd);
       renderCommandHead(tabNow.id);
+      markAgentTab(tabNow.id);
     } else if (ev.type === "cmd-end") {
       finishCommand(tabNow.id, ev.exit);
     } else if (ev.type === "notify") {
@@ -1884,7 +1888,24 @@ function trackInput(tabId: string, data: string): void {
   if (commandTracker.onInput(tabId, data)) {
     renderCommandHead(tabId);
     armIdleFallback(tabId);
+    markAgentTab(tabId);
   }
+}
+
+/**
+ * If the command a tab just ran is a known TUI coding agent, remember the
+ * tab as an agent tab so it reopens the agent on restore. muis has no
+ * manual way to mark a tab, so this is inferred from what actually ran.
+ */
+function markAgentTab(tabId: string): void {
+  const resume = agentResumeForCommand(commandTracker.state(tabId).lastCmd);
+  if (!resume) return;
+  const tab = findTab(tabId);
+  if (!tab || tab.kind === "agent" || tab.agent) return;
+  tab.agent = true;
+  tab.agentResume = resume;
+  scheduleSave();
+  renderTabs();
 }
 
 function finishCommand(tabId: string, exit: number | null): void {
