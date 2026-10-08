@@ -221,6 +221,8 @@ interface TabView {
   fit: FitAddon;
   search: SearchAddon;
   box: HTMLElement;
+  /** Refits when the surface resizes (layout settling, window, sidebar). */
+  ro?: ResizeObserver;
 }
 
 const views = new Map<string, TabView>();
@@ -549,6 +551,13 @@ function ensureView(sessionId: string, tab: Tab): TabView {
         } else {
           launchAgent();
         }
+        // The pty exists now. The fit that ran when the tab was created may
+        // have raced the spawn and been dropped by the worker, leaving the
+        // pty at the default size; size it to the real surface here too.
+        const spawned = views.get(tab.id);
+        if (spawned && spawned.box.classList.contains("active")) {
+          fitShown(sessionId, tab, spawned);
+        }
       } catch (e) {
         term.writeln(`\r\n[failed to spawn pty: ${String(e)}]`);
       }
@@ -570,6 +579,21 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   view = { term, fit, search, box };
   views.set(tab.id, view);
   renderCommandHead(tab.id);
+
+  // Refit whenever the surface actually changes size. This catches the
+  // hidden->shown transition (xterm measures 0 while display:none, so the
+  // first fit can be stale) and window/sidebar resizes, which a single
+  // one-shot fit misses — the cause of an agent TUI rendering at the wrong
+  // size and not filling the pane.
+  const self = view;
+  view.ro = new ResizeObserver(() => {
+    if (!self.box.classList.contains("active")) return;
+    requestAnimationFrame(() => {
+      if (self.box.classList.contains("active")) fitShown(sessionId, tab, self);
+    });
+  });
+  view.ro.observe(surface);
+
   return view;
 }
 
@@ -635,7 +659,7 @@ function closeTab(sessionId: string, tabId: string): void {
       void client.kill(sessionId, tabId).catch(() => {});
       void invoke("snapshot_remove", { tabId }).catch(() => {});
     }
-    view.term.dispose();
+    view.ro?.disconnect(); view.term.dispose();
     view.box.remove();
     views.delete(tabId);
     oscParsers.delete(tabId);
@@ -662,7 +686,7 @@ function closeSession(w: Workspace): void {
     }
     const view = views.get(t.id);
     if (view) {
-      view.term.dispose();
+      view.ro?.disconnect(); view.term.dispose();
       view.box.remove();
       views.delete(t.id);
     }
@@ -693,7 +717,7 @@ function dropSessionIfLastTab(sessionId: string, tabId: string): void {
   }
   const view = views.get(tabId);
   if (view) {
-    view.term.dispose();
+    view.ro?.disconnect(); view.term.dispose();
     view.box.remove();
     views.delete(tabId);
   }
@@ -1002,7 +1026,7 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
 function renderTerms(ws: Workspace | undefined): void {
   for (const [id, view] of views) {
     if (!store.workspaces.some((w) => w.tabs.some((t) => t.id === id))) {
-      view.term.dispose();
+      view.ro?.disconnect(); view.term.dispose();
       view.box.remove();
       views.delete(id);
       oscParsers.delete(id);
