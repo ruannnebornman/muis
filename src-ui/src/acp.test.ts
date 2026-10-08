@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { AcpClient, type PermissionRequest } from "./acp";
+import { AcpClient, diffLines, type PermissionRequest } from "./acp";
 
 /** Fake transport: records lines the client writes, lets the test inject. */
 function harness() {
@@ -20,6 +20,18 @@ function harness() {
   const last = () => out[out.length - 1];
   return { client, out, updates, permissions, errors, session: () => session, last };
 }
+
+describe("diffLines", () => {
+  it("marks added lines with +", () => {
+    expect(diffLines("", "a\nb")).toBe("+ a\n+ b");
+  });
+  it("marks removed lines with -", () => {
+    expect(diffLines("a", "")).toBe("- a");
+  });
+  it("shows old then new", () => {
+    expect(diffLines("x", "y")).toBe("- x\n+ y");
+  });
+});
 
 describe("AcpClient", () => {
   it("initializes with protocol version and minimal capabilities", async () => {

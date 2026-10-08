@@ -161,6 +161,16 @@ body{
 .agent-field{flex:1; min-width:0; background:var(--bg0); border:1px solid var(--border-dark); border-radius:6px; color:var(--fg); padding:8px 10px; font:13px var(--uifont)}
 .agent-field:disabled{opacity:.6}
 .a-status{color:var(--dim); font-size:11px; white-space:nowrap}
+.a-toolcard{border:1px solid var(--border-dark); border-radius:8px; background:#1c2023; overflow:hidden; max-width:90%}
+.a-tool-head{display:flex; align-items:center; gap:8px; padding:6px 10px; background:#202427; font-size:12px}
+.a-tool-title{font-weight:600; color:var(--fg); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.a-tool-badge{font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.04em}
+.a-tool-badge[data-status="completed"]{color:#7fd18a}
+.a-tool-badge[data-status="in_progress"]{color:#e0c060}
+.a-tool-body{padding:6px 10px; display:flex; flex-direction:column; gap:6px}
+.a-tool-path{font-size:11px; color:#9fd0ff; font-family:monospace; word-break:break-all}
+.a-diff{margin:0; padding:6px 8px; background:var(--bg0); border-radius:6px; font:12px/1.45 monospace; white-space:pre-wrap; word-break:break-word; max-height:260px; overflow:auto}
+.a-tool-out{font-size:12px; color:var(--dim); white-space:pre-wrap}
 /* settings dialog + side panel slot, same tokens */
 .settings-overlay{position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55)}
 .settings-box{background:var(--bg3); color:var(--fg); border:1px solid var(--border-dark); border-radius:var(--radius); padding:16px 20px; min-width:300px; font-family:var(--uifont); font-size:12.5px}

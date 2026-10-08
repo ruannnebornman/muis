@@ -23,7 +23,7 @@ import { DoneTracker } from "./done";
 import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
-import { AcpClient, type PermissionRequest } from "./acp";
+import { AcpClient, diffLines, type PermissionRequest } from "./acp";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
@@ -244,6 +244,18 @@ interface AgentView {
   ready: boolean;
   /** Streaming nodes keyed by message/tool id. */
   nodes: Map<string, HTMLElement>;
+  /** Tool-call cards keyed by toolCallId, with merged fields across updates. */
+  tools: Map<
+    string,
+    {
+      card: HTMLElement;
+      title: HTMLElement;
+      badge: HTMLElement;
+      body: HTMLElement;
+      raw: { oldString?: string; newString?: string; content?: string };
+      paths: string[];
+    }
+  >;
 }
 
 const agentViews = new Map<string, AgentView>();
@@ -268,18 +280,97 @@ function appendAgentNode(v: AgentView, cls: string, text: string): HTMLElement {
   return d;
 }
 
+function contentText(c: unknown): string {
+  const content = c as { type?: string; text?: string } | undefined;
+  return content?.type === "text" ? content.text ?? "" : "";
+}
+
+function renderToolCard(v: AgentView, u: Record<string, unknown>): void {
+  const id = String(u.toolCallId ?? "tool");
+  let node = v.tools.get(id);
+  if (!node) {
+    const card = document.createElement("div");
+    card.className = "a-toolcard";
+    const head = document.createElement("div");
+    head.className = "a-tool-head";
+    const title = document.createElement("span");
+    title.className = "a-tool-title";
+    const badge = document.createElement("span");
+    badge.className = "a-tool-badge";
+    head.append(title, badge);
+    const body = document.createElement("div");
+    body.className = "a-tool-body";
+    card.append(head, body);
+    node = { card, title, badge, body, raw: {}, paths: [] };
+    v.tools.set(id, node);
+    v.log.append(card);
+  }
+  node.title.textContent = String(u.title ?? u.kind ?? "tool");
+  const status = String(u.status ?? "");
+  node.badge.textContent = status;
+  node.badge.dataset.status = status;
+
+  // opencode's final update omits rawInput/locations, so merge everything
+  // ever seen for this tool and render from the merged state.
+  const raw = (u.rawInput ?? {}) as { oldString?: unknown; newString?: unknown; content?: unknown };
+  if (typeof raw.oldString === "string") node.raw.oldString = raw.oldString;
+  if (typeof raw.newString === "string") node.raw.newString = raw.newString;
+  if (typeof raw.content === "string") node.raw.content = raw.content;
+  const locs = Array.isArray(u.locations) ? (u.locations as { path?: string }[]) : [];
+  const paths = locs.map((l) => l?.path).filter((p): p is string => Boolean(p));
+  if (paths.length) node.paths = paths;
+
+  node.body.textContent = "";
+  if (node.paths.length) {
+    const p = document.createElement("div");
+    p.className = "a-tool-path";
+    p.textContent = node.paths.join(", ");
+    node.body.append(p);
+  }
+  if (node.raw.oldString !== undefined || node.raw.newString !== undefined) {
+    const pre = document.createElement("pre");
+    pre.className = "a-diff";
+    pre.textContent = diffLines(node.raw.oldString ?? "", node.raw.newString ?? "");
+    node.body.append(pre);
+  } else if (node.raw.content !== undefined) {
+    const pre = document.createElement("pre");
+    pre.className = "a-diff";
+    pre.textContent = diffLines("", node.raw.content);
+    node.body.append(pre);
+  }
+  const content = Array.isArray(u.content) ? u.content : [];
+  for (const c of content) {
+    const t = contentText((c as { content?: unknown })?.content);
+    if (t) {
+      const d = document.createElement("div");
+      d.className = "a-tool-out";
+      d.textContent = t;
+      node.body.append(d);
+    }
+  }
+  v.log.scrollTop = v.log.scrollHeight;
+}
+
 function renderAgentUpdate(v: AgentView, u: Record<string, unknown>): void {
   const kind = String(u.sessionUpdate ?? "");
-  const textOf = (c: unknown): string => {
-    const content = c as { type?: string; text?: string } | undefined;
-    return content?.type === "text" ? content.text ?? "" : "";
-  };
+  const textOf = contentText;
   switch (kind) {
     case "agent_message_chunk": {
       const id = String(u.messageId ?? "msg");
       let node = v.nodes.get(id);
       if (!node) {
         node = appendAgentNode(v, "a-msg agent", "");
+        v.nodes.set(id, node);
+      }
+      node.textContent += textOf(u.content);
+      v.log.scrollTop = v.log.scrollHeight;
+      break;
+    }
+    case "user_message_chunk": {
+      const id = String(u.messageId ?? "user");
+      let node = v.nodes.get(id);
+      if (!node) {
+        node = appendAgentNode(v, "a-msg user", "");
         v.nodes.set(id, node);
       }
       node.textContent += textOf(u.content);
@@ -298,16 +389,9 @@ function renderAgentUpdate(v: AgentView, u: Record<string, unknown>): void {
       break;
     }
     case "tool_call":
-    case "tool_call_update": {
-      const title = String(u.title ?? u.kind ?? "tool");
-      const status = String(u.status ?? "");
-      const id = String(u.toolCallId ?? title);
-      const line = `⚙ ${title}${status ? ` · ${status}` : ""}`;
-      const node = v.nodes.get(id);
-      if (!node) v.nodes.set(id, appendAgentNode(v, "a-tool", line));
-      else node.textContent = line;
+    case "tool_call_update":
+      renderToolCard(v, u);
       break;
-    }
     case "usage_update": {
       const used = Number(u.used ?? 0);
       const size = Number(u.size ?? 0);
@@ -413,6 +497,7 @@ function ensureAgentView(tab: Tab): AgentView {
     running: false,
     ready: false,
     nodes: new Map(),
+    tools: new Map(),
   };
   agentViews.set(tab.id, v);
 

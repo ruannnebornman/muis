@@ -35,6 +35,14 @@ interface Pending {
   reject: (reason: unknown) => void;
 }
 
+/** Simple `-`/`+` diff text for a tool-call card. */
+export function diffLines(oldText: string, newText: string): string {
+  const out: string[] = [];
+  if (oldText) for (const line of oldText.split("\n")) out.push(`- ${line}`);
+  if (newText) for (const line of newText.split("\n")) out.push(`+ ${line}`);
+  return out.join("\n");
+}
+
 type Json = Record<string, unknown>;
 
 export class AcpClient {
