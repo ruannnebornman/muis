@@ -66,8 +66,18 @@ pub fn agent_spawn(
     let mut args: Vec<String> = parts.map(|s| s.to_string()).collect();
     args.push("acp".to_string());
 
-    let mut child = Command::new(program)
-        .args(&args)
+    // Run the agent at a lower priority so a burst of agent startups does
+    // not starve the rest of the machine. Unix only; skipped elsewhere.
+    let mut cmd = if cfg!(unix) {
+        let mut c = Command::new("nice");
+        c.arg("-n").arg("10").arg(program).args(&args);
+        c
+    } else {
+        let mut c = Command::new(program);
+        c.args(&args);
+        c
+    };
+    let mut child = cmd
         .current_dir(&cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

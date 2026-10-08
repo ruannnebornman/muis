@@ -14,6 +14,8 @@ export interface Tab {
   agent?: boolean;
   /** Resume command for an auto-detected agent tab (overrides config). */
   agentResume?: string;
+  /** Exact agent session id reported by a hook/plugin (opencode). */
+  agentSession?: string;
   /** "terminal" (pty, default) or "agent" (ACP pane). */
   kind?: "terminal" | "agent";
   /** ACP session id, persisted so an agent tab resumes its session. */

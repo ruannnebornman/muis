@@ -264,6 +264,28 @@ fn command_available(command: String) -> bool {
     false
 }
 
+/// Directory opencode loads global plugins from.
+fn opencode_plugins_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+    Some(base.join("opencode").join("plugins"))
+}
+
+/// Install the muis opencode plugin that reports the session id back to
+/// the tab. Idempotent: never overwrites an existing file. Returns the path.
+#[tauri::command]
+fn install_opencode_plugin() -> Result<String, String> {
+    let dir = opencode_plugins_dir().ok_or("no config directory")?;
+    let path = dir.join("muis.mjs");
+    if !path.exists() {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::write(&path, include_str!("../opencode-plugin/muis.mjs"))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(path.display().to_string())
+}
+
 #[tauri::command]
 fn worker_spawn(pool: tauri::State<WorkerPool>, session_id: String) -> Result<(), String> {
     pool.spawn_session(&session_id)
@@ -322,6 +344,7 @@ fn main() {
             sys_info,
             system_stats_active,
             command_available,
+            install_opencode_plugin,
             worker_spawn,
             worker_send,
             worker_stop,

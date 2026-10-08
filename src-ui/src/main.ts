@@ -521,6 +521,7 @@ async function startAgent(v: AgentView, tab: Tab): Promise<void> {
     appendAgentNode(v, "a-sys", "ACP panes need the desktop app");
     return;
   }
+  appendAgentNode(v, "a-sys", "starting agent…");
   try {
     const command = cfg.agentCommand.trim() || "opencode";
     const id = await invoke<string>("agent_spawn", { cwd: tab.cwd, command });
@@ -587,26 +588,102 @@ function disposeAgentView(v: AgentView): void {
   agentViews.delete(v.tabId);
 }
 
+/* ---------------- staggered agent restore ---------------- */
+
+interface LoadEntry {
+  ws: Workspace;
+  tab: Tab;
+}
+
+const loadQueue: LoadEntry[] = [];
+let loadActive = 0;
+/** Loads in flight at once: scales with cores (4->2, 6->3, 8->4), capped at 4. */
+const loadConcurrency = Math.max(
+  1,
+  Math.min(4, Math.floor((navigator.hardwareConcurrency || 4) / 2)),
+);
+const LOAD_STAGGER_MS = 300;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => window.setTimeout(r, ms));
+}
+
+function isAgentTab(t: Tab): boolean {
+  return t.kind === "agent" || t.agent === true;
+}
+
+function isAgentStarted(t: Tab): boolean {
+  if (t.kind === "agent") return agentViews.get(t.id)?.started ?? false;
+  return views.has(t.id); // legacy terminal agent tab: pty spawned
+}
+
+/** Restored agent tabs in load order: visible, current session, then rest. */
+function agentTabsInLoadOrder(): LoadEntry[] {
+  const out: LoadEntry[] = [];
+  const push = (ws: Workspace, t: Tab): void => {
+    if (isAgentTab(t) && !isAgentStarted(t)) out.push({ ws, tab: t });
+  };
+  const ws = store.currentWorkspace();
+  if (ws) {
+    const active = ws.tabs[ws.active];
+    if (active) push(ws, active);
+    for (const t of ws.tabs) if (t !== active) push(ws, t);
+  }
+  for (const w of store.workspaces) {
+    if (w === ws) continue;
+    for (const t of w.tabs) push(w, t);
+  }
+  return out;
+}
+
+function updateLoadingHint(): void {
+  const n = loadQueue.length + loadActive;
+  stLoad.style.display = n > 0 ? "" : "none";
+  stLoad.textContent = n > 0 ? `loading ${n}` : "";
+}
+
+async function loadAgent(entry: LoadEntry): Promise<void> {
+  const { ws, tab } = entry;
+  if (tab.kind === "agent") {
+    const v = ensureAgentView(tab);
+    if (v.started) return;
+    v.started = true;
+    await startAgent(v, tab);
+  } else {
+    if (views.has(tab.id)) return; // already spawned (current session)
+    ensureView(ws.id, tab);
+    // The TUI has no completion event; allow the spawn + resume write.
+    await delay(900);
+  }
+}
+
+function pumpLoadQueue(): void {
+  if (loadActive >= loadConcurrency || loadQueue.length === 0) {
+    updateLoadingHint();
+    return;
+  }
+  const entry = loadQueue.shift()!;
+  loadActive++;
+  updateLoadingHint();
+  void loadAgent(entry)
+    .catch(() => {})
+    .finally(() => {
+      loadActive--;
+      updateLoadingHint();
+      pumpLoadQueue();
+    });
+  // Stagger the next start so a full window does not boot in one tick.
+  window.setTimeout(pumpLoadQueue, LOAD_STAGGER_MS);
+}
+
 /**
- * On launch, bring every agent tab back up across all sessions: ACP tabs
- * via the ACP bridge, and legacy terminal agent tabs by spawning their
- * pty (which runs the resume command). Plain terminal tabs are left as
- * shells — muis never re-runs a command the user typed by hand.
+ * Bring every agent tab back up, a few at a time, so a burst of agent
+ * startups does not spike the CPU. Plain terminal tabs are left as shells
+ * — muis never re-runs a command the user typed by hand.
  */
 function startRestoredAgents(): void {
-  for (const w of store.workspaces) {
-    for (const t of w.tabs) {
-      if (t.kind === "agent") {
-        const v = ensureAgentView(t);
-        if (!v.started) {
-          v.started = true;
-          void startAgent(v, t);
-        }
-      } else if (t.agent) {
-        ensureView(w.id, t);
-      }
-    }
-  }
+  loadQueue.push(...agentTabsInLoadOrder());
+  pumpLoadQueue();
 }
 
 /** Scrollback search follows the visible tab. */
@@ -916,9 +993,13 @@ function ensureView(sessionId: string, tab: Tab): TabView {
         // AI tab: after the shell (and any restored scrollback) is up,
         // launch the configured agent once per launch.
         const launchAgent = (): void => {
-          // A tab auto-marked from a typed agent keeps that agent's own
-          // resume command; otherwise use the configured command.
-          const command = (tab.agentResume ?? cfg.agentCommand).trim();
+          // Exact session id (reported by a plugin) beats an inferred
+          // resume command, which beats the configured default.
+          const command = (
+            tab.agentSession
+              ? `opencode -s ${tab.agentSession}`
+              : tab.agentResume ?? cfg.agentCommand
+          ).trim();
           if (!tab.agent || !command || agentLaunched.has(tab.id)) return;
           agentLaunched.add(tab.id);
           window.setTimeout(() => {
@@ -1411,9 +1492,9 @@ function renderTerms(ws: Workspace | undefined): void {
     if (t.kind === "agent") {
       const v = ensureAgentView(t);
       v.box.classList.toggle("active", show);
-      // Start every agent tab in the current session once, so switching
-      // tabs does not need a fresh spawn.
-      if (!v.started) {
+      // The visible tab starts immediately (bypasses the load queue); the
+      // rest are brought up by startRestoredAgents() a few at a time.
+      if (show && !v.started) {
         v.started = true;
         void startAgent(v, t);
       }
@@ -1434,6 +1515,8 @@ const stUser = el("span", "pill", "");
 const stCpu = el("span", "pill", "");
 const stRam = el("span", "pill", "");
 const stGpu = el("span", "pill", "");
+const stLoad = el("span", "pill", "");
+stLoad.style.display = "none";
 const stVersion = el("span", "pill", "");
 const stClock = el("span", "", "");
 const stShell = el("span", "pill", "");
@@ -1447,6 +1530,7 @@ statusbar.append(
   stCpu,
   stRam,
   stGpu,
+  stLoad,
   stVersion,
   stClock,
   stShell,
@@ -1985,6 +2069,16 @@ function handleNotifyRequest(req: CliNotify): void {
   const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === req.tab_id));
   const tab = ws?.tabs.find((t) => t.id === req.tab_id);
   if (!tab) return;
+  // An agent hook/plugin reported its session id: remember it so the tab
+  // resumes that exact session instead of "last in this folder".
+  if (req.agent_session) {
+    if (tab.agentSession !== req.agent_session) {
+      tab.agentSession = req.agent_session;
+      tab.agent = true;
+      scheduleSave();
+    }
+    return;
+  }
   if (applyNotification(tab, notifyEventFromCli(req))) {
     renderTabs();
     renderSessions();
@@ -2223,6 +2317,13 @@ async function init(): Promise<void> {
       });
     } catch {
       /* agent bridge is best-effort */
+    }
+    // Install the opencode plugin that reports session ids back to muis
+    // (idempotent; only written when missing).
+    try {
+      await invoke("install_opencode_plugin");
+    } catch {
+      /* plugin install is best-effort */
     }
     // Resume where we left off; corrupt files start fresh (never broken).
     try {
