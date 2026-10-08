@@ -31,6 +31,7 @@ describe.skipIf(!enabled)("AcpClient against real opencode acp", () => {
         onUpdate: () => {},
         onPermission: () => {},
         onSession: () => {},
+        onConfig: () => {},
         onError: () => {},
       },
     );

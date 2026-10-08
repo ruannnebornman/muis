@@ -439,8 +439,15 @@ function ensureAgentView(tab: Tab): AgentView {
   const box = document.createElement("div");
   box.className = "tabbox agent";
   const head = document.createElement("div");
-  head.className = "pane-head";
-  head.textContent = `${cfg.agentCommand.trim() || "agent"} · ACP`;
+  head.className = "pane-head agent-head";
+  const headLabel = document.createElement("span");
+  headLabel.className = "agent-head-label";
+  headLabel.textContent = `${cfg.agentCommand.trim() || "agent"} · ACP`;
+  const model = document.createElement("select");
+  model.className = "agent-model";
+  model.title = "Model";
+  model.style.display = "none";
+  head.append(headLabel, model);
   const log = document.createElement("div");
   log.className = "agent-log";
   const inputRow = document.createElement("div");
@@ -480,6 +487,19 @@ function ensureAgentView(tab: Tab): AgentView {
           scheduleSave();
         }
       },
+      onConfig: (options) => {
+        const m = options.find((o) => o.id === "model" && o.type === "select");
+        if (!m) return;
+        model.innerHTML = "";
+        for (const o of m.options ?? []) {
+          const opt = document.createElement("option");
+          opt.value = o.value;
+          opt.textContent = o.name;
+          model.append(opt);
+        }
+        model.value = m.currentValue ?? "";
+        model.style.display = "";
+      },
       onError: (m) => appendAgentNode(v, "a-msg error", m),
     },
   );
@@ -501,6 +521,9 @@ function ensureAgentView(tab: Tab): AgentView {
     tools: new Map(),
   };
   agentViews.set(tab.id, v);
+  model.addEventListener("change", () => {
+    void v.client.setConfigOption("model", model.value).catch(() => {});
+  });
 
   const submit = () => void sendPrompt(v);
   send.addEventListener("click", submit);

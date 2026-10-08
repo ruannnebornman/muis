@@ -6,6 +6,7 @@ function harness() {
   const out: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
   const permissions: PermissionRequest[] = [];
+  const configs: import("./acp").ConfigOption[][] = [];
   const errors: string[] = [];
   let session = "";
   const client = new AcpClient(
@@ -14,11 +15,12 @@ function harness() {
       onUpdate: (u) => updates.push(u),
       onPermission: (p) => permissions.push(p),
       onSession: (s) => (session = s),
+      onConfig: (o) => configs.push(o),
       onError: (m) => errors.push(m),
     },
   );
   const last = () => out[out.length - 1];
-  return { client, out, updates, permissions, errors, session: () => session, last };
+  return { client, out, updates, permissions, configs, errors, session: () => session, last };
 }
 
 describe("diffLines", () => {
@@ -79,6 +81,39 @@ describe("AcpClient", () => {
     h.client.receive(JSON.stringify({ jsonrpc: "2.0", id: req.id, result: {} }));
     await p;
     expect(h.session()).toBe("ses_9");
+  });
+
+  it("captures config options and can set one", async () => {
+    const h = harness();
+    const p = h.client.newSession("/tmp/proj");
+    h.client.receive(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: h.last().id,
+        result: {
+          sessionId: "ses_1",
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              type: "select",
+              currentValue: "a",
+              options: [
+                { value: "a", name: "A" },
+                { value: "b", name: "B" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    await p;
+    expect(h.configs.at(-1)?.[0].id).toBe("model");
+    const setP = h.client.setConfigOption("model", "b");
+    expect(h.last().method).toBe("session/set_config_option");
+    expect((h.last().params as { value: string }).value).toBe("b");
+    h.client.receive(JSON.stringify({ jsonrpc: "2.0", id: h.last().id, result: {} }));
+    await setP;
   });
 
   it("routes session/update notifications", () => {

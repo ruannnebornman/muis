@@ -19,6 +19,16 @@ export interface PermissionRequest {
   options: PermissionOption[];
 }
 
+/** A session config option (e.g. the model select) from session/new. */
+export interface ConfigOption {
+  id: string;
+  name: string;
+  category?: string;
+  type: string;
+  currentValue?: string;
+  options?: { value: string; name: string }[];
+}
+
 export interface AcpHandlers {
   /** session/update notification (agent_message_chunk, tool_call, …). */
   onUpdate: (update: Record<string, unknown>) => void;
@@ -26,6 +36,8 @@ export interface AcpHandlers {
   onPermission: (req: PermissionRequest) => void;
   /** Session id assigned/confirmed by the agent. */
   onSession: (sessionId: string) => void;
+  /** Config options (model, mode) offered for the session. */
+  onConfig: (options: ConfigOption[]) => void;
   /** Transport/agent error worth showing in the pane. */
   onError: (message: string) => void;
 }
@@ -49,6 +61,7 @@ export class AcpClient {
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
   private sessionId = "";
+  private configOptions: ConfigOption[] = [];
 
   constructor(
     private readonly write: (line: string) => void,
@@ -168,14 +181,33 @@ export class AcpClient {
   async newSession(cwd: string): Promise<string> {
     const res = (await this.send("session/new", { cwd, mcpServers: [] })) as Json;
     this.sessionId = String(res.sessionId ?? "");
+    this.readConfig(res);
     this.handlers.onSession(this.sessionId);
     return this.sessionId;
   }
 
   async loadSession(cwd: string, sessionId: string): Promise<void> {
-    await this.send("session/load", { sessionId, cwd, mcpServers: [] });
+    const res = (await this.send("session/load", { sessionId, cwd, mcpServers: [] })) as Json;
     this.sessionId = sessionId;
+    this.readConfig(res);
     this.handlers.onSession(sessionId);
+  }
+
+  private readConfig(res: Json): void {
+    const options = Array.isArray(res.configOptions) ? (res.configOptions as ConfigOption[]) : [];
+    this.configOptions = options;
+    this.handlers.onConfig(options);
+  }
+
+  /** Change a session config option (e.g. the model). */
+  async setConfigOption(configId: string, value: string): Promise<void> {
+    await this.send("session/set_config_option", {
+      sessionId: this.sessionId,
+      configId,
+      value,
+    });
+    const opt = this.configOptions.find((o) => o.id === configId);
+    if (opt) opt.currentValue = value;
   }
 
   /** Send a prompt; resolves with the stop reason when the turn ends. */
