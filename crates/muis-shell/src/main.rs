@@ -272,13 +272,18 @@ fn opencode_plugins_dir() -> Option<PathBuf> {
     Some(base.join("opencode").join("plugins"))
 }
 
-/// Install the muis opencode plugin that reports the session id back to
-/// the tab. Idempotent: never overwrites an existing file. Returns the path.
+/// Install/update the muis opencode plugin. Writes it when missing, and
+/// updates it when the existing file is ours (carries the "muis-plugin"
+/// marker); never touches a foreign file. Returns the path.
 #[tauri::command]
 fn install_opencode_plugin() -> Result<String, String> {
     let dir = opencode_plugins_dir().ok_or("no config directory")?;
     let path = dir.join("muis.mjs");
-    if !path.exists() {
+    let ours = match std::fs::read_to_string(&path) {
+        Ok(existing) => existing.contains("muis-plugin"),
+        Err(_) => true, // missing
+    };
+    if ours {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         std::fs::write(&path, include_str!("../opencode-plugin/muis.mjs"))
             .map_err(|e| e.to_string())?;
