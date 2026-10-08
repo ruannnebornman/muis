@@ -586,6 +586,28 @@ function disposeAgentView(v: AgentView): void {
   agentViews.delete(v.tabId);
 }
 
+/**
+ * On launch, bring every agent tab back up across all sessions: ACP tabs
+ * via the ACP bridge, and legacy terminal agent tabs by spawning their
+ * pty (which runs the resume command). Plain terminal tabs are left as
+ * shells — muis never re-runs a command the user typed by hand.
+ */
+function startRestoredAgents(): void {
+  for (const w of store.workspaces) {
+    for (const t of w.tabs) {
+      if (t.kind === "agent") {
+        const v = ensureAgentView(t);
+        if (!v.started) {
+          v.started = true;
+          void startAgent(v, t);
+        }
+      } else if (t.agent) {
+        ensureView(w.id, t);
+      }
+    }
+  }
+}
+
 /** Scrollback search follows the visible tab. */
 function activeSearch() {
   const ws = store.currentWorkspace();
@@ -1385,8 +1407,9 @@ function renderTerms(ws: Workspace | undefined): void {
     if (t.kind === "agent") {
       const v = ensureAgentView(t);
       v.box.classList.toggle("active", show);
-      // Start the ACP process lazily, once, when the tab is first shown.
-      if (show && !v.started) {
+      // Start every agent tab in the current session once, so switching
+      // tabs does not need a fresh spawn.
+      if (!v.started) {
         v.started = true;
         void startAgent(v, t);
       }
@@ -2206,6 +2229,7 @@ async function init(): Promise<void> {
   await refreshAgentReady();
   applyTheme(cfg.theme);
   renderAll();
+  startRestoredAgents();
   reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });
   installDebugHook();
   startSnapshotLoop();
