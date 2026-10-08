@@ -34,6 +34,35 @@ focuses its terminal so the user can type immediately.
 - Do not steal focus on a drag (reorder) or double-click (rename), and
   do not fight the search box while it is open.
 
+## Closing the last tab should keep the session open
+
+Closing a session's last tab currently tears the whole session down
+(`SessionStore.closeTab`, `src-ui/src/sessions.ts:132-134`, reached from
+`closeTab`, `src-ui/src/main.ts:649`). Desired: closing the last tab
+leaves the session open with no tabs, showing only the `+` (and `AI`)
+tab buttons, so the session — its name, directory, and place in the
+sidebar — survives for later even when there is no active work.
+
+- Empty state: the tab bar already renders `+`/`AI` unconditionally
+  (`renderTabs`, `src-ui/src/main.ts:911-929`), so once the session is
+  kept the bar shows just the buttons; confirm the terminal area renders
+  no stale surface when `ws.tabs` is empty (`renderTerms`,
+  `src-ui/src/main.ts:1002-1024`).
+- Session stays current: do not remove the workspace, so it remains in
+  the sidebar and reads `0 tabs`.
+- A new tab from an empty session seeds from `ws.dir`, since there is no
+  active tab to inherit a cwd from (`newTabCwd`,
+  `src-ui/src/sessions.ts:39-41`).
+- Persistence: `SessionStore.toJSON`/`fromJSON` already round-trip an
+  empty-tab workspace, so a kept session must survive restart.
+- Distinguish from process exit: the decided behavior in
+  `docs/features.md` ("Kill the session when its last tab dies") still
+  tears a session down when its last tab's *process exits*
+  (`dropSessionIfLastTab`, `src-ui/src/main.ts:685-706`). This request
+  is about the user closing the tab. Whether a pty exit should also
+  preserve the empty session is open, and this reverses the
+  `closeTab` half of that decision.
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
@@ -43,5 +72,10 @@ Cover the fixes above and the surrounding navigation behavior.
 - Tab/session selection focus: assert that selecting a tab or session
   focuses the active terminal, and that reorder/rename do not.
   Unit-test a decision helper instead of the DOM where practical.
+- Empty session: after `closeTab` removes the last tab, the workspace is
+  still present with `tabs.length === 0` and `current` unchanged; a new
+  tab in it uses `ws.dir`; the state round-trips through
+  `toJSON`/`fromJSON`.
 - Keep the cross-session regression that exactly one terminal surface is
-  visible (AGENTS.md) when touching terminal visibility or navigation.
+  visible (AGENTS.md) when touching terminal visibility or navigation,
+  including the zero-tab case.
