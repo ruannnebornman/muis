@@ -1,7 +1,6 @@
 /** View options. Mirrors muis-core AppConfig; persisted as JSON. */
 export interface AppConfig {
   showSessions: boolean;
-  tabsOnTop: boolean;
   /** Terminal font size in points. null = system fixed font + 2. */
   fontSize: number | null;
   /** Accent theme name; null keeps the default look. */
@@ -24,6 +23,20 @@ export interface AppConfig {
   cursorBlink: boolean;
   /** What the terminal bell does. */
   bell: "none" | "visual" | "audible" | "both";
+  /** Statusbar segment visibility (id -> visible; absent = shown). */
+  statusbar: Record<string, boolean>;
+  /** Accent theme per workspace name (falls back to `theme`). */
+  workspaceThemes: Record<string, string>;
+}
+
+/** Accent theme for a workspace: its own, else the global default. */
+export function themeForWorkspace(cfg: AppConfig, wsName: string): string | null {
+  return cfg.workspaceThemes[wsName] ?? cfg.theme;
+}
+
+/** Whether a statusbar segment is shown (absent = shown). */
+export function segmentVisible(map: Record<string, boolean>, id: string): boolean {
+  return map[id] !== false;
 }
 
 export type BellMode = "none" | "visual" | "audible" | "both";
@@ -39,7 +52,6 @@ export function bellAction(mode: BellMode): { visual: boolean; audible: boolean 
 export function defaultConfig(): AppConfig {
   return {
     showSessions: true,
-    tabsOnTop: false,
     fontSize: null,
     theme: null,
     agentCommand: "opencode",
@@ -52,7 +64,29 @@ export function defaultConfig(): AppConfig {
     cursorStyle: "block",
     cursorBlink: true,
     bell: "none",
+    statusbar: {},
+    workspaceThemes: {},
   };
+}
+
+/** Keep only non-empty string values from a raw map. */
+function parseStringMap(raw: unknown, base: Record<string, string>): Record<string, string> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return base;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && v.trim()) out[k] = v.trim();
+  }
+  return out;
+}
+
+/** Keep only boolean values from a raw map. */
+function parseBoolMap(raw: unknown, base: Record<string, boolean>): Record<string, boolean> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return base;
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "boolean") out[k] = v;
+  }
+  return out;
 }
 
 /** Keep only non-empty string chord values. */
@@ -84,7 +118,6 @@ export function configFromJSON(json: string): AppConfig {
   const r = raw as Partial<Record<keyof AppConfig, unknown>>;
   return {
     showSessions: typeof r.showSessions === "boolean" ? r.showSessions : base.showSessions,
-    tabsOnTop: typeof r.tabsOnTop === "boolean" ? r.tabsOnTop : base.tabsOnTop,
     fontSize:
       typeof r.fontSize === "number" && r.fontSize >= 6 && r.fontSize <= 32
         ? Math.floor(r.fontSize)
@@ -113,6 +146,8 @@ export function configFromJSON(json: string): AppConfig {
       r.bell === "none" || r.bell === "visual" || r.bell === "audible" || r.bell === "both"
         ? r.bell
         : base.bell,
+    statusbar: parseBoolMap(r.statusbar, base.statusbar),
+    workspaceThemes: parseStringMap(r.workspaceThemes, base.workspaceThemes),
   };
 }
 

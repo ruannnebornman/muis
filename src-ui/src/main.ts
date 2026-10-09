@@ -1,4 +1,4 @@
-import { Terminal } from "xterm";
+import { Terminal, type ILinkHandler } from "xterm";
 import "xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -9,7 +9,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
-import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, type AppConfig } from "./config";
+import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, segmentVisible, themeForWorkspace, type AppConfig } from "./config";
+import { clampIndex, filterCommands, type Command } from "./commands";
+import { QueryHistory } from "./history";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
@@ -773,7 +775,8 @@ function agentTabsInLoadOrder(): LoadEntry[] {
 
 function updateLoadingHint(): void {
   const n = loadQueue.length + loadActive;
-  stLoad.style.display = n > 0 ? "" : "none";
+  const show = n > 0 && segmentVisible(cfg.statusbar, "load");
+  stLoad.style.display = show ? "" : "none";
   stLoad.textContent = n > 0 ? `loading ${n}` : "";
 }
 
@@ -877,7 +880,29 @@ const searchResults = document.createElement("div");
 searchResults.id = "searchResults";
 searchResults.className = "results";
 searchResults.style.display = "none";
-searchBox.append(searchGlyph, titleSearch, searchHint, searchResults);
+const caseBtn = document.createElement("button");
+caseBtn.className = "search-toggle";
+caseBtn.textContent = "Aa";
+caseBtn.title = "Match case";
+const regexBtn = document.createElement("button");
+regexBtn.className = "search-toggle";
+regexBtn.textContent = ".*";
+regexBtn.title = "Regular expression";
+searchBox.append(searchGlyph, titleSearch, caseBtn, regexBtn, searchHint, searchResults);
+let searchCase = false;
+let searchRegex = false;
+const searchHistory = new QueryHistory();
+let historyIndex = -1;
+caseBtn.addEventListener("click", () => {
+  searchCase = !searchCase;
+  caseBtn.classList.toggle("on", searchCase);
+  renderSearchResults();
+});
+regexBtn.addEventListener("click", () => {
+  searchRegex = !searchRegex;
+  regexBtn.classList.toggle("on", searchRegex);
+  renderSearchResults();
+});
 const winControls = document.createElement("div");
 winControls.className = "win-controls";
 const winMin = document.createElement("div");
@@ -938,6 +963,7 @@ app.append(titlebar, mainRow, panelSlot);
 /* ---------------- titlebar: search + window controls ---------------- */
 
 titleSearch.addEventListener("input", () => {
+  historyIndex = -1;
   renderSearchResults();
 });
 titleSearch.addEventListener("keydown", (e) => {
@@ -946,6 +972,25 @@ titleSearch.addEventListener("keydown", (e) => {
     e.preventDefault();
     const first = searchResults.querySelector<HTMLElement>(".r-item");
     if (first) first.click();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    const list = searchHistory.list();
+    if (list.length) {
+      historyIndex = Math.min(historyIndex + 1, list.length - 1);
+      titleSearch.value = list[historyIndex];
+      renderSearchResults();
+    }
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    const list = searchHistory.list();
+    if (historyIndex > 0) {
+      historyIndex -= 1;
+      titleSearch.value = list[historyIndex];
+    } else {
+      historyIndex = -1;
+      titleSearch.value = "";
+    }
+    renderSearchResults();
   } else if (e.key === "Escape") {
     e.preventDefault();
     titleSearch.value = "";
@@ -1086,6 +1131,17 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(surface);
+
+  // OSC 8 hyperlinks: activate opens http(s) URLs in the browser.
+  term.options.linkHandler = {
+    activate: (_event: MouseEvent, text: string) => {
+      if (!/^https?:\/\//.test(text)) return;
+      if (IN_TAURI) void invoke("open_url", { url: text }).catch(() => {});
+      else window.open(text, "_blank", "noopener");
+    },
+    hover: () => {},
+    leave: () => {},
+  } as ILinkHandler;
 
   // Bell: no-op, a brief visual flash, an audible beep, or both.
   term.onBell(() => {
@@ -1414,8 +1470,20 @@ function el(tag: string, cls: string, text?: string): HTMLElement {
   return e;
 }
 
+let appliedTheme: string | null = null;
+/** Apply the current workspace's accent theme (chrome + terminals). */
+function applyWorkspaceTheme(): void {
+  const name = themeForWorkspace(cfg, store.currentWorkspace()?.name ?? "");
+  if (name === appliedTheme) return;
+  appliedTheme = name;
+  applyTheme(name);
+  const xt = xtermTheme(name);
+  for (const [, view] of views) view.term.options.theme = xt;
+}
+
 function renderAll(): void {
   const ws = store.currentWorkspace();
+  applyWorkspaceTheme();
   if (ws && ws.tabs.length === 0) {
     // A live workspace always shows a terminal. Only a fully closed
     // workspace (no sessions left) is allowed to stay empty.
@@ -1838,6 +1906,27 @@ function renderStatusbar(): void {
   } else {
     stGit.textContent = "";
   }
+  applyStatusbarVisibility();
+}
+
+/** Show/hide each statusbar segment per config. */
+function applyStatusbarVisibility(): void {
+  const segs: [string, HTMLElement][] = [
+    ["session", stSessionTab],
+    ["cwd", stCwd],
+    ["git", stGit],
+    ["user", stUser],
+    ["cpu", stCpu],
+    ["ram", stRam],
+    ["load", stLoad],
+    ["version", stVersion],
+    ["clock", stClock],
+    ["shell", stShell],
+  ];
+  for (const [id, node] of segs) {
+    node.style.display = segmentVisible(cfg.statusbar, id) ? "" : "none";
+  }
+  if (!segmentVisible(cfg.statusbar, "gpu")) stGpu.style.display = "none";
 }
 
 function tickClock(): void {
@@ -1867,7 +1956,7 @@ function renderSystemStats(s: SystemStats): void {
   const pct = s.mem_total > 0 ? Math.round((s.mem_used / s.mem_total) * 100) : 0;
   stRam.textContent = `RAM ${pct}%`;
   stRam.title = `${(s.mem_used / 1e9).toFixed(1)} / ${(s.mem_total / 1e9).toFixed(1)} GB`;
-  if (s.gpu === null) {
+  if (s.gpu === null || !segmentVisible(cfg.statusbar, "gpu")) {
     stGpu.style.display = "none";
   } else {
     stGpu.style.display = "";
@@ -1992,6 +2081,10 @@ const onShortcut = (e: KeyboardEvent): void => {
       e.preventDefault();
       openSettings();
       break;
+    case "command-palette":
+      e.preventDefault();
+      openPalette();
+      break;
     case "switch-tab":
       if (action.index < ws.tabs.length) {
         e.preventDefault();
@@ -2093,6 +2186,45 @@ for (const s of ["none", "visual", "audible", "both"]) {
   o.textContent = s;
   optBell.append(o);
 }
+const SEGMENTS: [string, string][] = [
+  ["session", "session"],
+  ["cwd", "cwd"],
+  ["git", "git"],
+  ["user", "user"],
+  ["cpu", "CPU"],
+  ["ram", "RAM"],
+  ["gpu", "GPU"],
+  ["load", "loading"],
+  ["version", "version"],
+  ["clock", "clock"],
+  ["shell", "shell"],
+];
+const segBox = document.createElement("div");
+segBox.className = "seg-opts";
+const segOpts: Record<string, HTMLInputElement> = {};
+for (const [id, label] of SEGMENTS) {
+  const wrap = document.createElement("label");
+  wrap.className = "seg-opt";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  segOpts[id] = cb;
+  wrap.append(cb, document.createTextNode(label));
+  segBox.append(wrap);
+}
+
+const resetSessionsBtn = document.createElement("button");
+resetSessionsBtn.className = "btn danger";
+resetSessionsBtn.textContent = "Reset sessions & restart";
+resetSessionsBtn.addEventListener("click", () => {
+  if (
+    !window.confirm(
+      "Reset all sessions and restart muis? This permanently deletes the saved sessions and cannot be undone.",
+    )
+  ) {
+    return;
+  }
+  if (IN_TAURI) void invoke("reset_sessions_and_restart").catch(() => {});
+});
 
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
@@ -2113,6 +2245,8 @@ settingsBox.append(
   settingsRow("Cursor style", optCursorStyle),
   settingsRow("Cursor blink", optCursorBlink),
   settingsRow("Bell", optBell),
+  settingsRow("Statusbar", segBox),
+  settingsRow("Danger zone", resetSessionsBtn),
   settingsButtons,
 );
 settingsOverlay.append(settingsBox);
@@ -2129,6 +2263,9 @@ function openSettings(): void {
   optCursorStyle.value = cfg.cursorStyle;
   optCursorBlink.checked = cfg.cursorBlink;
   optBell.value = cfg.bell;
+  for (const [id, cb] of Object.entries(segOpts)) {
+    cb.checked = segmentVisible(cfg.statusbar, id);
+  }
   settingsOverlay.style.display = "flex";
 }
 
@@ -2140,7 +2277,6 @@ async function applySettings(): Promise<void> {
   const size = optFontSize.value.trim();
   cfg = {
     showSessions: optSessions.checked,
-    tabsOnTop: cfg.tabsOnTop,
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
     agentCommand: optAgent.value.trim(),
@@ -2153,6 +2289,10 @@ async function applySettings(): Promise<void> {
     cursorStyle: optCursorStyle.value as AppConfig["cursorStyle"],
     cursorBlink: optCursorBlink.checked,
     bell: optBell.value as AppConfig["bell"],
+    statusbar: Object.fromEntries(
+      Object.entries(segOpts).map(([id, cb]) => [id, cb.checked]),
+    ),
+    workspaceThemes: cfg.workspaceThemes,
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);
@@ -2167,6 +2307,7 @@ async function applySettings(): Promise<void> {
     view.term.options.cursorBlink = cfg.cursorBlink;
   }
   await refreshAgentReady();
+  appliedTheme = null; // settings may have changed the theme
   closeSettings();
   renderAll();
 }
@@ -2175,6 +2316,132 @@ settingsSave.addEventListener("click", () => void applySettings());
 settingsCancel.addEventListener("click", closeSettings);
 settingsOverlay.addEventListener("click", (e) => {
   if (e.target === settingsOverlay) closeSettings();
+});
+
+/* ---------------- command palette ---------------- */
+
+interface PaletteItem extends Command {
+  run: () => void;
+}
+
+const paletteOverlay = document.createElement("div");
+paletteOverlay.className = "palette-overlay";
+paletteOverlay.style.display = "none";
+const paletteBox = document.createElement("div");
+paletteBox.className = "palette-box";
+const paletteInput = document.createElement("input");
+paletteInput.className = "palette-input";
+paletteInput.placeholder = "Type a command…";
+paletteInput.autocomplete = "off";
+paletteInput.spellcheck = false;
+const paletteList = document.createElement("div");
+paletteList.className = "palette-list";
+paletteBox.append(paletteInput, paletteList);
+paletteOverlay.append(paletteBox);
+document.body.append(paletteOverlay);
+
+let paletteItems: PaletteItem[] = [];
+let paletteMatches: PaletteItem[] = [];
+let paletteIndex = 0;
+
+function renderPalette(): void {
+  paletteMatches = filterCommands(paletteInput.value, paletteItems);
+  paletteIndex = clampIndex(paletteIndex, paletteMatches.length);
+  paletteList.innerHTML = "";
+  paletteMatches.forEach((c, i) => {
+    const row = document.createElement("div");
+    row.className = "palette-item" + (i === paletteIndex ? " on" : "");
+    row.textContent = c.title;
+    row.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      runPalette(i);
+    });
+    paletteList.append(row);
+  });
+}
+
+function runPalette(i: number): void {
+  const item = paletteMatches[i];
+  closePalette();
+  if (item) item.run();
+}
+
+function closePalette(): void {
+  paletteOverlay.style.display = "none";
+}
+
+function openPalette(): void {
+  const ws = store.currentWorkspace();
+  const active = ws?.tabs[ws.active];
+  paletteItems = [];
+  const add = (id: string, title: string, run: () => void): void => {
+    paletteItems.push({ id, title, run });
+  };
+  if (ws) {
+    add("new-tab", "New terminal tab", () => addShellTab(ws));
+    if (agentReady) add("new-agent", "New AI tab", () => addAgentTab(ws));
+    if (active) add("close-tab", "Close tab", () => closeTab(ws.id, active.id));
+    if (ws.tabs.length > 1) {
+      add("next-tab", "Next tab", () => {
+        ws.active = (ws.active + 1) % ws.tabs.length;
+        renderAll();
+      });
+      add("prev-tab", "Previous tab", () => {
+        ws.active = (ws.active - 1 + ws.tabs.length) % ws.tabs.length;
+        renderAll();
+      });
+    }
+    if (store.workspaces.length > 1) {
+      add("next-session", "Next session", () => {
+        store.switch((store.current + 1) % store.workspaces.length);
+        renderAll();
+      });
+      add("prev-session", "Previous session", () => {
+        store.switch((store.current - 1 + store.workspaces.length) % store.workspaces.length);
+        renderAll();
+      });
+    }
+    if (active) {
+      add("clear-scrollback", "Clear scrollback", () => clearScrollback(active.id));
+      add("focus-terminal", "Focus terminal", () => views.get(active.id)?.term.focus());
+    }
+    add("close-session", "Close session", () => closeSession(ws));
+  }
+  add("settings", "Open settings", () => openSettings());
+  add("search", "Search", () => {
+    titleSearch.focus();
+    titleSearch.select();
+  });
+  paletteInput.value = "";
+  paletteIndex = 0;
+  paletteOverlay.style.display = "flex";
+  renderPalette();
+  paletteInput.focus();
+}
+
+paletteInput.addEventListener("input", () => {
+  paletteIndex = 0;
+  renderPalette();
+});
+paletteInput.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    paletteIndex = clampIndex(paletteIndex + 1, paletteMatches.length);
+    renderPalette();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    paletteIndex = clampIndex(paletteIndex - 1, paletteMatches.length);
+    renderPalette();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    runPalette(paletteIndex);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closePalette();
+  }
+});
+paletteOverlay.addEventListener("click", (e) => {
+  if (e.target === paletteOverlay) closePalette();
 });
 
 /* ---------------- diagnosis hook ---------------- */
@@ -2486,7 +2753,10 @@ function renderSearchResults(): void {
     hideSearchResults();
     return;
   }
-  const { total, items } = collectMatches(q, searchScope, store.current, searchableTabs());
+  const { total, items } = collectMatches(q, searchScope, store.current, searchableTabs(), 50, {
+    regex: searchRegex,
+    caseSensitive: searchCase,
+  });
   searchResults.innerHTML = "";
   const head = el("div", "r-head");
   head.append(el("span", "", `${total} match${total === 1 ? "" : "es"}`));
@@ -2521,6 +2791,8 @@ function renderSearchResults(): void {
 }
 
 function jumpToResult(hit: SearchHit, q: string): void {
+  searchHistory.add(q);
+  historyIndex = -1;
   store.switch(hit.wsIndex);
   const ws = store.currentWorkspace();
   const ti = ws?.tabs.findIndex((t) => t.id === hit.tabId) ?? -1;

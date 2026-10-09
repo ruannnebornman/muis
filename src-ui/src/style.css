@@ -241,3 +241,19 @@ body{
 .ctx-item:hover{background:var(--accent); color:#fff}
 .ctx-item .ctx-hint{margin-left:auto; font-size:11px; color:var(--dim)}
 .ctx-item:hover .ctx-hint{color:#eaf6ff}
+/* ---------- command palette ---------- */
+.palette-overlay{position:fixed; inset:0; display:flex; justify-content:center; align-items:flex-start; padding-top:80px; background:rgba(0,0,0,.35); z-index:40}
+.palette-box{width:min(560px,90vw); background:#232629; border:1px solid var(--border-dark); border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.5); overflow:hidden}
+.palette-input{width:100%; box-sizing:border-box; background:var(--bg0); color:var(--fg); border:0; border-bottom:1px solid var(--border-dark); padding:12px 14px; font:14px var(--uifont); outline:none}
+.palette-list{max-height:340px; overflow-y:auto}
+.palette-item{padding:8px 14px; font:13px var(--uifont); color:var(--fg); cursor:pointer}
+.palette-item.on{background:#2f353a}
+/* ---------- statusbar segment options ---------- */
+.seg-opts{display:flex; flex-wrap:wrap; gap:4px 12px}
+.seg-opt{display:inline-flex; align-items:center; gap:4px; font-size:12px}
+/* ---------- search toggles ---------- */
+.search-toggle{background:transparent; border:0; color:var(--dim); font:11px var(--mono,monospace); padding:0 4px; cursor:pointer; border-radius:4px}
+.search-toggle.on{color:#fff; background:#3a4045}
+/* ---------- danger button ---------- */
+.btn.danger{border-color:var(--red); color:var(--red)}
+.btn.danger:hover{background:var(--red); color:#fff; border-color:var(--red)}

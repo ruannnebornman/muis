@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { bellAction, configFromJSON, defaultConfig, effectiveFontSize } from "./config";
+import { bellAction, configFromJSON, defaultConfig, effectiveFontSize, segmentVisible, themeForWorkspace } from "./config";
 
 describe("AppConfig", () => {
   it("defaults to sessions shown, side tabs, system font", () => {
     expect(defaultConfig()).toEqual({
       showSessions: true,
-      tabsOnTop: false,
       fontSize: null,
       theme: null,
       agentCommand: "opencode",
@@ -18,8 +17,25 @@ describe("AppConfig", () => {
       cursorStyle: "block",
       cursorBlink: true,
       bell: "none",
+      statusbar: {},
+      workspaceThemes: {},
     });
     expect(configFromJSON("")).toEqual(defaultConfig());
+  });
+
+  it("resolves per-workspace themes with a global fallback", () => {
+    const cfg = configFromJSON('{"theme":"nord","workspaceThemes":{"dev":"dracula"}}');
+    expect(themeForWorkspace(cfg, "dev")).toBe("dracula");
+    expect(themeForWorkspace(cfg, "other")).toBe("nord");
+    expect(configFromJSON('{"workspaceThemes":{"x":5}}').workspaceThemes).toEqual({});
+  });
+
+  it("reads statusbar visibility (absent = shown)", () => {
+    const cfg = configFromJSON('{"statusbar":{"clock":false,"git":true,"x":5}}');
+    expect(cfg.statusbar).toEqual({ clock: false, git: true });
+    expect(segmentVisible(cfg.statusbar, "clock")).toBe(false);
+    expect(segmentVisible(cfg.statusbar, "git")).toBe(true);
+    expect(segmentVisible(cfg.statusbar, "cpu")).toBe(true);
   });
 
   it("reads cursor/font/bell settings and rejects junk", () => {
@@ -65,7 +81,6 @@ describe("AppConfig", () => {
   it("loads what it saves", () => {
     const cfg = {
       showSessions: false,
-      tabsOnTop: true,
       fontSize: 13,
       theme: "nord",
       agentCommand: "aider",
@@ -78,6 +93,8 @@ describe("AppConfig", () => {
       cursorStyle: "bar",
       cursorBlink: false,
       bell: "both",
+      statusbar: { clock: false },
+      workspaceThemes: { dev: "nord" },
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
   });

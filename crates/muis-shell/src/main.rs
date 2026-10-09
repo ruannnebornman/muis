@@ -291,6 +291,52 @@ fn install_opencode_plugin() -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
+/// Open an http(s) URL in the user's browser (OSC 8 hyperlinks). Only
+/// http/https are accepted; never a shell invocation.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return Err("only http(s) URLs can be opened".into());
+    }
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener)
+        .arg(trimmed)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Delete saved sessions (manifest + per-session snapshots).
+fn reset_sessions_state() -> Result<(), String> {
+    let file = muis_core::paths::sessions_file();
+    let dir = muis_core::paths::sessions_dir();
+    if file.exists() {
+        std::fs::remove_file(&file).map_err(|e| e.to_string())?;
+    }
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Wipe saved sessions and relaunch the app in place.
+#[tauri::command]
+fn reset_sessions_and_restart(app: tauri::AppHandle) -> Result<(), String> {
+    reset_sessions_state()?;
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe).spawn();
+    }
+    app.exit(0);
+    Ok(())
+}
+
 /// Read a UTF-8 text file for attaching to an agent prompt. Capped so a
 /// huge file can't be slurped by accident.
 #[tauri::command]
@@ -339,6 +385,18 @@ fn ensure_dmabuf_disabled() -> bool {
 fn main() {
     ensure_dmabuf_disabled();
 
+    // `muis --reset-sessions`: clear saved sessions and exit (no window).
+    if std::env::args().any(|a| a == "--reset-sessions") {
+        match reset_sessions_state() {
+            Ok(()) => eprintln!("muis: cleared saved sessions"),
+            Err(e) => {
+                eprintln!("muis: could not clear sessions: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -362,6 +420,8 @@ fn main() {
             command_available,
             install_opencode_plugin,
             read_text_file,
+            open_url,
+            reset_sessions_and_restart,
             worker_spawn,
             worker_send,
             worker_stop,
