@@ -147,7 +147,8 @@ body{
 #app{height:100vh; width:100vw; display:flex; flex-direction:column}
 .term-wrap .tabbox{flex:1; min-height:0; min-width:0; display:none; flex-direction:column}
 .term-wrap .tabbox.active{display:flex; height:100%}
-.term-wrap .tab-surface{flex:1; min-height:0; min-width:0; display:flex}
+.term-wrap .tab-surface{flex:1; min-height:0; min-width:0; display:flex; position:relative}
+.term-wrap .tab-surface.bell-flash{outline:2px solid var(--accent); outline-offset:-2px}
 .term-wrap .xterm{height:100%; width:100%; padding:8px 0 0 8px}
 /* ---------- agent (ACP) pane ---------- */
 .agent-head{display:flex; align-items:center; gap:8px}
