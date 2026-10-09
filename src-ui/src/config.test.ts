@@ -9,6 +9,7 @@ describe("AppConfig", () => {
       fontSize: null,
       theme: null,
       agentCommand: "opencode",
+      agentResumeCommand: "opencode --continue",
       scrollback: 50000,
       keybindings: {},
       copyOnSelect: false,
@@ -47,25 +48,6 @@ describe("AppConfig", () => {
     expect(configFromJSON('{"copyOnSelect":"yes"}').copyOnSelect).toBe(false);
   });
 
-  it("loads what it saves", () => {
-    const cfg = {
-      showSessions: false,
-      tabsOnTop: true,
-      fontSize: 13,
-      theme: "nord",
-      agentCommand: "aider",
-      scrollback: 20000,
-      keybindings: { "close-tab": "ctrl+q" },
-      copyOnSelect: true,
-      middleClickPaste: true,
-      fontFamily: "Fira Code",
-      cursorStyle: "bar",
-      cursorBlink: false,
-      bell: "both",
-    };
-    expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
-  });
-
   it("keeps string keybindings and drops junk", () => {
     expect(configFromJSON('{"keybindings":{"close-tab":"ctrl+q","x":5}}').keybindings).toEqual({
       "close-tab": "ctrl+q",
@@ -80,9 +62,33 @@ describe("AppConfig", () => {
     expect(configFromJSON('{"scrollback":"lots"}').scrollback).toBe(50000);
   });
 
-  it("reads the AI tab command and falls back on junk", () => {
+  it("loads what it saves", () => {
+    const cfg = {
+      showSessions: false,
+      tabsOnTop: true,
+      fontSize: 13,
+      theme: "nord",
+      agentCommand: "aider",
+      agentResumeCommand: "aider --resume",
+      scrollback: 20000,
+      keybindings: { "close-tab": "ctrl+q" },
+      copyOnSelect: true,
+      middleClickPaste: true,
+      fontFamily: "Fira Code",
+      cursorStyle: "bar",
+      cursorBlink: false,
+      bell: "both",
+    };
+    expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
+  });
+
+  it("reads the AI tab commands and falls back on junk", () => {
     expect(configFromJSON('{"agentCommand":"claude"}').agentCommand).toBe("claude");
     expect(configFromJSON("").agentCommand).toBe("opencode");
+    expect(configFromJSON('{"agentResumeCommand":"claude -c"}').agentResumeCommand).toBe(
+      "claude -c",
+    );
+    expect(configFromJSON("").agentResumeCommand).toBe("opencode --continue");
   });
 
   it("ignores corrupt values field by field, never entirely", () => {

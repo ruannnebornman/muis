@@ -166,6 +166,9 @@ let agentReady = false;
 /** Tabs whose agent has already been launched this launch. */
 const agentLaunched = new Set<string>();
 
+/** Tab ids that came back from a saved session (restored on this launch). */
+const restoredTabs = new Set<string>();
+
 /** Probe PATH for the configured agent; hide the AI option when absent. */
 async function refreshAgentReady(): Promise<void> {
   agentReady = false;
@@ -1193,11 +1196,13 @@ function ensureView(sessionId: string, tab: Tab): TabView {
         // launch the configured agent once per launch.
         const launchAgent = (): void => {
           // Exact session id (reported by a plugin) beats an inferred
-          // resume command, which beats the configured default.
+          // resume command, which beats the configured default; a
+          // restored tab resumes its last session, a new tab starts fresh.
           const command = (
             tab.agentSession
               ? `opencode -s ${tab.agentSession}`
-              : tab.agentResume ?? cfg.agentCommand
+              : tab.agentResume ??
+                (restoredTabs.has(tab.id) ? cfg.agentResumeCommand : cfg.agentCommand)
           ).trim();
           if (!tab.agent || !command || agentLaunched.has(tab.id)) return;
           agentLaunched.add(tab.id);
@@ -1505,6 +1510,17 @@ function renameSession(w: Workspace): void {
 
 let dragKind: "session" | "tab" | null = null;
 let dragFrom = -1;
+let dragTabId: string | null = null;
+
+/** Move a dragged tab into another session (append); switch to the target. */
+function moveTabToSession(tabId: string, toSessionId: string): void {
+  const fromWsIndex = store.workspaces.findIndex((w) => w.tabs.some((t) => t.id === tabId));
+  if (fromWsIndex < 0) return;
+  const toWsIndex = store.workspaces.findIndex((w) => w.id === toSessionId);
+  if (toWsIndex < 0 || toWsIndex === fromWsIndex) return;
+  const tabIndex = store.workspaces[fromWsIndex].tabs.findIndex((t) => t.id === tabId);
+  if (store.moveTabToWorkspace(fromWsIndex, tabIndex, toWsIndex)) renderAll();
+}
 
 function clearDropMarks(): void {
   document
@@ -1600,6 +1616,24 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
     if (moved) renderAll();
     return moved;
   });
+  // A tab dragged over a session drops into that session.
+  d.addEventListener("dragover", (e) => {
+    if (dragKind !== "tab") return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    clearDropMarks();
+    d.classList.add("drop-into");
+  });
+  d.addEventListener("drop", (e) => {
+    if (dragKind !== "tab") return;
+    e.preventDefault();
+    const tabId = dragTabId;
+    clearDropMarks();
+    dragKind = null;
+    dragFrom = -1;
+    dragTabId = null;
+    if (tabId) moveTabToSession(tabId, w.id);
+  });
   return d;
 }
 
@@ -1621,6 +1655,11 @@ function renderTabs(): void {
     ai.addEventListener("click", () => addAgentTab(ws));
     tabbar.append(ai);
   }
+  const gear = el("button", "newtab settings", "⚙");
+  gear.title = "Settings (ctrl + ,)";
+  gear.style.marginLeft = "auto";
+  gear.addEventListener("click", () => openSettings());
+  tabbar.append(gear);
 }
 
 function addShellTab(ws: Workspace): void {
@@ -1687,6 +1726,12 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
     const moved = store.moveTab(store.workspaces.indexOf(ws), from, to);
     if (moved) renderAll();
     return moved;
+  });
+  d.addEventListener("dragstart", () => {
+    dragTabId = tab.id;
+  });
+  d.addEventListener("dragend", () => {
+    dragTabId = null;
   });
   return d;
 }
@@ -2018,6 +2063,10 @@ const optAgent = document.createElement("input");
 optAgent.type = "text";
 optAgent.placeholder = "opencode";
 optAgent.title = "Command for the New AI tab; empty disables it";
+const optAgentResume = document.createElement("input");
+optAgentResume.type = "text";
+optAgentResume.placeholder = "opencode --continue";
+optAgentResume.title = "Command run when an AI tab is restored";
 const optScrollback = document.createElement("input");
 optScrollback.type = "number";
 optScrollback.min = "1000";
@@ -2058,6 +2107,7 @@ settingsBox.append(
   settingsRow("Terminal font size", optFontSize),
   settingsRow("Theme", optTheme),
   settingsRow("AI tab command", optAgent),
+  settingsRow("AI resume command", optAgentResume),
   settingsRow("Scrollback lines", optScrollback),
   settingsRow("Font family", optFontFamily),
   settingsRow("Cursor style", optCursorStyle),
@@ -2073,6 +2123,7 @@ function openSettings(): void {
   optFontSize.value = cfg.fontSize?.toString() ?? "";
   optTheme.value = cfg.theme ?? "default";
   optAgent.value = cfg.agentCommand;
+  optAgentResume.value = cfg.agentResumeCommand;
   optScrollback.value = cfg.scrollback.toString();
   optFontFamily.value = cfg.fontFamily ?? "";
   optCursorStyle.value = cfg.cursorStyle;
@@ -2093,6 +2144,7 @@ async function applySettings(): Promise<void> {
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
     agentCommand: optAgent.value.trim(),
+    agentResumeCommand: optAgentResume.value.trim(),
     scrollback: clampScrollback(Number(optScrollback.value)),
     keybindings: cfg.keybindings,
     copyOnSelect: cfg.copyOnSelect,
@@ -2636,6 +2688,9 @@ async function init(): Promise<void> {
       if (saved) {
         store = SessionStore.fromJSON(saved);
         resumed = true;
+        for (const w of store.workspaces) {
+          for (const t of w.tabs) restoredTabs.add(t.id);
+        }
       }
       reportDebugStage("sessions-loaded", Boolean(saved));
     } catch {

@@ -116,6 +116,31 @@ export class SessionStore {  workspaces: Workspace[] = [];
     return true;
   }
 
+  /**
+   * Move a tab out of one workspace and append it to another. The moved
+   * tab becomes active in the target and the target becomes current. An
+   * emptied source workspace is removed.
+   */
+  moveTabToWorkspace(fromWs: number, tabIndex: number, toWs: number): boolean {
+    if (fromWs === toWs) return false;
+    const src = this.workspaces[fromWs];
+    const dst = this.workspaces[toWs];
+    if (!src || !dst) return false;
+    if (!this.inRange(tabIndex, src.tabs.length)) return false;
+    const [t] = src.tabs.splice(tabIndex, 1);
+    dst.tabs.push(t);
+    dst.active = dst.tabs.length - 1;
+    if (src.tabs.length === 0) {
+      this.removeWorkspace(fromWs);
+    } else if (tabIndex < src.active) {
+      src.active--;
+    } else if (src.active >= src.tabs.length) {
+      src.active = src.tabs.length - 1;
+    }
+    this.current = this.workspaces.indexOf(dst);
+    return true;
+  }
+
   private inRange(i: number, len: number): boolean {
     return Number.isInteger(i) && i >= 0 && i < len;
   }

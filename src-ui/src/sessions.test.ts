@@ -148,6 +148,33 @@ describe("SessionStore", () => {
     expect(s.moveTab(0, 1, 1)).toBe(false);
   });
 
+  it("moves a tab into another session and switches to it", () => {
+    const s = store();
+    s.newTab("T2", "/tmp"); // home: [Terminal 1, T2], active T2 (index 1)
+    s.addWorkspace("b", "/tmp/b");
+    s.switch(1);
+    s.newTab("b1", "/tmp/b"); // b: [b1]
+    s.switch(0);
+    expect(s.moveTabToWorkspace(0, 1, 1)).toBe(true);
+    expect(s.workspaces[0].tabs.map((t) => t.title)).toEqual(["Terminal 1"]);
+    expect(s.workspaces[1].tabs.map((t) => t.title)).toEqual(["b1", "T2"]);
+    expect(s.workspaces[1].active).toBe(1);
+    expect(s.currentWorkspace()?.name).toBe("b");
+    expect(s.moveTabToWorkspace(1, 0, 1)).toBe(false);
+  });
+
+  it("removes the source session when its last tab is moved out", () => {
+    const s = store();
+    s.addWorkspace("b", "/tmp/b");
+    s.switch(1);
+    s.newTab("b1", "/tmp/b"); // b: [b1]
+    s.switch(0); // home: [Terminal 1]
+    expect(s.moveTabToWorkspace(0, 0, 1)).toBe(true);
+    expect(s.workspaces.length).toBe(1);
+    expect(s.currentWorkspace()?.name).toBe("b");
+    expect(s.currentWorkspace()!.tabs.map((t) => t.title)).toEqual(["b1", "Terminal 1"]);
+  });
+
   it("new tabs fall back to the workspace dir without a live tab", () => {
     const ws: Workspace = { id: "w1", name: "home", dir: "/home/kaazrot", tabs: [], active: 0 };
     expect(newTabCwd(ws)).toBe("/home/kaazrot");

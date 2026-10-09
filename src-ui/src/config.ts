@@ -8,6 +8,8 @@ export interface AppConfig {
   theme: string | null;
   /** Command the "new AI tab" action runs. Empty disables the AI option. */
   agentCommand: string;
+  /** Command an AI tab runs when restored, so it resumes its last session. */
+  agentResumeCommand: string;
   /** Terminal scrollback buffer, in lines (clamped 1000..500000). */
   scrollback: number;
   /** Chord overrides per action, e.g. { "close-tab": "ctrl+q" }. */
@@ -41,6 +43,7 @@ export function defaultConfig(): AppConfig {
     fontSize: null,
     theme: null,
     agentCommand: "opencode",
+    agentResumeCommand: "opencode --continue",
     scrollback: 50000,
     keybindings: {},
     copyOnSelect: false,
@@ -89,6 +92,10 @@ export function configFromJSON(json: string): AppConfig {
     theme: typeof r.theme === "string" ? r.theme : base.theme,
     agentCommand:
       typeof r.agentCommand === "string" ? r.agentCommand : base.agentCommand,
+    agentResumeCommand:
+      typeof r.agentResumeCommand === "string"
+        ? r.agentResumeCommand
+        : base.agentResumeCommand,
     scrollback:
       typeof r.scrollback === "number" ? clampScrollback(r.scrollback) : base.scrollback,
     keybindings: parseKeybindings(r.keybindings, base.keybindings),
