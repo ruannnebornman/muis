@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bellAction, configFromJSON, defaultConfig, effectiveFontSize, segmentVisible } from "./config";
+import { bellAction, configFromJSON, defaultConfig, effectiveFontSize, segmentVisible, themeForWorkspace } from "./config";
 
 describe("AppConfig", () => {
   it("defaults to sessions shown, side tabs, system font", () => {
@@ -18,8 +18,16 @@ describe("AppConfig", () => {
       cursorBlink: true,
       bell: "none",
       statusbar: {},
+      workspaceThemes: {},
     });
     expect(configFromJSON("")).toEqual(defaultConfig());
+  });
+
+  it("resolves per-workspace themes with a global fallback", () => {
+    const cfg = configFromJSON('{"theme":"nord","workspaceThemes":{"dev":"dracula"}}');
+    expect(themeForWorkspace(cfg, "dev")).toBe("dracula");
+    expect(themeForWorkspace(cfg, "other")).toBe("nord");
+    expect(configFromJSON('{"workspaceThemes":{"x":5}}').workspaceThemes).toEqual({});
   });
 
   it("reads statusbar visibility (absent = shown)", () => {
@@ -86,6 +94,7 @@ describe("AppConfig", () => {
       cursorBlink: false,
       bell: "both",
       statusbar: { clock: false },
+      workspaceThemes: { dev: "nord" },
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
   });

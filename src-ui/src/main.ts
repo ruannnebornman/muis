@@ -11,7 +11,7 @@ import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
 import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, type AppConfig } from "./config";
 import { clampIndex, filterCommands, type Command } from "./commands";
-import { segmentVisible } from "./config";
+import { segmentVisible, themeForWorkspace } from "./config";
 import { QueryHistory } from "./history";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
@@ -1460,8 +1460,20 @@ function el(tag: string, cls: string, text?: string): HTMLElement {
   return e;
 }
 
+let appliedTheme: string | null = null;
+/** Apply the current workspace's accent theme (chrome + terminals). */
+function applyWorkspaceTheme(): void {
+  const name = themeForWorkspace(cfg, store.currentWorkspace()?.name ?? "");
+  if (name === appliedTheme) return;
+  appliedTheme = name;
+  applyTheme(name);
+  const xt = xtermTheme(name);
+  for (const [, view] of views) view.term.options.theme = xt;
+}
+
 function renderAll(): void {
   const ws = store.currentWorkspace();
+  applyWorkspaceTheme();
   if (ws && ws.tabs.length === 0) {
     // A live workspace always shows a terminal. Only a fully closed
     // workspace (no sessions left) is allowed to stay empty.
@@ -2255,6 +2267,7 @@ async function applySettings(): Promise<void> {
     statusbar: Object.fromEntries(
       Object.entries(segOpts).map(([id, cb]) => [id, cb.checked]),
     ),
+    workspaceThemes: cfg.workspaceThemes,
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);
@@ -2269,6 +2282,7 @@ async function applySettings(): Promise<void> {
     view.term.options.cursorBlink = cfg.cursorBlink;
   }
   await refreshAgentReady();
+  appliedTheme = null; // settings may have changed the theme
   closeSettings();
   renderAll();
 }
