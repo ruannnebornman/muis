@@ -14,6 +14,8 @@ export interface CliNotify {
   body: string;
   tab_id?: string | null;
   urgency?: number;
+  /** Agent session id reported by an agent hook/plugin (opencode). */
+  agent_session?: string | null;
 }
 
 /** Turn a `muis-notify` request into a notification event. */

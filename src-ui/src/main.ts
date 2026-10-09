@@ -23,6 +23,8 @@ import { DoneTracker } from "./done";
 import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
+import { AcpClient, type PermissionRequest } from "./acp";
+import { agentResumeForCommand } from "./agents";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
@@ -224,9 +226,600 @@ interface TabView {
   fit: FitAddon;
   search: SearchAddon;
   box: HTMLElement;
+  /** Refits when the surface resizes (layout settling, window, sidebar). */
+  ro?: ResizeObserver;
 }
 
 const views = new Map<string, TabView>();
+
+/* ---------------- agent (ACP) panes ---------------- */
+
+interface AgentView {
+  box: HTMLElement;
+  log: HTMLElement;
+  input: HTMLInputElement;
+  send: HTMLButtonElement;
+  stop: HTMLButtonElement;
+  status: HTMLElement;
+  client: AcpClient;
+  agentId: string;
+  tabId: string;
+  sessionId: string;
+  started: boolean;
+  running: boolean;
+  ready: boolean;
+  /** Streaming nodes keyed by message/tool id. */
+  nodes: Map<string, HTMLElement>;
+  /** Files attached to the next prompt (embedded as ACP resource parts). */
+  attachments: { name: string; uri: string; mimeType: string; text: string }[];
+  /** Container for the attachment chips. */
+  chips: HTMLElement;
+  /** Tool-call cards keyed by toolCallId, with merged fields across updates. */
+  tools: Map<
+    string,
+    {
+      card: HTMLElement;
+      title: HTMLElement;
+      badge: HTMLElement;
+      body: HTMLElement;
+      raw: { oldString?: string; newString?: string; content?: string };
+      paths: string[];
+    }
+  >;
+}
+
+const agentViews = new Map<string, AgentView>();
+const agentById = new Map<string, AgentView>();
+/** Lines that arrived before the view registered its agent id. */
+const pendingAgentMsgs = new Map<string, string[]>();
+
+function findTab(tabId: string): Tab | undefined {
+  for (const w of store.workspaces) {
+    const t = w.tabs.find((x) => x.id === tabId);
+    if (t) return t;
+  }
+  return undefined;
+}
+
+function appendAgentNode(v: AgentView, cls: string, text: string): HTMLElement {
+  const d = document.createElement("div");
+  d.className = cls;
+  d.textContent = text;
+  v.log.append(d);
+  v.log.scrollTop = v.log.scrollHeight;
+  return d;
+}
+
+function contentText(c: unknown): string {
+  const content = c as { type?: string; text?: string } | undefined;
+  return content?.type === "text" ? content.text ?? "" : "";
+}
+
+/** Colored `-`/`+` diff rendered as line spans. */
+function diffPre(oldText: string, newText: string): HTMLElement {
+  const pre = document.createElement("pre");
+  pre.className = "a-diff";
+  const add = (sign: string, text: string, cls: string): void => {
+    if (!text) return;
+    for (const line of text.split("\n")) {
+      const span = document.createElement("span");
+      span.className = cls;
+      span.textContent = `${sign} ${line}\n`;
+      pre.append(span);
+    }
+  };
+  add("-", oldText, "d-del");
+  add("+", newText, "d-add");
+  return pre;
+}
+
+/** Render a `plan` update (opencode's TODO list) as a steps card. */
+function renderPlan(v: AgentView, u: Record<string, unknown>): void {
+  const entries = Array.isArray(u.entries)
+    ? (u.entries as { content?: string; status?: string }[])
+    : [];
+  let node = v.nodes.get("plan");
+  if (!node) {
+    node = appendAgentNode(v, "a-plan", "");
+    v.nodes.set("plan", node);
+  }
+  node.textContent = "";
+  for (const e of entries) {
+    const row = document.createElement("div");
+    const status = String(e.status ?? "pending");
+    row.className = `a-plan-row ${status}`;
+    const mark = status === "completed" ? "✔" : status === "in_progress" ? "▶" : "•";
+    row.textContent = `${mark} ${e.content ?? ""}`;
+    node.append(row);
+  }
+  v.log.scrollTop = v.log.scrollHeight;
+}
+
+function renderToolCard(v: AgentView, u: Record<string, unknown>): void {
+  const id = String(u.toolCallId ?? "tool");
+  let node = v.tools.get(id);
+  if (!node) {
+    const card = document.createElement("div");
+    card.className = "a-toolcard";
+    const head = document.createElement("div");
+    head.className = "a-tool-head";
+    const title = document.createElement("span");
+    title.className = "a-tool-title";
+    const badge = document.createElement("span");
+    badge.className = "a-tool-badge";
+    head.append(title, badge);
+    const body = document.createElement("div");
+    body.className = "a-tool-body";
+    card.append(head, body);
+    node = { card, title, badge, body, raw: {}, paths: [] };
+    v.tools.set(id, node);
+    v.log.append(card);
+  }
+  node.title.textContent = String(u.title ?? u.kind ?? "tool");
+  const status = String(u.status ?? "");
+  node.badge.textContent = status;
+  node.badge.dataset.status = status;
+
+  // opencode's final update omits rawInput/locations, so merge everything
+  // ever seen for this tool and render from the merged state.
+  const raw = (u.rawInput ?? {}) as { oldString?: unknown; newString?: unknown; content?: unknown };
+  if (typeof raw.oldString === "string") node.raw.oldString = raw.oldString;
+  if (typeof raw.newString === "string") node.raw.newString = raw.newString;
+  if (typeof raw.content === "string") node.raw.content = raw.content;
+  const locs = Array.isArray(u.locations) ? (u.locations as { path?: string }[]) : [];
+  const paths = locs.map((l) => l?.path).filter((p): p is string => Boolean(p));
+  if (paths.length) node.paths = paths;
+
+  node.body.textContent = "";
+  if (node.paths.length) {
+    const p = document.createElement("div");
+    p.className = "a-tool-path";
+    p.textContent = node.paths.join(", ");
+    node.body.append(p);
+  }
+  if (node.raw.oldString !== undefined || node.raw.newString !== undefined) {
+    node.body.append(diffPre(node.raw.oldString ?? "", node.raw.newString ?? ""));
+  } else if (node.raw.content !== undefined) {
+    node.body.append(diffPre("", node.raw.content));
+  }
+  const content = Array.isArray(u.content) ? u.content : [];
+  for (const c of content) {
+    const t = contentText((c as { content?: unknown })?.content);
+    if (t) {
+      const d = document.createElement("div");
+      d.className = "a-tool-out";
+      d.textContent = t;
+      node.body.append(d);
+    }
+  }
+  v.log.scrollTop = v.log.scrollHeight;
+}
+
+function renderAgentUpdate(v: AgentView, u: Record<string, unknown>): void {
+  const kind = String(u.sessionUpdate ?? "");
+  const textOf = contentText;
+  switch (kind) {
+    case "agent_message_chunk": {
+      const id = String(u.messageId ?? "msg");
+      let node = v.nodes.get(id);
+      if (!node) {
+        node = appendAgentNode(v, "a-msg agent", "");
+        v.nodes.set(id, node);
+      }
+      node.textContent += textOf(u.content);
+      v.log.scrollTop = v.log.scrollHeight;
+      break;
+    }
+    case "user_message_chunk": {
+      const id = String(u.messageId ?? "user");
+      let node = v.nodes.get(id);
+      if (!node) {
+        node = appendAgentNode(v, "a-msg user", "");
+        v.nodes.set(id, node);
+      }
+      node.textContent += textOf(u.content);
+      v.log.scrollTop = v.log.scrollHeight;
+      break;
+    }
+    case "agent_thought_chunk": {
+      const id = String(u.messageId ?? "thought");
+      let node = v.nodes.get(id);
+      if (!node) {
+        node = appendAgentNode(v, "a-thought", "");
+        v.nodes.set(id, node);
+      }
+      node.textContent += textOf(u.content);
+      v.log.scrollTop = v.log.scrollHeight;
+      break;
+    }
+    case "plan":
+      renderPlan(v, u);
+      break;
+    case "tool_call":
+    case "tool_call_update":
+      renderToolCard(v, u);
+      break;
+    case "usage_update": {
+      const used = Number(u.used ?? 0);
+      const size = Number(u.size ?? 0);
+      v.status.textContent = size ? `${used.toLocaleString()} / ${size.toLocaleString()} tokens` : "";
+      break;
+    }
+    default:
+      break; // available_commands_update, plan, … ignored for now
+  }
+}
+
+function renderPermission(v: AgentView, req: PermissionRequest): void {
+  const card = document.createElement("div");
+  card.className = "a-perm";
+  const tc = req.toolCall as
+    | { title?: string; kind?: string; locations?: { path?: string }[] }
+    | undefined;
+  const title = document.createElement("div");
+  title.className = "a-perm-title";
+  title.textContent = `Permission: ${tc?.title ?? tc?.kind ?? "tool"}`;
+  card.append(title);
+  const permPaths = (tc?.locations ?? []).map((l) => l?.path).filter(Boolean);
+  if (permPaths.length) {
+    const p = document.createElement("div");
+    p.className = "a-tool-path";
+    p.textContent = permPaths.join(", ");
+    card.append(p);
+  }
+  const row = document.createElement("div");
+  row.className = "a-perm-row";
+  const answer = (optionId: string | null) => {
+    v.client.resolvePermission(req.requestId, optionId);
+    card.remove();
+  };
+  for (const opt of req.options) {
+    const b = el("button", "btn", opt.name ?? opt.optionId);
+    b.addEventListener("click", () => answer(opt.optionId));
+    row.append(b);
+  }
+  const deny = el("button", "btn", "Deny");
+  deny.addEventListener("click", () => answer(null));
+  row.append(deny);
+  card.append(row);
+  v.log.append(card);
+  v.log.scrollTop = v.log.scrollHeight;
+}
+
+function ensureAgentView(tab: Tab): AgentView {
+  const existing = agentViews.get(tab.id);
+  if (existing) {
+    if (!existing.box.isConnected) termWrap.append(existing.box);
+    return existing;
+  }
+  const box = document.createElement("div");
+  box.className = "tabbox agent";
+  const head = document.createElement("div");
+  head.className = "pane-head agent-head";
+  const headLabel = document.createElement("span");
+  headLabel.className = "agent-head-label";
+  headLabel.textContent = `${cfg.agentCommand.trim() || "agent"} · ACP`;
+  const model = document.createElement("select");
+  model.className = "agent-model";
+  model.title = "Model";
+  model.style.display = "none";
+  head.append(headLabel, model);
+  const log = document.createElement("div");
+  log.className = "agent-log";
+  const chips = document.createElement("div");
+  chips.className = "agent-chips";
+  chips.style.display = "none";
+  const inputRow = document.createElement("div");
+  inputRow.className = "agent-input";
+  const attach = document.createElement("button");
+  attach.className = "btn";
+  attach.textContent = "＋";
+  attach.title = "Attach a text file";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "agent-field";
+  input.placeholder = "Message the agent…";
+  input.disabled = true;
+  const send = document.createElement("button");
+  send.className = "btn";
+  send.textContent = "Send";
+  send.disabled = true;
+  const stop = document.createElement("button");
+  stop.className = "btn";
+  stop.textContent = "Stop";
+  stop.style.display = "none";
+  const status = document.createElement("div");
+  status.className = "a-status";
+  inputRow.append(attach, input, send, stop, status);
+  box.append(head, log, chips, inputRow);
+  termWrap.append(box);
+
+  let v!: AgentView;
+  const client = new AcpClient(
+    (line) => {
+      if (v.agentId) void invoke("agent_write", { id: v.agentId, line }).catch(() => {});
+    },
+    {
+      onUpdate: (u) => renderAgentUpdate(v, u),
+      onPermission: (req) => renderPermission(v, req),
+      onSession: (sid) => {
+        v.sessionId = sid;
+        const t = findTab(v.tabId);
+        if (t) {
+          t.acpSessionId = sid;
+          scheduleSave();
+        }
+      },
+      onConfig: (options) => {
+        const m = options.find((o) => o.id === "model" && o.type === "select");
+        if (!m) return;
+        model.innerHTML = "";
+        for (const o of m.options ?? []) {
+          const opt = document.createElement("option");
+          opt.value = o.value;
+          opt.textContent = o.name;
+          model.append(opt);
+        }
+        model.value = m.currentValue ?? "";
+        model.style.display = "";
+      },
+      onError: (m) => appendAgentNode(v, "a-msg error", m),
+    },
+  );
+  v = {
+    box,
+    log,
+    input,
+    send,
+    stop,
+    status,
+    client,
+    agentId: "",
+    tabId: tab.id,
+    sessionId: "",
+    started: false,
+    running: false,
+    ready: false,
+    nodes: new Map(),
+    tools: new Map(),
+    attachments: [],
+    chips,
+  };
+  agentViews.set(tab.id, v);
+  attach.addEventListener("click", () => void attachFile(v));
+  model.addEventListener("change", () => {
+    void v.client.setConfigOption("model", model.value).catch(() => {});
+  });
+
+  const submit = () => void sendPrompt(v);
+  send.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  });
+  stop.addEventListener("click", () => {
+    if (!v.agentId) return;
+    v.client.cancel();
+    // Unblock the input immediately; the turn's promise may resolve later.
+    v.running = false;
+    v.stop.style.display = "none";
+    appendAgentNode(v, "a-sys", "cancelled");
+  });
+  return v;
+}
+
+async function startAgent(v: AgentView, tab: Tab): Promise<void> {
+  if (!IN_TAURI) {
+    appendAgentNode(v, "a-sys", "ACP panes need the desktop app");
+    return;
+  }
+  appendAgentNode(v, "a-sys", "starting agent…");
+  try {
+    const command = cfg.agentCommand.trim() || "opencode";
+    const id = await invoke<string>("agent_spawn", { cwd: tab.cwd, command });
+    v.agentId = id;
+    agentById.set(id, v);
+    const buffered = pendingAgentMsgs.get(id);
+    if (buffered) {
+      pendingAgentMsgs.delete(id);
+      for (const line of buffered) v.client.receive(line);
+    }
+    // opencode acp can drop stdin written before it is ready; retry the
+    // handshake until it answers instead of hanging on a single attempt.
+    let handshaken = false;
+    for (let attempt = 0; attempt < 8 && !handshaken; attempt++) {
+      try {
+        await v.client.initialize(1500);
+        handshaken = true;
+      } catch {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    if (!handshaken) {
+      appendAgentNode(v, "a-msg error", "agent did not respond to initialize");
+      return;
+    }
+    if (tab.acpSessionId) {
+      await v.client.loadSession(tab.cwd, tab.acpSessionId);
+      appendAgentNode(v, "a-sys", `resumed ${tab.acpSessionId}`);
+    } else {
+      await v.client.newSession(tab.cwd);
+    }
+    v.ready = true;
+    v.input.disabled = false;
+    v.send.disabled = false;
+    v.input.focus();
+  } catch (e) {
+    appendAgentNode(v, "a-msg error", `failed to start agent: ${String(e)}`);
+  }
+}
+
+function renderChips(v: AgentView): void {
+  v.chips.textContent = "";
+  v.attachments.forEach((a, i) => {
+    const chip = document.createElement("span");
+    chip.className = "agent-chip";
+    chip.textContent = a.name;
+    const x = document.createElement("span");
+    x.className = "x";
+    x.textContent = "✕";
+    x.addEventListener("click", () => {
+      v.attachments.splice(i, 1);
+      renderChips(v);
+    });
+    chip.append(x);
+    v.chips.append(chip);
+  });
+  v.chips.style.display = v.attachments.length ? "" : "none";
+}
+
+async function attachFile(v: AgentView): Promise<void> {
+  if (!IN_TAURI) return;
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ multiple: false, directory: false });
+    if (typeof picked !== "string") return;
+    const text = await invoke<string>("read_text_file", { path: picked });
+    const name = picked.split("/").pop() ?? picked;
+    v.attachments.push({ name, uri: `file://${picked}`, mimeType: "text/plain", text });
+    renderChips(v);
+  } catch (e) {
+    appendAgentNode(v, "a-msg error", `attach failed: ${String(e)}`);
+  }
+}
+
+async function sendPrompt(v: AgentView): Promise<void> {
+  const text = v.input.value.trim();
+  if ((!text && v.attachments.length === 0) || !v.ready || v.running) return;
+  v.input.value = "";
+  if (text) appendAgentNode(v, "a-msg user", text);
+  const attachments = v.attachments.map((a) => ({
+    uri: a.uri,
+    mimeType: a.mimeType,
+    text: a.text,
+  }));
+  v.attachments = [];
+  renderChips(v);
+  v.running = true;
+  v.stop.style.display = "";
+  try {
+    await v.client.prompt(text, attachments);
+  } catch (e) {
+    appendAgentNode(v, "a-msg error", String((e as { message?: string })?.message ?? e));
+  } finally {
+    v.running = false;
+    v.stop.style.display = "none";
+  }
+}
+
+function disposeAgentView(v: AgentView): void {
+  if (v.agentId) {
+    agentById.delete(v.agentId);
+    if (IN_TAURI) void invoke("agent_kill", { id: v.agentId }).catch(() => {});
+  }
+  v.box.remove();
+  agentViews.delete(v.tabId);
+}
+
+/* ---------------- staggered agent restore ---------------- */
+
+interface LoadEntry {
+  ws: Workspace;
+  tab: Tab;
+}
+
+const loadQueue: LoadEntry[] = [];
+let loadActive = 0;
+/** Loads in flight at once: scales with cores (4->2, 6->3, 8->4), capped at 4. */
+const loadConcurrency = Math.max(
+  1,
+  Math.min(4, Math.floor((navigator.hardwareConcurrency || 4) / 2)),
+);
+const LOAD_STAGGER_MS = 300;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => window.setTimeout(r, ms));
+}
+
+function isAgentTab(t: Tab): boolean {
+  return t.kind === "agent" || t.agent === true;
+}
+
+function isAgentStarted(t: Tab): boolean {
+  if (t.kind === "agent") return agentViews.get(t.id)?.started ?? false;
+  return views.has(t.id); // legacy terminal agent tab: pty spawned
+}
+
+/** Restored agent tabs in load order: visible, current session, then rest. */
+function agentTabsInLoadOrder(): LoadEntry[] {
+  const out: LoadEntry[] = [];
+  const push = (ws: Workspace, t: Tab): void => {
+    if (isAgentTab(t) && !isAgentStarted(t)) out.push({ ws, tab: t });
+  };
+  const ws = store.currentWorkspace();
+  if (ws) {
+    const active = ws.tabs[ws.active];
+    if (active) push(ws, active);
+    for (const t of ws.tabs) if (t !== active) push(ws, t);
+  }
+  for (const w of store.workspaces) {
+    if (w === ws) continue;
+    for (const t of w.tabs) push(w, t);
+  }
+  return out;
+}
+
+function updateLoadingHint(): void {
+  const n = loadQueue.length + loadActive;
+  stLoad.style.display = n > 0 ? "" : "none";
+  stLoad.textContent = n > 0 ? `loading ${n}` : "";
+}
+
+async function loadAgent(entry: LoadEntry): Promise<void> {
+  const { ws, tab } = entry;
+  if (tab.kind === "agent") {
+    const v = ensureAgentView(tab);
+    if (v.started) return;
+    v.started = true;
+    await startAgent(v, tab);
+  } else {
+    if (views.has(tab.id)) return; // already spawned (current session)
+    ensureView(ws.id, tab);
+    // The TUI has no completion event; allow the spawn + resume write.
+    await delay(900);
+  }
+}
+
+function pumpLoadQueue(): void {
+  if (loadActive >= loadConcurrency || loadQueue.length === 0) {
+    updateLoadingHint();
+    return;
+  }
+  const entry = loadQueue.shift()!;
+  loadActive++;
+  updateLoadingHint();
+  void loadAgent(entry)
+    .catch(() => {})
+    .finally(() => {
+      loadActive--;
+      updateLoadingHint();
+      pumpLoadQueue();
+    });
+  // Stagger the next start so a full window does not boot in one tick.
+  window.setTimeout(pumpLoadQueue, LOAD_STAGGER_MS);
+}
+
+/**
+ * Bring every agent tab back up, a few at a time, so a burst of agent
+ * startups does not spike the CPU. Plain terminal tabs are left as shells
+ * — muis never re-runs a command the user typed by hand.
+ */
+function startRestoredAgents(): void {
+  loadQueue.push(...agentTabsInLoadOrder());
+  pumpLoadQueue();
+}
 
 /** Scrollback search follows the visible tab. */
 function activeSearch() {
@@ -314,6 +907,23 @@ tabbar.className = "tabbar";
 tabbar.id = "tabbar";
 const termWrap = document.createElement("div");
 termWrap.className = "term-wrap";
+
+// Detect-and-offer chip: shown when a known agent is run in a shell tab,
+// offering to open it in the AI panel instead (Phase 2).
+const agentOffer = document.createElement("div");
+agentOffer.className = "agent-offer";
+agentOffer.style.display = "none";
+const agentOfferText = document.createElement("span");
+agentOfferText.className = "agent-offer-text";
+const agentOfferOpen = document.createElement("button");
+agentOfferOpen.className = "btn";
+agentOfferOpen.textContent = "Open AI tab";
+const agentOfferDismiss = document.createElement("button");
+agentOfferDismiss.className = "btn";
+agentOfferDismiss.textContent = "Not now";
+agentOffer.append(agentOfferText, agentOfferOpen, agentOfferDismiss);
+termWrap.append(agentOffer);
+
 const statusbar = document.createElement("div");
 statusbar.className = "statusbar";
 center.append(tabbar, termWrap, statusbar);
@@ -535,9 +1145,14 @@ function ensureView(sessionId: string, tab: Tab): TabView {
         // AI tab: after the shell (and any restored scrollback) is up,
         // launch the configured agent once per launch.
         const launchAgent = (): void => {
-          // Restored tabs resume the agent's last session; new tabs start fresh.
+          // Exact session id (reported by a plugin) beats an inferred
+          // resume command, which beats the configured default; a
+          // restored tab resumes its last session, a new tab starts fresh.
           const command = (
-            restoredTabs.has(tab.id) ? cfg.agentResumeCommand : cfg.agentCommand
+            tab.agentSession
+              ? `opencode -s ${tab.agentSession}`
+              : tab.agentResume ??
+                (restoredTabs.has(tab.id) ? cfg.agentResumeCommand : cfg.agentCommand)
           ).trim();
           if (!tab.agent || !command || agentLaunched.has(tab.id)) return;
           agentLaunched.add(tab.id);
@@ -554,6 +1169,13 @@ function ensureView(sessionId: string, tab: Tab): TabView {
           });
         } else {
           launchAgent();
+        }
+        // The pty exists now. The fit that ran when the tab was created may
+        // have raced the spawn and been dropped by the worker, leaving the
+        // pty at the default size; size it to the real surface here too.
+        const spawned = views.get(tab.id);
+        if (spawned && spawned.box.classList.contains("active")) {
+          fitShown(sessionId, tab, spawned);
         }
       } catch (e) {
         term.writeln(`\r\n[failed to spawn pty: ${String(e)}]`);
@@ -576,6 +1198,21 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   view = { term, fit, search, box };
   views.set(tab.id, view);
   renderCommandHead(tab.id);
+
+  // Refit whenever the surface actually changes size. This catches the
+  // hidden->shown transition (xterm measures 0 while display:none, so the
+  // first fit can be stale) and window/sidebar resizes, which a single
+  // one-shot fit misses — the cause of an agent TUI rendering at the wrong
+  // size and not filling the pane.
+  const self = view;
+  view.ro = new ResizeObserver(() => {
+    if (!self.box.classList.contains("active")) return;
+    requestAnimationFrame(() => {
+      if (self.box.classList.contains("active")) fitShown(sessionId, tab, self);
+    });
+  });
+  view.ro.observe(surface);
+
   return view;
 }
 
@@ -608,6 +1245,7 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
       const cmd = ev.cmd || st.input.trim() || currentInputLine(tabNow.id);
       commandTracker.onCmdStart(tabNow.id, cmd);
       renderCommandHead(tabNow.id);
+      markAgentTab(tabNow.id);
     } else if (ev.type === "cmd-end") {
       finishCommand(tabNow.id, ev.exit);
     } else if (ev.type === "notify") {
@@ -641,7 +1279,7 @@ function closeTab(sessionId: string, tabId: string): void {
       void client.kill(sessionId, tabId).catch(() => {});
       void invoke("snapshot_remove", { tabId }).catch(() => {});
     }
-    view.term.dispose();
+    view.ro?.disconnect(); view.term.dispose();
     view.box.remove();
     views.delete(tabId);
     oscParsers.delete(tabId);
@@ -668,7 +1306,7 @@ function closeSession(w: Workspace): void {
     }
     const view = views.get(t.id);
     if (view) {
-      view.term.dispose();
+      view.ro?.disconnect(); view.term.dispose();
       view.box.remove();
       views.delete(t.id);
     }
@@ -699,7 +1337,7 @@ function dropSessionIfLastTab(sessionId: string, tabId: string): void {
   }
   const view = views.get(tabId);
   if (view) {
-    view.term.dispose();
+    view.ro?.disconnect(); view.term.dispose();
     view.box.remove();
     views.delete(tabId);
   }
@@ -974,12 +1612,9 @@ function addShellTab(ws: Workspace): void {
 }
 
 function addAgentTab(ws: Workspace): void {
+  // AI button opens an ACP pane, not a shell running the agent.
   const label = cfg.agentCommand.trim() || "AI";
-  const id = store.newTab(label, newTabCwd(ws));
-  if (id) {
-    const tab = ws.tabs.find((t) => t.id === id);
-    if (tab) tab.agent = true;
-  }
+  store.newTab(label, newTabCwd(ws), "agent");
   renderAll();
 }
 
@@ -1048,7 +1683,7 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
 function renderTerms(ws: Workspace | undefined): void {
   for (const [id, view] of views) {
     if (!store.workspaces.some((w) => w.tabs.some((t) => t.id === id))) {
-      view.term.dispose();
+      view.ro?.disconnect(); view.term.dispose();
       view.box.remove();
       views.delete(id);
       oscParsers.delete(id);
@@ -1059,13 +1694,31 @@ function renderTerms(ws: Workspace | undefined): void {
       view.box.classList.remove("active");
     }
   }
+  for (const [id, v] of agentViews) {
+    if (!store.workspaces.some((w) => w.tabs.some((t) => t.id === id))) {
+      disposeAgentView(v);
+    } else {
+      v.box.classList.remove("active");
+    }
+  }
   // No sessions: every terminal view was just disposed above.
   if (!ws) return;
   for (const t of ws.tabs) {
-    const view = ensureView(ws.id, t);
     const show = ws.tabs[ws.active]?.id === t.id;
-    view.box.classList.toggle("active", show);
-    if (show) fitShown(ws.id, t, view);
+    if (t.kind === "agent") {
+      const v = ensureAgentView(t);
+      v.box.classList.toggle("active", show);
+      // The visible tab starts immediately (bypasses the load queue); the
+      // rest are brought up by startRestoredAgents() a few at a time.
+      if (show && !v.started) {
+        v.started = true;
+        void startAgent(v, t);
+      }
+    } else {
+      const view = ensureView(ws.id, t);
+      view.box.classList.toggle("active", show);
+      if (show) fitShown(ws.id, t, view);
+    }
   }
 }
 
@@ -1078,6 +1731,8 @@ const stUser = el("span", "pill", "");
 const stCpu = el("span", "pill", "");
 const stRam = el("span", "pill", "");
 const stGpu = el("span", "pill", "");
+const stLoad = el("span", "pill", "");
+stLoad.style.display = "none";
 const stVersion = el("span", "pill", "");
 const stClock = el("span", "", "");
 const stShell = el("span", "pill", "");
@@ -1091,6 +1746,7 @@ statusbar.append(
   stCpu,
   stRam,
   stGpu,
+  stLoad,
   stVersion,
   stClock,
   stShell,
@@ -1254,6 +1910,10 @@ const onShortcut = (e: KeyboardEvent): void => {
       e.preventDefault();
       store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
       renderAll();
+      break;
+    case "new-agent-tab":
+      e.preventDefault();
+      if (agentReady) addAgentTab(ws);
       break;
     case "close-tab": {
       e.preventDefault();
@@ -1535,7 +2195,53 @@ function trackInput(tabId: string, data: string): void {
   if (commandTracker.onInput(tabId, data)) {
     renderCommandHead(tabId);
     armIdleFallback(tabId);
+    markAgentTab(tabId);
   }
+}
+
+/**
+ * If the command a tab just ran is a known TUI coding agent, remember the
+ * tab as an agent tab so it reopens the agent on restore. muis has no
+ * manual way to mark a tab, so this is inferred from what actually ran.
+ */
+function markAgentTab(tabId: string): void {
+  const resume = agentResumeForCommand(commandTracker.state(tabId).lastCmd);
+  if (!resume) return;
+  const tab = findTab(tabId);
+  if (!tab || tab.kind === "agent" || tab.agent) return;
+  tab.agent = true;
+  tab.agentResume = resume;
+  scheduleSave();
+  renderTabs();
+  showAgentOffer(tabId, resume.split(" ")[0]);
+}
+
+/** Tabs already offered the "open in AI panel" chip. */
+const agentOffered = new Set<string>();
+
+/**
+ * Offer to open a detected agent in the AI panel instead of the terminal.
+ * Post-exec (we can't intercept before the shell runs it), so this opens a
+ * new ACP tab rather than converting the running one; dismiss once per tab.
+ */
+function showAgentOffer(tabId: string, agentName: string): void {
+  if (agentOffered.has(tabId) || !agentReady) return;
+  agentOffered.add(tabId);
+  const tab = findTab(tabId);
+  if (!tab) return;
+  agentOfferText.textContent = `${agentName} detected — open in the AI panel?`;
+  agentOffer.style.display = "";
+  agentOfferOpen.onclick = () => {
+    agentOffer.style.display = "none";
+    const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === tabId));
+    if (ws) {
+      store.current = store.workspaces.indexOf(ws);
+      addAgentTab(ws);
+    }
+  };
+  agentOfferDismiss.onclick = () => {
+    agentOffer.style.display = "none";
+  };
 }
 
 function finishCommand(tabId: string, exit: number | null): void {
@@ -1615,6 +2321,16 @@ function handleNotifyRequest(req: CliNotify): void {
   const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === req.tab_id));
   const tab = ws?.tabs.find((t) => t.id === req.tab_id);
   if (!tab) return;
+  // An agent hook/plugin reported its session id: remember it so the tab
+  // resumes that exact session instead of "last in this folder".
+  if (req.agent_session) {
+    if (tab.agentSession !== req.agent_session) {
+      tab.agentSession = req.agent_session;
+      tab.agent = true;
+      scheduleSave();
+    }
+    return;
+  }
   if (applyNotification(tab, notifyEventFromCli(req))) {
     renderTabs();
     renderSessions();
@@ -1836,6 +2552,31 @@ async function init(): Promise<void> {
     } catch {
       /* system monitor is best-effort */
     }
+    // ACP agent bridge: route stdout lines to the owning pane.
+    try {
+      await listen<{ id: string; line: string }>("agent-msg", (e) => {
+        const v = agentById.get(e.payload.id);
+        if (v) v.client.receive(e.payload.line);
+        else {
+          const arr = pendingAgentMsgs.get(e.payload.id) ?? [];
+          arr.push(e.payload.line);
+          pendingAgentMsgs.set(e.payload.id, arr);
+        }
+      });
+      await listen<{ id: string }>("agent-exit", (e) => {
+        const v = agentById.get(e.payload.id);
+        if (v) appendAgentNode(v, "a-sys", "agent exited");
+      });
+    } catch {
+      /* agent bridge is best-effort */
+    }
+    // Install the opencode plugin that reports session ids back to muis
+    // (idempotent; only written when missing).
+    try {
+      await invoke("install_opencode_plugin");
+    } catch {
+      /* plugin install is best-effort */
+    }
     // Resume where we left off; corrupt files start fresh (never broken).
     try {
       const saved = await invoke<string>("sessions_load");
@@ -1865,6 +2606,7 @@ async function init(): Promise<void> {
   await refreshAgentReady();
   applyTheme(cfg.theme);
   renderAll();
+  startRestoredAgents();
   reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });
   installDebugHook();
   startSnapshotLoop();
