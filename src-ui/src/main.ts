@@ -9,7 +9,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
-import { defaultConfig, configFromJSON, effectiveFontSize, type AppConfig } from "./config";
+import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, type AppConfig } from "./config";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
@@ -1036,6 +1036,24 @@ function fitShown(sessionId: string, tab: Tab, view: TabView): void {
   requestAnimationFrame(attempt);
 }
 
+let audioCtx: AudioContext | null = null;
+/** Short, quiet beep for the audible bell. */
+function beep(): void {
+  try {
+    audioCtx = audioCtx ?? new AudioContext();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = 800;
+    gain.gain.value = 0.04;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.08);
+  } catch {
+    /* no audio device */
+  }
+}
+
 function ensureView(sessionId: string, tab: Tab): TabView {
   let view = views.get(tab.id);
   if (view) {
@@ -1054,16 +1072,48 @@ function ensureView(sessionId: string, tab: Tab): TabView {
 
   const term = new Terminal({
     theme: xtermTheme(cfg.theme),
-    fontFamily: MUIS_THEME.termFont,
+    fontFamily: cfg.fontFamily ?? MUIS_THEME.termFont,
     fontSize: effectiveFontSize(cfg),
-    cursorBlink: true,
-    scrollback: 50000,
+    cursorStyle: cfg.cursorStyle,
+    cursorBlink: cfg.cursorBlink,
+    scrollback: cfg.scrollback,
   });
   const search = new SearchAddon();
   term.loadAddon(search);
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(surface);
+
+  // Bell: no-op, a brief visual flash, an audible beep, or both.
+  term.onBell(() => {
+    const { visual, audible } = bellAction(cfg.bell);
+    if (visual) {
+      surface.classList.add("bell-flash");
+      window.setTimeout(() => surface.classList.remove("bell-flash"), 140);
+    }
+    if (audible) beep();
+  });
+
+  // Clipboard modes (opt-in via config).
+  surface.addEventListener("mouseup", () => {
+    if (!cfg.copyOnSelect) return;
+    const sel = term.getSelection();
+    if (sel) void navigator.clipboard?.writeText(sel).catch(() => {});
+  });
+  surface.addEventListener("auxclick", (e) => {
+    if (e.button !== 1 || !cfg.middleClickPaste) return;
+    e.preventDefault();
+    void (async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text) return;
+        if (IN_TAURI) void client.write(sessionId, tab.id, enc.encode(text)).catch(() => {});
+        else term.write(text);
+      } catch {
+        /* clipboard read blocked */
+      }
+    })();
+  });
 
   // Prefer the GPU renderer, fall back to xterm's built-in canvas renderer
   // if WebGL is unavailable or the context is lost (some WebKitGTK/NVIDIA
@@ -1261,6 +1311,12 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
 
 /** Tabs already replayed from disk this launch (once per tab id). */
 const replayedTabs = new Set<string>();
+
+/** Drop a tab's saved scrollback lines (CSI 3 J; keeps the live screen). */
+function clearScrollback(tabId: string): void {
+  const view = views.get(tabId);
+  if (view) view.term.write("\x1b[3J");
+}
 
 function closeTab(sessionId: string, tabId: string): void {
   const owner = store.workspaces.find((w) => w.id === sessionId);
@@ -1858,7 +1914,7 @@ const onShortcut = (e: KeyboardEvent): void => {
   if (target === titleSearch) return; // search box handles its own keys
   const ws = store.currentWorkspace();
   if (!ws) return;
-  const action = resolveShortcut(e);
+  const action = resolveShortcut(e, cfg.keybindings);
   if (!action) return;
   switch (action.type) {
     case "new-tab":
@@ -1962,6 +2018,32 @@ const optAgent = document.createElement("input");
 optAgent.type = "text";
 optAgent.placeholder = "opencode";
 optAgent.title = "Command for the New AI tab; empty disables it";
+const optScrollback = document.createElement("input");
+optScrollback.type = "number";
+optScrollback.min = "1000";
+optScrollback.max = "500000";
+optScrollback.step = "1000";
+optScrollback.title = "Terminal scrollback lines (1000-500000)";
+const optFontFamily = document.createElement("input");
+optFontFamily.type = "text";
+optFontFamily.placeholder = "Default";
+optFontFamily.title = "Terminal font family; empty = default";
+const optCursorStyle = document.createElement("select");
+for (const s of ["block", "bar", "underline"]) {
+  const o = document.createElement("option");
+  o.value = s;
+  o.textContent = s;
+  optCursorStyle.append(o);
+}
+const optCursorBlink = document.createElement("input");
+optCursorBlink.type = "checkbox";
+const optBell = document.createElement("select");
+for (const s of ["none", "visual", "audible", "both"]) {
+  const o = document.createElement("option");
+  o.value = s;
+  o.textContent = s;
+  optBell.append(o);
+}
 
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
@@ -1976,6 +2058,11 @@ settingsBox.append(
   settingsRow("Terminal font size", optFontSize),
   settingsRow("Theme", optTheme),
   settingsRow("AI tab command", optAgent),
+  settingsRow("Scrollback lines", optScrollback),
+  settingsRow("Font family", optFontFamily),
+  settingsRow("Cursor style", optCursorStyle),
+  settingsRow("Cursor blink", optCursorBlink),
+  settingsRow("Bell", optBell),
   settingsButtons,
 );
 settingsOverlay.append(settingsBox);
@@ -1986,6 +2073,11 @@ function openSettings(): void {
   optFontSize.value = cfg.fontSize?.toString() ?? "";
   optTheme.value = cfg.theme ?? "default";
   optAgent.value = cfg.agentCommand;
+  optScrollback.value = cfg.scrollback.toString();
+  optFontFamily.value = cfg.fontFamily ?? "";
+  optCursorStyle.value = cfg.cursorStyle;
+  optCursorBlink.checked = cfg.cursorBlink;
+  optBell.value = cfg.bell;
   settingsOverlay.style.display = "flex";
 }
 
@@ -2001,6 +2093,14 @@ async function applySettings(): Promise<void> {
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
     agentCommand: optAgent.value.trim(),
+    scrollback: clampScrollback(Number(optScrollback.value)),
+    keybindings: cfg.keybindings,
+    copyOnSelect: cfg.copyOnSelect,
+    middleClickPaste: cfg.middleClickPaste,
+    fontFamily: optFontFamily.value.trim() || null,
+    cursorStyle: optCursorStyle.value as AppConfig["cursorStyle"],
+    cursorBlink: optCursorBlink.checked,
+    bell: optBell.value as AppConfig["bell"],
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);
@@ -2009,6 +2109,10 @@ async function applySettings(): Promise<void> {
   for (const [, view] of views) {
     view.term.options.fontSize = px;
     view.term.options.theme = nextTheme;
+    view.term.options.scrollback = cfg.scrollback;
+    view.term.options.fontFamily = cfg.fontFamily ?? MUIS_THEME.termFont;
+    view.term.options.cursorStyle = cfg.cursorStyle;
+    view.term.options.cursorBlink = cfg.cursorBlink;
   }
   await refreshAgentReady();
   closeSettings();
@@ -2446,6 +2550,7 @@ document.addEventListener("contextmenu", (e) => {
           label: tab.manual ? "Use automatic title" : "Freeze current title",
           fn: () => toggleFreezeTitle(ws, tab),
         },
+        { label: "Clear scrollback", fn: () => clearScrollback(tab.id) },
         { label: "Close tab", fn: () => closeTab(ws.id, tab.id) },
       ]);
     }

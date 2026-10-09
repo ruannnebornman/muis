@@ -25,7 +25,42 @@ export interface KeyLike {
   metaKey?: boolean;
 }
 
-export function resolveShortcut(e: KeyLike): ShortcutAction | null {
+/** Actions that carry no parameters, so a chord override maps cleanly. */
+const SIMPLE_ACTIONS = new Set([
+  "new-tab",
+  "new-agent-tab",
+  "close-tab",
+  "focus-search",
+  "focus-terminal",
+  "open-settings",
+  "close-overlay",
+]);
+
+const MODS = new Set(["ctrl", "control", "shift", "alt", "meta", "cmd", "super"]);
+
+/** Whether a keyboard event matches a chord like "ctrl+shift+w". */
+export function matchesChord(e: KeyLike, chord: string): boolean {
+  const parts = chord.toLowerCase().split("+").map((p) => p.trim()).filter(Boolean);
+  const key = [...parts].reverse().find((p) => !MODS.has(p));
+  if (!key) return false;
+  const want = (names: string[]): boolean => parts.some((p) => names.includes(p));
+  if (!!e.ctrlKey !== want(["ctrl", "control"])) return false;
+  if (!!e.shiftKey !== want(["shift"])) return false;
+  if (!!e.altKey !== want(["alt"])) return false;
+  if (!!e.metaKey !== want(["meta", "cmd", "super"])) return false;
+  const k = (e.key ?? "").toLowerCase();
+  const code = (e.code ?? "").toLowerCase();
+  return k === key || code === key || code === `key${key}`;
+}
+
+export function resolveShortcut(e: KeyLike, overrides?: Record<string, string>): ShortcutAction | null {
+  if (overrides) {
+    for (const [action, chord] of Object.entries(overrides)) {
+      if (SIMPLE_ACTIONS.has(action) && matchesChord(e, chord)) {
+        return { type: action } as ShortcutAction;
+      }
+    }
+  }
   const key = e.key;
   const lower = key.length === 1 ? key.toLowerCase() : key;
   const plainCtrl = e.ctrlKey && !e.shiftKey && !e.altKey;
