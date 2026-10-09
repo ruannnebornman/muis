@@ -2212,6 +2212,20 @@ for (const [id, label] of SEGMENTS) {
   segBox.append(wrap);
 }
 
+const resetSessionsBtn = document.createElement("button");
+resetSessionsBtn.className = "btn danger";
+resetSessionsBtn.textContent = "Reset sessions & restart";
+resetSessionsBtn.addEventListener("click", () => {
+  if (
+    !window.confirm(
+      "Reset all sessions and restart muis? This permanently deletes the saved sessions and cannot be undone.",
+    )
+  ) {
+    return;
+  }
+  if (IN_TAURI) void invoke("reset_sessions_and_restart").catch(() => {});
+});
+
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
 const settingsSave = document.createElement("button");
@@ -2232,6 +2246,7 @@ settingsBox.append(
   settingsRow("Cursor blink", optCursorBlink),
   settingsRow("Bell", optBell),
   settingsRow("Statusbar", segBox),
+  settingsRow("Danger zone", resetSessionsBtn),
   settingsButtons,
 );
 settingsOverlay.append(settingsBox);
