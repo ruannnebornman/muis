@@ -11,8 +11,17 @@ describe("AppConfig", () => {
       agentCommand: "opencode",
       scrollback: 50000,
       keybindings: {},
+      copyOnSelect: false,
+      middleClickPaste: false,
     });
     expect(configFromJSON("")).toEqual(defaultConfig());
+  });
+
+  it("reads the clipboard modes", () => {
+    const cfg = configFromJSON('{"copyOnSelect":true,"middleClickPaste":true}');
+    expect(cfg.copyOnSelect).toBe(true);
+    expect(cfg.middleClickPaste).toBe(true);
+    expect(configFromJSON('{"copyOnSelect":"yes"}').copyOnSelect).toBe(false);
   });
 
   it("loads what it saves", () => {
@@ -24,6 +33,8 @@ describe("AppConfig", () => {
       agentCommand: "aider",
       scrollback: 20000,
       keybindings: { "close-tab": "ctrl+q" },
+      copyOnSelect: true,
+      middleClickPaste: true,
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
   });

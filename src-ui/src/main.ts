@@ -455,6 +455,27 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   term.loadAddon(fit);
   term.open(surface);
 
+  // Clipboard modes (opt-in via config).
+  surface.addEventListener("mouseup", () => {
+    if (!cfg.copyOnSelect) return;
+    const sel = term.getSelection();
+    if (sel) void navigator.clipboard?.writeText(sel).catch(() => {});
+  });
+  surface.addEventListener("auxclick", (e) => {
+    if (e.button !== 1 || !cfg.middleClickPaste) return;
+    e.preventDefault();
+    void (async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text) return;
+        if (IN_TAURI) void client.write(sessionId, tab.id, enc.encode(text)).catch(() => {});
+        else term.write(text);
+      } catch {
+        /* clipboard read blocked */
+      }
+    })();
+  });
+
   // Prefer the GPU renderer, fall back to xterm's built-in canvas renderer
   // if WebGL is unavailable or the context is lost (some WebKitGTK/NVIDIA
   // stacks). Canvas is correct, just slower for large scrollback.
@@ -1356,6 +1377,8 @@ async function applySettings(): Promise<void> {
     agentCommand: optAgent.value.trim(),
     scrollback: clampScrollback(Number(optScrollback.value)),
     keybindings: cfg.keybindings,
+    copyOnSelect: cfg.copyOnSelect,
+    middleClickPaste: cfg.middleClickPaste,
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);

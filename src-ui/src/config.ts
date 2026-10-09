@@ -12,6 +12,10 @@ export interface AppConfig {
   scrollback: number;
   /** Chord overrides per action, e.g. { "close-tab": "ctrl+q" }. */
   keybindings: Record<string, string>;
+  /** Copy the selection to the clipboard automatically. */
+  copyOnSelect: boolean;
+  /** Middle-click pastes the clipboard into the terminal. */
+  middleClickPaste: boolean;
 }
 
 export function defaultConfig(): AppConfig {
@@ -23,6 +27,8 @@ export function defaultConfig(): AppConfig {
     agentCommand: "opencode",
     scrollback: 50000,
     keybindings: {},
+    copyOnSelect: false,
+    middleClickPaste: false,
   };
 }
 
@@ -66,6 +72,9 @@ export function configFromJSON(json: string): AppConfig {
     scrollback:
       typeof r.scrollback === "number" ? clampScrollback(r.scrollback) : base.scrollback,
     keybindings: parseKeybindings(r.keybindings, base.keybindings),
+    copyOnSelect: typeof r.copyOnSelect === "boolean" ? r.copyOnSelect : base.copyOnSelect,
+    middleClickPaste:
+      typeof r.middleClickPaste === "boolean" ? r.middleClickPaste : base.middleClickPaste,
   };
 }
 
