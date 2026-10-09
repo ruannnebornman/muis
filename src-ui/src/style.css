@@ -248,3 +248,6 @@ body{
 .palette-list{max-height:340px; overflow-y:auto}
 .palette-item{padding:8px 14px; font:13px var(--uifont); color:var(--fg); cursor:pointer}
 .palette-item.on{background:#2f353a}
+/* ---------- statusbar segment options ---------- */
+.seg-opts{display:flex; flex-wrap:wrap; gap:4px 12px}
+.seg-opt{display:inline-flex; align-items:center; gap:4px; font-size:12px}

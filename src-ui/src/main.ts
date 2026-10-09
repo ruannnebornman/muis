@@ -11,6 +11,7 @@ import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
 import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, type AppConfig } from "./config";
 import { clampIndex, filterCommands, type Command } from "./commands";
+import { segmentVisible } from "./config";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
@@ -774,7 +775,8 @@ function agentTabsInLoadOrder(): LoadEntry[] {
 
 function updateLoadingHint(): void {
   const n = loadQueue.length + loadActive;
-  stLoad.style.display = n > 0 ? "" : "none";
+  const show = n > 0 && segmentVisible(cfg.statusbar, "load");
+  stLoad.style.display = show ? "" : "none";
   stLoad.textContent = n > 0 ? `loading ${n}` : "";
 }
 
@@ -1839,6 +1841,27 @@ function renderStatusbar(): void {
   } else {
     stGit.textContent = "";
   }
+  applyStatusbarVisibility();
+}
+
+/** Show/hide each statusbar segment per config. */
+function applyStatusbarVisibility(): void {
+  const segs: [string, HTMLElement][] = [
+    ["session", stSessionTab],
+    ["cwd", stCwd],
+    ["git", stGit],
+    ["user", stUser],
+    ["cpu", stCpu],
+    ["ram", stRam],
+    ["load", stLoad],
+    ["version", stVersion],
+    ["clock", stClock],
+    ["shell", stShell],
+  ];
+  for (const [id, node] of segs) {
+    node.style.display = segmentVisible(cfg.statusbar, id) ? "" : "none";
+  }
+  if (!segmentVisible(cfg.statusbar, "gpu")) stGpu.style.display = "none";
 }
 
 function tickClock(): void {
@@ -1868,7 +1891,7 @@ function renderSystemStats(s: SystemStats): void {
   const pct = s.mem_total > 0 ? Math.round((s.mem_used / s.mem_total) * 100) : 0;
   stRam.textContent = `RAM ${pct}%`;
   stRam.title = `${(s.mem_used / 1e9).toFixed(1)} / ${(s.mem_total / 1e9).toFixed(1)} GB`;
-  if (s.gpu === null) {
+  if (s.gpu === null || !segmentVisible(cfg.statusbar, "gpu")) {
     stGpu.style.display = "none";
   } else {
     stGpu.style.display = "";
@@ -2098,6 +2121,31 @@ for (const s of ["none", "visual", "audible", "both"]) {
   o.textContent = s;
   optBell.append(o);
 }
+const SEGMENTS: [string, string][] = [
+  ["session", "session"],
+  ["cwd", "cwd"],
+  ["git", "git"],
+  ["user", "user"],
+  ["cpu", "CPU"],
+  ["ram", "RAM"],
+  ["gpu", "GPU"],
+  ["load", "loading"],
+  ["version", "version"],
+  ["clock", "clock"],
+  ["shell", "shell"],
+];
+const segBox = document.createElement("div");
+segBox.className = "seg-opts";
+const segOpts: Record<string, HTMLInputElement> = {};
+for (const [id, label] of SEGMENTS) {
+  const wrap = document.createElement("label");
+  wrap.className = "seg-opt";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  segOpts[id] = cb;
+  wrap.append(cb, document.createTextNode(label));
+  segBox.append(wrap);
+}
 
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
@@ -2118,6 +2166,7 @@ settingsBox.append(
   settingsRow("Cursor style", optCursorStyle),
   settingsRow("Cursor blink", optCursorBlink),
   settingsRow("Bell", optBell),
+  settingsRow("Statusbar", segBox),
   settingsButtons,
 );
 settingsOverlay.append(settingsBox);
@@ -2134,6 +2183,9 @@ function openSettings(): void {
   optCursorStyle.value = cfg.cursorStyle;
   optCursorBlink.checked = cfg.cursorBlink;
   optBell.value = cfg.bell;
+  for (const [id, cb] of Object.entries(segOpts)) {
+    cb.checked = segmentVisible(cfg.statusbar, id);
+  }
   settingsOverlay.style.display = "flex";
 }
 
@@ -2158,6 +2210,9 @@ async function applySettings(): Promise<void> {
     cursorStyle: optCursorStyle.value as AppConfig["cursorStyle"],
     cursorBlink: optCursorBlink.checked,
     bell: optBell.value as AppConfig["bell"],
+    statusbar: Object.fromEntries(
+      Object.entries(segOpts).map(([id, cb]) => [id, cb.checked]),
+    ),
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);

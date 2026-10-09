@@ -24,6 +24,13 @@ export interface AppConfig {
   cursorBlink: boolean;
   /** What the terminal bell does. */
   bell: "none" | "visual" | "audible" | "both";
+  /** Statusbar segment visibility (id -> visible; absent = shown). */
+  statusbar: Record<string, boolean>;
+}
+
+/** Whether a statusbar segment is shown (absent = shown). */
+export function segmentVisible(map: Record<string, boolean>, id: string): boolean {
+  return map[id] !== false;
 }
 
 export type BellMode = "none" | "visual" | "audible" | "both";
@@ -52,7 +59,18 @@ export function defaultConfig(): AppConfig {
     cursorStyle: "block",
     cursorBlink: true,
     bell: "none",
+    statusbar: {},
   };
+}
+
+/** Keep only boolean values from a raw map. */
+function parseBoolMap(raw: unknown, base: Record<string, boolean>): Record<string, boolean> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return base;
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "boolean") out[k] = v;
+  }
+  return out;
 }
 
 /** Keep only non-empty string chord values. */
@@ -113,6 +131,7 @@ export function configFromJSON(json: string): AppConfig {
       r.bell === "none" || r.bell === "visual" || r.bell === "audible" || r.bell === "both"
         ? r.bell
         : base.bell,
+    statusbar: parseBoolMap(r.statusbar, base.statusbar),
   };
 }
 

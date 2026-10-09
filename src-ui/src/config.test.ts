@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bellAction, configFromJSON, defaultConfig, effectiveFontSize } from "./config";
+import { bellAction, configFromJSON, defaultConfig, effectiveFontSize, segmentVisible } from "./config";
 
 describe("AppConfig", () => {
   it("defaults to sessions shown, side tabs, system font", () => {
@@ -18,8 +18,17 @@ describe("AppConfig", () => {
       cursorStyle: "block",
       cursorBlink: true,
       bell: "none",
+      statusbar: {},
     });
     expect(configFromJSON("")).toEqual(defaultConfig());
+  });
+
+  it("reads statusbar visibility (absent = shown)", () => {
+    const cfg = configFromJSON('{"statusbar":{"clock":false,"git":true,"x":5}}');
+    expect(cfg.statusbar).toEqual({ clock: false, git: true });
+    expect(segmentVisible(cfg.statusbar, "clock")).toBe(false);
+    expect(segmentVisible(cfg.statusbar, "git")).toBe(true);
+    expect(segmentVisible(cfg.statusbar, "cpu")).toBe(true);
   });
 
   it("reads cursor/font/bell settings and rejects junk", () => {
@@ -78,6 +87,7 @@ describe("AppConfig", () => {
       cursorStyle: "bar",
       cursorBlink: false,
       bell: "both",
+      statusbar: { clock: false },
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
   });
