@@ -1207,7 +1207,7 @@ const onShortcut = (e: KeyboardEvent): void => {
   if (target === titleSearch) return; // search box handles its own keys
   const ws = store.currentWorkspace();
   if (!ws) return;
-  const action = resolveShortcut(e);
+  const action = resolveShortcut(e, cfg.keybindings);
   if (!action) return;
   switch (action.type) {
     case "new-tab":
@@ -1355,6 +1355,7 @@ async function applySettings(): Promise<void> {
     theme: optTheme.value === "default" ? null : optTheme.value,
     agentCommand: optAgent.value.trim(),
     scrollback: clampScrollback(Number(optScrollback.value)),
+    keybindings: cfg.keybindings,
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);

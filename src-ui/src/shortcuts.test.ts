@@ -1,9 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { resolveShortcut, type KeyLike } from "./shortcuts";
+import { resolveShortcut, matchesChord, type KeyLike } from "./shortcuts";
 
 function key(over: Partial<KeyLike>): KeyLike {
   return { key: "", ctrlKey: false, shiftKey: false, altKey: false, ...over };
 }
+
+describe("chord overrides", () => {
+  it("matches modifiers and key exactly", () => {
+    expect(matchesChord(key({ key: "w", ctrlKey: true, shiftKey: true }), "ctrl+shift+w")).toBe(true);
+    expect(matchesChord(key({ key: "w", ctrlKey: true }), "ctrl+shift+w")).toBe(false);
+    expect(matchesChord(key({ key: "q", ctrlKey: true }), "ctrl+q")).toBe(true);
+  });
+
+  it("returns overridden actions before the defaults", () => {
+    const overrides = { "close-tab": "ctrl+q", "new-tab": "ctrl+shift+n" };
+    expect(resolveShortcut(key({ key: "q", ctrlKey: true }), overrides)).toEqual({ type: "close-tab" });
+    expect(resolveShortcut(key({ key: "n", ctrlKey: true, shiftKey: true }), overrides)).toEqual({
+      type: "new-tab",
+    });
+    // No override for this chord -> falls through to the built-in mapping.
+    expect(resolveShortcut(key({ key: "q", ctrlKey: true }))).toBeNull();
+  });
+});
 
 describe("resolveShortcut", () => {
   it("maps tab and window chords", () => {

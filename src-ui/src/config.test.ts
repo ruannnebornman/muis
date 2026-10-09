@@ -10,6 +10,7 @@ describe("AppConfig", () => {
       theme: null,
       agentCommand: "opencode",
       scrollback: 50000,
+      keybindings: {},
     });
     expect(configFromJSON("")).toEqual(defaultConfig());
   });
@@ -22,8 +23,16 @@ describe("AppConfig", () => {
       theme: "nord",
       agentCommand: "aider",
       scrollback: 20000,
+      keybindings: { "close-tab": "ctrl+q" },
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
+  });
+
+  it("keeps string keybindings and drops junk", () => {
+    expect(configFromJSON('{"keybindings":{"close-tab":"ctrl+q","x":5}}').keybindings).toEqual({
+      "close-tab": "ctrl+q",
+    });
+    expect(configFromJSON('{"keybindings":"nope"}').keybindings).toEqual({});
   });
 
   it("clamps the scrollback limit", () => {

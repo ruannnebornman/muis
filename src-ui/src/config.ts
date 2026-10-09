@@ -10,6 +10,8 @@ export interface AppConfig {
   agentCommand: string;
   /** Terminal scrollback buffer, in lines (clamped 1000..500000). */
   scrollback: number;
+  /** Chord overrides per action, e.g. { "close-tab": "ctrl+q" }. */
+  keybindings: Record<string, string>;
 }
 
 export function defaultConfig(): AppConfig {
@@ -20,7 +22,18 @@ export function defaultConfig(): AppConfig {
     theme: null,
     agentCommand: "opencode",
     scrollback: 50000,
+    keybindings: {},
   };
+}
+
+/** Keep only non-empty string chord values. */
+function parseKeybindings(raw: unknown, base: Record<string, string>): Record<string, string> {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return base;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && v.trim()) out[k] = v.trim();
+  }
+  return out;
 }
 
 /** Clamp a scrollback value into a sane range. */
@@ -52,6 +65,7 @@ export function configFromJSON(json: string): AppConfig {
       typeof r.agentCommand === "string" ? r.agentCommand : base.agentCommand,
     scrollback:
       typeof r.scrollback === "number" ? clampScrollback(r.scrollback) : base.scrollback,
+    keybindings: parseKeybindings(r.keybindings, base.keybindings),
   };
 }
 
