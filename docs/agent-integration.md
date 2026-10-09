@@ -70,9 +70,9 @@ agent is left exactly as the user ran it.
 
 **Implemented** (PR #50): Rust ACP bridge, `AcpClient`, agent tabs with
 persisted `acpSessionId` and `session/load` resume. Streaming
-text/thoughts, **tool-call cards with diffs**, permission allow/deny, and
-stop. Still to come: model/agent picker (`session/new` configOptions),
-plan/steps cards, attachments.
+text/thoughts, tool-call cards with colored diffs, permission cards (tool
++ path), **model picker** (`session/set_config_option`), **plan/steps
+cards**, **attachments** (text file → ACP resource part), and stop.
 
 - `AI` opens an ACP pane: muis spawns `opencode acp` and renders the
   protocol over JSON-RPC (stdio).
@@ -135,6 +135,27 @@ muis-agent --source <opencode|claude|codex> [--done] [payload-json|-]
 - This also closes the opencode finish-notification gap — for terminal
   tabs. ACP panes get completion awareness from the protocol regardless.
 
+## Phase 5 — side-panel ACP, session-linked (Snor-ready)
+
+Decided (2026-10-09), not yet built:
+
+- **ACP panes are a reusable surface**, available as a **tab** *and* in
+  the right **side panel** — so a future **Snor** (local small model) can
+  run as a side-panel ACP engine.
+- **Multiple ACP tabs** are allowed (e.g. two opencode tabs in parallel).
+- The **right-panel ACP is linked to the current session**: it can see the
+  session context and act as a light orchestrator / place to ask questions
+  about the session.
+- Snor is a separate engine behind the same pane surface, not a new
+  protocol.
+
+## Deferred — Claude / Codex parity
+
+Phases 3 (Claude/Codex ACP adapters) and 4 (their terminal-tab session
+capture) are **deferred** until the CLIs are installed/authed: code is
+feasible (`@zed-industries/claude-code-acp`, `codex-acp`) but unverifiable
+here. opencode is the supported agent for now.
+
 ## Decision log
 
 - `+` opens a fish shell tab; `AI` opens an ACP pane.
@@ -157,6 +178,12 @@ Status notes (added during Phase 1 work):
   agent is flagged so it reopens, independent of the plugin.
 - **Staggered restore**: agent tabs load through a queue (core-scaled
   window, capped at 4, visible first, `nice`d) to avoid a startup spike.
+- **Phase 2 detect-and-offer**: done — typing a known agent in a shell tab
+  shows a chip to open it as an ACP tab.
+- **Phase 5**: ACP panes as tabs *and* a session-linked side panel
+  (Snor-ready); multiple ACP tabs allowed.
+- **TUI opencode resume stays** (capture + `agentResumeCommand`), even for
+  tabs that are not ACP.
 
 ## Open questions
 
