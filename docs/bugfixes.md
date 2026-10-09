@@ -63,6 +63,22 @@ sidebar — survives for later even when there is no active work.
   preserve the empty session is open, and this reverses the
   `closeTab` half of that decision.
 
+## Reorder the bottom-right statusbar items
+
+The right-side group should read, left to right: CPU/RAM/GPU, then the
+`UTF-8 · <shell>` pill, then the muis version, then the clock at the far
+right (most right).
+
+- Current order is `CPU, RAM, GPU, version, clock, UTF-8·shell`
+  (`statusbar.append`, `src-ui/src/main.ts:1039-1051`): the shell pill
+  currently trails the clock.
+- Desired: `CPU, RAM, GPU, UTF-8·shell, version, clock`.
+- Purely reorder the `statusbar.append(...)` arguments; no rendering
+  logic changes. The `marginLeft:auto` spacer (index 4,
+  `src-ui/src/main.ts:1052`) stays unless the left group changes.
+- Complements the bottom-left reorder already decided in
+  `docs/features.md`.
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
