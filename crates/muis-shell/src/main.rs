@@ -14,9 +14,11 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+mod agent;
 mod bridge;
 mod persist;
 
+use agent::AgentPool;
 use bridge::{EventSink, WorkerPool, WORKER_EVENT};
 use tauri::{Emitter, Manager};
 
@@ -262,6 +264,44 @@ fn command_available(command: String) -> bool {
     false
 }
 
+/// Directory opencode loads global plugins from.
+fn opencode_plugins_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
+    Some(base.join("opencode").join("plugins"))
+}
+
+/// Install/update the muis opencode plugin. Writes it when missing, and
+/// updates it when the existing file is ours (carries the "muis-plugin"
+/// marker); never touches a foreign file. Returns the path.
+#[tauri::command]
+fn install_opencode_plugin() -> Result<String, String> {
+    let dir = opencode_plugins_dir().ok_or("no config directory")?;
+    let path = dir.join("muis.mjs");
+    let ours = match std::fs::read_to_string(&path) {
+        Ok(existing) => existing.contains("muis-plugin"),
+        Err(_) => true, // missing
+    };
+    if ours {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        std::fs::write(&path, include_str!("../opencode-plugin/muis.mjs"))
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(path.display().to_string())
+}
+
+/// Read a UTF-8 text file for attaching to an agent prompt. Capped so a
+/// huge file can't be slurped by accident.
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > 512 * 1024 {
+        return Err("file too large (max 512 KiB)".into());
+    }
+    std::fs::read_to_string(&path).map_err(|e| format!("not a UTF-8 text file: {e}"))
+}
+
 #[tauri::command]
 fn worker_spawn(pool: tauri::State<WorkerPool>, session_id: String) -> Result<(), String> {
     pool.spawn_session(&session_id)
@@ -320,9 +360,14 @@ fn main() {
             sys_info,
             system_stats_active,
             command_available,
+            install_opencode_plugin,
+            read_text_file,
             worker_spawn,
             worker_send,
-            worker_stop
+            worker_stop,
+            agent::agent_spawn,
+            agent::agent_write,
+            agent::agent_kill
         ])
         .setup(|app| {
             // Fail visibly in dev when the sidecar is missing; the release
@@ -339,6 +384,7 @@ fn main() {
             let sink: EventSink =
                 Arc::new(move |event| handle.emit(WORKER_EVENT, &event).is_ok());
             app.handle().manage(WorkerPool::new(sink, worker_path()));
+            app.handle().manage(AgentPool::new());
 
             // Notification endpoint for `muis-notify` clients. One per-user
             // socket; each request is forwarded to the frontend, which routes

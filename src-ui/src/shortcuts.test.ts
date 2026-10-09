@@ -27,6 +27,7 @@ describe("resolveShortcut", () => {
   it("maps tab and window chords", () => {
     expect(resolveShortcut(key({ key: "t", ctrlKey: true }))).toEqual({ type: "new-tab" });
     expect(resolveShortcut(key({ key: "t", ctrlKey: true, shiftKey: true }))).toEqual({ type: "new-tab" });
+    expect(resolveShortcut(key({ key: "a", ctrlKey: true, shiftKey: true }))).toEqual({ type: "new-agent-tab" });
     expect(resolveShortcut(key({ key: "w", ctrlKey: true, shiftKey: true }))).toEqual({ type: "close-tab" });
     expect(resolveShortcut(key({ key: "F12", ctrlKey: true, shiftKey: true }))).toEqual({ type: "focus-terminal" });
     expect(resolveShortcut(key({ key: ",", ctrlKey: true }))).toEqual({ type: "open-settings" });

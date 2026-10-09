@@ -6,6 +6,7 @@
 
 export type ShortcutAction =
   | { type: "new-tab" }
+  | { type: "new-agent-tab" }
   | { type: "close-tab" }
   | { type: "focus-search" }
   | { type: "focus-terminal" }
@@ -67,6 +68,7 @@ export function resolveShortcut(e: KeyLike, overrides?: Record<string, string>):
 
   if (plainCtrl && lower === "t") return { type: "new-tab" };
   if (ctrlShift && lower === "t") return { type: "new-tab" };
+  if (ctrlShift && lower === "a") return { type: "new-agent-tab" };
   if (ctrlShift && lower === "w") return { type: "close-tab" };
   // ctrl+shift+f is the reliable binding (ctrl+f is consumed by the
   // focused terminal / browser find before the chrome sees it).
