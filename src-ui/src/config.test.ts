@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { configFromJSON, defaultConfig, effectiveFontSize } from "./config";
+import { bellAction, configFromJSON, defaultConfig, effectiveFontSize } from "./config";
 
 describe("AppConfig", () => {
   it("defaults to sessions shown, side tabs, system font", () => {
@@ -13,8 +13,31 @@ describe("AppConfig", () => {
       keybindings: {},
       copyOnSelect: false,
       middleClickPaste: false,
+      fontFamily: null,
+      cursorStyle: "block",
+      cursorBlink: true,
+      bell: "none",
     });
     expect(configFromJSON("")).toEqual(defaultConfig());
+  });
+
+  it("reads cursor/font/bell settings and rejects junk", () => {
+    const cfg = configFromJSON(
+      '{"fontFamily":"JetBrains Mono","cursorStyle":"bar","cursorBlink":false,"bell":"visual"}',
+    );
+    expect(cfg.fontFamily).toBe("JetBrains Mono");
+    expect(cfg.cursorStyle).toBe("bar");
+    expect(cfg.cursorBlink).toBe(false);
+    expect(cfg.bell).toBe("visual");
+    expect(configFromJSON('{"cursorStyle":"nope","bell":"loud"}').cursorStyle).toBe("block");
+    expect(configFromJSON('{"bell":"loud"}').bell).toBe("none");
+  });
+
+  it("maps bell modes to actions", () => {
+    expect(bellAction("both")).toEqual({ visual: true, audible: true });
+    expect(bellAction("none")).toEqual({ visual: false, audible: false });
+    expect(bellAction("visual")).toEqual({ visual: true, audible: false });
+    expect(bellAction("audible")).toEqual({ visual: false, audible: true });
   });
 
   it("reads the clipboard modes", () => {
@@ -35,6 +58,10 @@ describe("AppConfig", () => {
       keybindings: { "close-tab": "ctrl+q" },
       copyOnSelect: true,
       middleClickPaste: true,
+      fontFamily: "Fira Code",
+      cursorStyle: "bar",
+      cursorBlink: false,
+      bell: "both",
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
   });

@@ -16,6 +16,22 @@ export interface AppConfig {
   copyOnSelect: boolean;
   /** Middle-click pastes the clipboard into the terminal. */
   middleClickPaste: boolean;
+  /** Terminal font family; null keeps the muis default. */
+  fontFamily: string | null;
+  cursorStyle: "block" | "bar" | "underline";
+  cursorBlink: boolean;
+  /** What the terminal bell does. */
+  bell: "none" | "visual" | "audible" | "both";
+}
+
+export type BellMode = "none" | "visual" | "audible" | "both";
+
+/** Visual/audible actions for a bell mode. */
+export function bellAction(mode: BellMode): { visual: boolean; audible: boolean } {
+  return {
+    visual: mode === "visual" || mode === "both",
+    audible: mode === "audible" || mode === "both",
+  };
 }
 
 export function defaultConfig(): AppConfig {
@@ -29,6 +45,10 @@ export function defaultConfig(): AppConfig {
     keybindings: {},
     copyOnSelect: false,
     middleClickPaste: false,
+    fontFamily: null,
+    cursorStyle: "block",
+    cursorBlink: true,
+    bell: "none",
   };
 }
 
@@ -75,6 +95,17 @@ export function configFromJSON(json: string): AppConfig {
     copyOnSelect: typeof r.copyOnSelect === "boolean" ? r.copyOnSelect : base.copyOnSelect,
     middleClickPaste:
       typeof r.middleClickPaste === "boolean" ? r.middleClickPaste : base.middleClickPaste,
+    fontFamily:
+      typeof r.fontFamily === "string" && r.fontFamily.trim() ? r.fontFamily.trim() : base.fontFamily,
+    cursorStyle:
+      r.cursorStyle === "block" || r.cursorStyle === "bar" || r.cursorStyle === "underline"
+        ? r.cursorStyle
+        : base.cursorStyle,
+    cursorBlink: typeof r.cursorBlink === "boolean" ? r.cursorBlink : base.cursorBlink,
+    bell:
+      r.bell === "none" || r.bell === "visual" || r.bell === "audible" || r.bell === "both"
+        ? r.bell
+        : base.bell,
   };
 }
 
