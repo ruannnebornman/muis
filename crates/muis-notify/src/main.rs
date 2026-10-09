@@ -14,10 +14,12 @@ use muis_core::notify::{self, NotifyRequest};
 
 const USAGE: &str = "\
 usage: muis-notify --body TEXT [--title TEXT] [--tab ID] [--urgency 0|1|2] [--socket NAME]
+       muis-notify --agent-session ID [--tab ID]
 
-Sends a desktop notification to a running muis window. Defaults for
---socket and --tab come from the MUIS_SOCKET and MUIS_TAB_ID environment
-variables, which muis sets inside its terminals.";
+Sends a desktop notification to a running muis window, or reports the
+agent session id for a tab (so it can resume that exact session).
+Defaults for --socket and --tab come from the MUIS_SOCKET and MUIS_TAB_ID
+environment variables, which muis sets inside its terminals.";
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Cli {
@@ -26,6 +28,7 @@ struct Cli {
     tab_id: Option<String>,
     urgency: Option<u8>,
     socket: Option<String>,
+    agent_session: Option<String>,
 }
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Cli, String> {
@@ -38,6 +41,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Cli, String> {
             "--body" => cli.body = Some(value()?),
             "--tab" => cli.tab_id = Some(value()?),
             "--socket" => cli.socket = Some(value()?),
+            "--agent-session" => cli.agent_session = Some(value()?),
             "--urgency" => {
                 let urgency: u8 = value()?
                     .parse()
@@ -73,10 +77,11 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let Some(body) = cli.body else {
-        eprintln!("muis-notify: --body is required\n{USAGE}");
+    // A body is the usual case; an agent-session report needs no body.
+    if cli.body.is_none() && cli.agent_session.is_none() {
+        eprintln!("muis-notify: --body or --agent-session is required\n{USAGE}");
         return ExitCode::from(2);
-    };
+    }
 
     let socket = cli
         .socket
@@ -84,9 +89,10 @@ fn main() -> ExitCode {
         .unwrap_or_else(notify::socket_name);
     let req = NotifyRequest {
         title: cli.title,
-        body,
+        body: cli.body.unwrap_or_default(),
         tab_id: cli.tab_id.or_else(|| std::env::var("MUIS_TAB_ID").ok()),
         urgency: cli.urgency,
+        agent_session: cli.agent_session,
     };
 
     match notify::send(&socket, &req) {
@@ -120,8 +126,16 @@ mod tests {
                 tab_id: Some("t1".into()),
                 urgency: Some(2),
                 socket: Some("s".into()),
+                agent_session: None,
             }
         );
+    }
+
+    #[test]
+    fn parses_agent_session_without_body() {
+        let cli = parse_args(args(&["--agent-session", "ses_1"])).unwrap();
+        assert_eq!(cli.agent_session.as_deref(), Some("ses_1"));
+        assert_eq!(cli.body, None);
     }
 
     #[test]
