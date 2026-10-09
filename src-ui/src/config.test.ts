@@ -9,6 +9,7 @@ describe("AppConfig", () => {
       fontSize: null,
       theme: null,
       agentCommand: "opencode",
+      scrollback: 50000,
     });
     expect(configFromJSON("")).toEqual(defaultConfig());
   });
@@ -20,8 +21,16 @@ describe("AppConfig", () => {
       fontSize: 13,
       theme: "nord",
       agentCommand: "aider",
+      scrollback: 20000,
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
+  });
+
+  it("clamps the scrollback limit", () => {
+    expect(configFromJSON('{"scrollback":100}').scrollback).toBe(1000);
+    expect(configFromJSON('{"scrollback":999999}').scrollback).toBe(500000);
+    expect(configFromJSON('{"scrollback":20000}').scrollback).toBe(20000);
+    expect(configFromJSON('{"scrollback":"lots"}').scrollback).toBe(50000);
   });
 
   it("reads the AI tab command and falls back on junk", () => {

@@ -8,10 +8,25 @@ export interface AppConfig {
   theme: string | null;
   /** Command the "new AI tab" action runs. Empty disables the AI option. */
   agentCommand: string;
+  /** Terminal scrollback buffer, in lines (clamped 1000..500000). */
+  scrollback: number;
 }
 
 export function defaultConfig(): AppConfig {
-  return { showSessions: true, tabsOnTop: false, fontSize: null, theme: null, agentCommand: "opencode" };
+  return {
+    showSessions: true,
+    tabsOnTop: false,
+    fontSize: null,
+    theme: null,
+    agentCommand: "opencode",
+    scrollback: 50000,
+  };
+}
+
+/** Clamp a scrollback value into a sane range. */
+export function clampScrollback(value: number): number {
+  if (!Number.isFinite(value)) return defaultConfig().scrollback;
+  return Math.min(500000, Math.max(1000, Math.floor(value)));
 }
 
 export function configFromJSON(json: string): AppConfig {
@@ -35,6 +50,8 @@ export function configFromJSON(json: string): AppConfig {
     theme: typeof r.theme === "string" ? r.theme : base.theme,
     agentCommand:
       typeof r.agentCommand === "string" ? r.agentCommand : base.agentCommand,
+    scrollback:
+      typeof r.scrollback === "number" ? clampScrollback(r.scrollback) : base.scrollback,
   };
 }
 

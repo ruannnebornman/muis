@@ -9,7 +9,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
-import { defaultConfig, configFromJSON, effectiveFontSize, type AppConfig } from "./config";
+import { defaultConfig, configFromJSON, clampScrollback, effectiveFontSize, type AppConfig } from "./config";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
@@ -447,7 +447,7 @@ function ensureView(sessionId: string, tab: Tab): TabView {
     fontFamily: MUIS_THEME.termFont,
     fontSize: effectiveFontSize(cfg),
     cursorBlink: true,
-    scrollback: 50000,
+    scrollback: cfg.scrollback,
   });
   const search = new SearchAddon();
   term.loadAddon(search);
@@ -622,6 +622,12 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
 
 /** Tabs already replayed from disk this launch (once per tab id). */
 const replayedTabs = new Set<string>();
+
+/** Drop a tab's saved scrollback lines (CSI 3 J; keeps the live screen). */
+function clearScrollback(tabId: string): void {
+  const view = views.get(tabId);
+  if (view) view.term.write("\x1b[3J");
+}
 
 function closeTab(sessionId: string, tabId: string): void {
   const owner = store.workspaces.find((w) => w.id === sessionId);
@@ -1301,6 +1307,12 @@ const optAgent = document.createElement("input");
 optAgent.type = "text";
 optAgent.placeholder = "opencode";
 optAgent.title = "Command for the New AI tab; empty disables it";
+const optScrollback = document.createElement("input");
+optScrollback.type = "number";
+optScrollback.min = "1000";
+optScrollback.max = "500000";
+optScrollback.step = "1000";
+optScrollback.title = "Terminal scrollback lines (1000-500000)";
 
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
@@ -1315,6 +1327,7 @@ settingsBox.append(
   settingsRow("Terminal font size", optFontSize),
   settingsRow("Theme", optTheme),
   settingsRow("AI tab command", optAgent),
+  settingsRow("Scrollback lines", optScrollback),
   settingsButtons,
 );
 settingsOverlay.append(settingsBox);
@@ -1325,6 +1338,7 @@ function openSettings(): void {
   optFontSize.value = cfg.fontSize?.toString() ?? "";
   optTheme.value = cfg.theme ?? "default";
   optAgent.value = cfg.agentCommand;
+  optScrollback.value = cfg.scrollback.toString();
   settingsOverlay.style.display = "flex";
 }
 
@@ -1340,6 +1354,7 @@ async function applySettings(): Promise<void> {
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
     agentCommand: optAgent.value.trim(),
+    scrollback: clampScrollback(Number(optScrollback.value)),
   };
   if (IN_TAURI) void invoke("config_save", { json: JSON.stringify(cfg) }).catch(() => {});
   applyTheme(cfg.theme);
@@ -1348,6 +1363,7 @@ async function applySettings(): Promise<void> {
   for (const [, view] of views) {
     view.term.options.fontSize = px;
     view.term.options.theme = nextTheme;
+    view.term.options.scrollback = cfg.scrollback;
   }
   await refreshAgentReady();
   closeSettings();
@@ -1729,6 +1745,7 @@ document.addEventListener("contextmenu", (e) => {
           label: tab.manual ? "Use automatic title" : "Freeze current title",
           fn: () => toggleFreezeTitle(ws, tab),
         },
+        { label: "Clear scrollback", fn: () => clearScrollback(tab.id) },
         { label: "Close tab", fn: () => closeTab(ws.id, tab.id) },
       ]);
     }
