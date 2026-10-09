@@ -54,10 +54,86 @@ Branch `feature/decided-ux`. Also not yet exercised in a real client.
 - **Drag-and-drop reorder** — done: drop between items; dragged active
   item stays active. Test: reorder tabs and sessions, active follows.
 
-### Cannot be verified here
+### Implemented after this list (PRs #47, #50)
 
-- **Single Windows exe** — Windows-only; needs a Windows box, plus a
-  decision on keeping the zip and whether to fold in `muis-notify`.
+Not in the original list; built during the ACP work. On `feature/decided-ux`
+(merged), `feature/settings-and-tab-move`, and `feature/acp-pane`.
+
+- **Visible Settings button** (gear) and **tab-into-session drag** (#47).
+- **ACP pane** (Phase 1 of `docs/agent-integration.md`): `AI` opens a
+  native agent surface — streaming text/thoughts, tool-call cards with
+  diffs, permissions, stop; exact `session/load` resume (#50).
+- **Exact session capture (opencode)**: a plugin reports the session id
+  via `muis-notify --agent-session`; the tab resumes with
+  `opencode -s <id>` instead of `--continue` (#50).
+- **Auto-mark agent tabs**: a tab whose last command was
+  opencode/claude/codex is remembered as an agent tab (#50).
+- **Staggered agent restore**: a queue with a core-scaled concurrency
+  window (capped at 4), visible-tab-first, `nice`d spawns (#50).
+- **opencode completion notify**: the plugin reports `session.idle`; the
+  tab gets the done badge/toast (#50).
+- **ACP polish** (#50): plan/steps cards, colored diffs, permission cards
+  (tool + path), model picker, attachments, Stop unblocks the input.
+- **ACP Phase 2 detect-and-offer** (#50): typing a known agent in a shell
+  offers to open it in the AI panel.
+- **ACP Phase 5 decided** (not built): ACP panes as tabs *and* a
+  session-linked side panel (Snor-ready); multiple ACP tabs allowed.
+
+### Implemented — terminal base (PR #54)
+
+First pass of the terminal-base list, each with tests:
+
+- **Configurable scrollback** (`scrollback`, 1000..500000) + Settings +
+  **Clear scrollback** in the tab menu.
+- **Custom keybindings from config** (`keybindings` action → chord).
+- **Copy-on-select** + **middle-click paste** (`copyOnSelect`,
+  `middleClickPaste`; config-file only for now).
+- **Font family, cursor style/blink, bell** with Settings rows; bell
+  flashes the pane and/or beeps.
+
+### Implemented — terminal fix (PR #52)
+
+- **opencode TUI not filling the pane**: refit after `spawnTab` + a
+  per-terminal `ResizeObserver` (the pty resize had raced the spawn).
+
+### Still wanted
+
+Terminal base:
+
+- In-terminal **regex/case find bar** (`SearchController` exists but is
+  unwired; the search box drives the cross-session panel).
+- Search **history**.
+- **Configurable statusbar segments**.
+- **Per-workspace themes** and **background opacity**.
+- **Notification-click focuses the tab**; **notification grouping**.
+- Wire the dead **`tabsOnTop`**.
+- **"Open with muis here"**, **`muis` CLI flags**, **restore-on-login /
+  systemd unit**.
+- **Command palette**.
+- **OSC 8 hyperlinks**, **sixel/iTerm2 images**, **ligatures**.
+
+ACP:
+
+- Phase 3/4 for Claude/Codex (deferred until those CLIs are installed).
+- Phase 5 (side-panel ACP + session linkage; Snor).
+
+Deferred/platform: single Windows exe, Windows installer, Flatpak,
+aarch64, website, auto-update, Snor engine.
+
+### PR map
+
+- #50 ACP pane (opencode) — `feature/acp-pane`
+- #52 pty-fill fix — `fix/opencode-pty-fill`
+- #47 settings/tab-move/resume — `feature/settings-and-tab-move`
+- #54 terminal base — `feature/terminal-base`
+- #53 docs refresh (this) — `docs/status-refresh`
+- Superseded by #53: #48, #49.
+
+### Deferred
+
+- **Single Windows exe** — deferred; the portable `muis-portable-*.zip`
+  stays the supported Windows artifact until there is a Windows box to
+  verify a self-contained exe on (`docs/windows.md`, `docs/deferred.md`).
 
 ### Resolved or dropped since this list started
 
@@ -342,6 +418,11 @@ Bugs reported against muis. Documentation only — the implementation agent
 fixes these.
 
 ### opencode TUI sometimes does not fill the terminal
+
+**Fixed (PR #52).** The pty resize raced `spawnTab()` (the worker dropped
+it, leaving the pty at the default 80x24) and a single one-shot fit missed
+later layout changes; the fix refits after spawn and adds a per-terminal
+`ResizeObserver`. Confirm on a real session with two opencode tabs.
 
 Sometimes opencode's TUI does not render across the full terminal: it
 draws into only part of the pane and the rest is left blank, even though
