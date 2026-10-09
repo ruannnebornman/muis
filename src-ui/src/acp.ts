@@ -210,11 +210,19 @@ export class AcpClient {
     if (opt) opt.currentValue = value;
   }
 
-  /** Send a prompt; resolves with the stop reason when the turn ends. */
-  async prompt(text: string): Promise<string> {
+  /** Send a prompt (text + optional attachments); resolves with the stop reason. */
+  async prompt(
+    text: string,
+    attachments: { uri: string; mimeType: string; text: string }[] = [],
+  ): Promise<string> {
+    const prompt: unknown[] = [];
+    if (text) prompt.push({ type: "text", text });
+    for (const a of attachments) {
+      prompt.push({ type: "resource", resource: { uri: a.uri, mimeType: a.mimeType, text: a.text } });
+    }
     const res = (await this.send("session/prompt", {
       sessionId: this.sessionId,
-      prompt: [{ type: "text", text }],
+      prompt,
     })) as Json;
     return String(res?.stopReason ?? "end_turn");
   }

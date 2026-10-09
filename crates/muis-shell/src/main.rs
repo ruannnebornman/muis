@@ -291,6 +291,17 @@ fn install_opencode_plugin() -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
+/// Read a UTF-8 text file for attaching to an agent prompt. Capped so a
+/// huge file can't be slurped by accident.
+#[tauri::command]
+fn read_text_file(path: String) -> Result<String, String> {
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > 512 * 1024 {
+        return Err("file too large (max 512 KiB)".into());
+    }
+    std::fs::read_to_string(&path).map_err(|e| format!("not a UTF-8 text file: {e}"))
+}
+
 #[tauri::command]
 fn worker_spawn(pool: tauri::State<WorkerPool>, session_id: String) -> Result<(), String> {
     pool.spawn_session(&session_id)
@@ -350,6 +361,7 @@ fn main() {
             system_stats_active,
             command_available,
             install_opencode_plugin,
+            read_text_file,
             worker_spawn,
             worker_send,
             worker_stop,

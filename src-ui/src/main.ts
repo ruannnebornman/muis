@@ -23,7 +23,7 @@ import { DoneTracker } from "./done";
 import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
-import { AcpClient, diffLines, type PermissionRequest } from "./acp";
+import { AcpClient, type PermissionRequest } from "./acp";
 import { agentResumeForCommand } from "./agents";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
@@ -245,6 +245,10 @@ interface AgentView {
   ready: boolean;
   /** Streaming nodes keyed by message/tool id. */
   nodes: Map<string, HTMLElement>;
+  /** Files attached to the next prompt (embedded as ACP resource parts). */
+  attachments: { name: string; uri: string; mimeType: string; text: string }[];
+  /** Container for the attachment chips. */
+  chips: HTMLElement;
   /** Tool-call cards keyed by toolCallId, with merged fields across updates. */
   tools: Map<
     string,
@@ -284,6 +288,46 @@ function appendAgentNode(v: AgentView, cls: string, text: string): HTMLElement {
 function contentText(c: unknown): string {
   const content = c as { type?: string; text?: string } | undefined;
   return content?.type === "text" ? content.text ?? "" : "";
+}
+
+/** Colored `-`/`+` diff rendered as line spans. */
+function diffPre(oldText: string, newText: string): HTMLElement {
+  const pre = document.createElement("pre");
+  pre.className = "a-diff";
+  const add = (sign: string, text: string, cls: string): void => {
+    if (!text) return;
+    for (const line of text.split("\n")) {
+      const span = document.createElement("span");
+      span.className = cls;
+      span.textContent = `${sign} ${line}\n`;
+      pre.append(span);
+    }
+  };
+  add("-", oldText, "d-del");
+  add("+", newText, "d-add");
+  return pre;
+}
+
+/** Render a `plan` update (opencode's TODO list) as a steps card. */
+function renderPlan(v: AgentView, u: Record<string, unknown>): void {
+  const entries = Array.isArray(u.entries)
+    ? (u.entries as { content?: string; status?: string }[])
+    : [];
+  let node = v.nodes.get("plan");
+  if (!node) {
+    node = appendAgentNode(v, "a-plan", "");
+    v.nodes.set("plan", node);
+  }
+  node.textContent = "";
+  for (const e of entries) {
+    const row = document.createElement("div");
+    const status = String(e.status ?? "pending");
+    row.className = `a-plan-row ${status}`;
+    const mark = status === "completed" ? "✔" : status === "in_progress" ? "▶" : "•";
+    row.textContent = `${mark} ${e.content ?? ""}`;
+    node.append(row);
+  }
+  v.log.scrollTop = v.log.scrollHeight;
 }
 
 function renderToolCard(v: AgentView, u: Record<string, unknown>): void {
@@ -329,15 +373,9 @@ function renderToolCard(v: AgentView, u: Record<string, unknown>): void {
     node.body.append(p);
   }
   if (node.raw.oldString !== undefined || node.raw.newString !== undefined) {
-    const pre = document.createElement("pre");
-    pre.className = "a-diff";
-    pre.textContent = diffLines(node.raw.oldString ?? "", node.raw.newString ?? "");
-    node.body.append(pre);
+    node.body.append(diffPre(node.raw.oldString ?? "", node.raw.newString ?? ""));
   } else if (node.raw.content !== undefined) {
-    const pre = document.createElement("pre");
-    pre.className = "a-diff";
-    pre.textContent = diffLines("", node.raw.content);
-    node.body.append(pre);
+    node.body.append(diffPre("", node.raw.content));
   }
   const content = Array.isArray(u.content) ? u.content : [];
   for (const c of content) {
@@ -389,6 +427,9 @@ function renderAgentUpdate(v: AgentView, u: Record<string, unknown>): void {
       v.log.scrollTop = v.log.scrollHeight;
       break;
     }
+    case "plan":
+      renderPlan(v, u);
+      break;
     case "tool_call":
     case "tool_call_update":
       renderToolCard(v, u);
@@ -407,10 +448,20 @@ function renderAgentUpdate(v: AgentView, u: Record<string, unknown>): void {
 function renderPermission(v: AgentView, req: PermissionRequest): void {
   const card = document.createElement("div");
   card.className = "a-perm";
+  const tc = req.toolCall as
+    | { title?: string; kind?: string; locations?: { path?: string }[] }
+    | undefined;
   const title = document.createElement("div");
   title.className = "a-perm-title";
-  title.textContent = "Permission requested";
+  title.textContent = `Permission: ${tc?.title ?? tc?.kind ?? "tool"}`;
   card.append(title);
+  const permPaths = (tc?.locations ?? []).map((l) => l?.path).filter(Boolean);
+  if (permPaths.length) {
+    const p = document.createElement("div");
+    p.className = "a-tool-path";
+    p.textContent = permPaths.join(", ");
+    card.append(p);
+  }
   const row = document.createElement("div");
   row.className = "a-perm-row";
   const answer = (optionId: string | null) => {
@@ -450,8 +501,15 @@ function ensureAgentView(tab: Tab): AgentView {
   head.append(headLabel, model);
   const log = document.createElement("div");
   log.className = "agent-log";
+  const chips = document.createElement("div");
+  chips.className = "agent-chips";
+  chips.style.display = "none";
   const inputRow = document.createElement("div");
   inputRow.className = "agent-input";
+  const attach = document.createElement("button");
+  attach.className = "btn";
+  attach.textContent = "＋";
+  attach.title = "Attach a text file";
   const input = document.createElement("input");
   input.type = "text";
   input.className = "agent-field";
@@ -467,8 +525,8 @@ function ensureAgentView(tab: Tab): AgentView {
   stop.style.display = "none";
   const status = document.createElement("div");
   status.className = "a-status";
-  inputRow.append(input, send, stop, status);
-  box.append(head, log, inputRow);
+  inputRow.append(attach, input, send, stop, status);
+  box.append(head, log, chips, inputRow);
   termWrap.append(box);
 
   let v!: AgentView;
@@ -519,8 +577,11 @@ function ensureAgentView(tab: Tab): AgentView {
     ready: false,
     nodes: new Map(),
     tools: new Map(),
+    attachments: [],
+    chips,
   };
   agentViews.set(tab.id, v);
+  attach.addEventListener("click", () => void attachFile(v));
   model.addEventListener("change", () => {
     void v.client.setConfigOption("model", model.value).catch(() => {});
   });
@@ -534,7 +595,12 @@ function ensureAgentView(tab: Tab): AgentView {
     }
   });
   stop.addEventListener("click", () => {
-    if (v.agentId) v.client.cancel();
+    if (!v.agentId) return;
+    v.client.cancel();
+    // Unblock the input immediately; the turn's promise may resolve later.
+    v.running = false;
+    v.stop.style.display = "none";
+    appendAgentNode(v, "a-sys", "cancelled");
   });
   return v;
 }
@@ -585,15 +651,56 @@ async function startAgent(v: AgentView, tab: Tab): Promise<void> {
   }
 }
 
+function renderChips(v: AgentView): void {
+  v.chips.textContent = "";
+  v.attachments.forEach((a, i) => {
+    const chip = document.createElement("span");
+    chip.className = "agent-chip";
+    chip.textContent = a.name;
+    const x = document.createElement("span");
+    x.className = "x";
+    x.textContent = "✕";
+    x.addEventListener("click", () => {
+      v.attachments.splice(i, 1);
+      renderChips(v);
+    });
+    chip.append(x);
+    v.chips.append(chip);
+  });
+  v.chips.style.display = v.attachments.length ? "" : "none";
+}
+
+async function attachFile(v: AgentView): Promise<void> {
+  if (!IN_TAURI) return;
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ multiple: false, directory: false });
+    if (typeof picked !== "string") return;
+    const text = await invoke<string>("read_text_file", { path: picked });
+    const name = picked.split("/").pop() ?? picked;
+    v.attachments.push({ name, uri: `file://${picked}`, mimeType: "text/plain", text });
+    renderChips(v);
+  } catch (e) {
+    appendAgentNode(v, "a-msg error", `attach failed: ${String(e)}`);
+  }
+}
+
 async function sendPrompt(v: AgentView): Promise<void> {
   const text = v.input.value.trim();
-  if (!text || !v.ready || v.running) return;
+  if ((!text && v.attachments.length === 0) || !v.ready || v.running) return;
   v.input.value = "";
-  appendAgentNode(v, "a-msg user", text);
+  if (text) appendAgentNode(v, "a-msg user", text);
+  const attachments = v.attachments.map((a) => ({
+    uri: a.uri,
+    mimeType: a.mimeType,
+    text: a.text,
+  }));
+  v.attachments = [];
+  renderChips(v);
   v.running = true;
   v.stop.style.display = "";
   try {
-    await v.client.prompt(text);
+    await v.client.prompt(text, attachments);
   } catch (e) {
     appendAgentNode(v, "a-msg error", String((e as { message?: string })?.message ?? e));
   } finally {

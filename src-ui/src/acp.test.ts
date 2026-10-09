@@ -172,6 +172,23 @@ describe("AcpClient", () => {
     expect((h.last() as any).error.code).toBe(-32601);
   });
 
+  it("includes attachments as resource parts", async () => {
+    const h = harness();
+    const p = h.client.prompt("see file", [
+      { uri: "file:///x", mimeType: "text/plain", text: "hi" },
+    ]);
+    const params = h.last().params as { prompt: unknown[] };
+    expect(params.prompt[0]).toEqual({ type: "text", text: "see file" });
+    expect(params.prompt[1]).toEqual({
+      type: "resource",
+      resource: { uri: "file:///x", mimeType: "text/plain", text: "hi" },
+    });
+    h.client.receive(
+      JSON.stringify({ jsonrpc: "2.0", id: h.last().id, result: { stopReason: "end_turn" } }),
+    );
+    await p;
+  });
+
   it("rejects on JSON-RPC errors", async () => {
     const h = harness();
     const p = h.client.prompt("go");
