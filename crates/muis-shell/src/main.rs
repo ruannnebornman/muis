@@ -291,6 +291,28 @@ fn install_opencode_plugin() -> Result<String, String> {
     Ok(path.display().to_string())
 }
 
+/// Open an http(s) URL in the user's browser (OSC 8 hyperlinks). Only
+/// http/https are accepted; never a shell invocation.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return Err("only http(s) URLs can be opened".into());
+    }
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener)
+        .arg(trimmed)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Read a UTF-8 text file for attaching to an agent prompt. Capped so a
 /// huge file can't be slurped by accident.
 #[tauri::command]
@@ -362,6 +384,7 @@ fn main() {
             command_available,
             install_opencode_plugin,
             read_text_file,
+            open_url,
             worker_spawn,
             worker_send,
             worker_stop,

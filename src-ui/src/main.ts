@@ -1,4 +1,4 @@
-import { Terminal } from "xterm";
+import { Terminal, type ILinkHandler } from "xterm";
 import "xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -9,9 +9,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
 import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
-import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, type AppConfig } from "./config";
+import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, segmentVisible, themeForWorkspace, type AppConfig } from "./config";
 import { clampIndex, filterCommands, type Command } from "./commands";
-import { segmentVisible, themeForWorkspace } from "./config";
 import { QueryHistory } from "./history";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
@@ -1132,6 +1131,17 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(surface);
+
+  // OSC 8 hyperlinks: activate opens http(s) URLs in the browser.
+  term.options.linkHandler = {
+    activate: (_event: MouseEvent, text: string) => {
+      if (!/^https?:\/\//.test(text)) return;
+      if (IN_TAURI) void invoke("open_url", { url: text }).catch(() => {});
+      else window.open(text, "_blank", "noopener");
+    },
+    hover: () => {},
+    leave: () => {},
+  } as ILinkHandler;
 
   // Bell: no-op, a brief visual flash, an audible beep, or both.
   term.onBell(() => {
