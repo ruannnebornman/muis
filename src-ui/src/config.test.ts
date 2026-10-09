@@ -5,7 +5,6 @@ describe("AppConfig", () => {
   it("defaults to sessions shown, side tabs, system font", () => {
     expect(defaultConfig()).toEqual({
       showSessions: true,
-      tabsOnTop: false,
       fontSize: null,
       theme: null,
       agentCommand: "opencode",
@@ -74,7 +73,6 @@ describe("AppConfig", () => {
   it("loads what it saves", () => {
     const cfg = {
       showSessions: false,
-      tabsOnTop: true,
       fontSize: 13,
       theme: "nord",
       agentCommand: "aider",

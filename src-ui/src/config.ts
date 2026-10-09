@@ -1,7 +1,6 @@
 /** View options. Mirrors muis-core AppConfig; persisted as JSON. */
 export interface AppConfig {
   showSessions: boolean;
-  tabsOnTop: boolean;
   /** Terminal font size in points. null = system fixed font + 2. */
   fontSize: number | null;
   /** Accent theme name; null keeps the default look. */
@@ -46,7 +45,6 @@ export function bellAction(mode: BellMode): { visual: boolean; audible: boolean 
 export function defaultConfig(): AppConfig {
   return {
     showSessions: true,
-    tabsOnTop: false,
     fontSize: null,
     theme: null,
     agentCommand: "opencode",
@@ -102,7 +100,6 @@ export function configFromJSON(json: string): AppConfig {
   const r = raw as Partial<Record<keyof AppConfig, unknown>>;
   return {
     showSessions: typeof r.showSessions === "boolean" ? r.showSessions : base.showSessions,
-    tabsOnTop: typeof r.tabsOnTop === "boolean" ? r.tabsOnTop : base.tabsOnTop,
     fontSize:
       typeof r.fontSize === "number" && r.fontSize >= 6 && r.fontSize <= 32
         ? Math.floor(r.fontSize)

@@ -2240,7 +2240,6 @@ async function applySettings(): Promise<void> {
   const size = optFontSize.value.trim();
   cfg = {
     showSessions: optSessions.checked,
-    tabsOnTop: cfg.tabsOnTop,
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
     agentCommand: optAgent.value.trim(),
