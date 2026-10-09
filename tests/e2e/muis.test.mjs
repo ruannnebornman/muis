@@ -198,10 +198,13 @@ describe("muis chrome", () => {
     const overlay = await driver.findElement(By.css(".settings-overlay"));
     await driver.wait(async () => overlay.isDisplayed(), 5000);
     await shot("06-settings");
+    // More controls were added over time (cursor blink, bell, statusbar
+    // segments), so only assert the ones this test uses exist; the first
+    // checkbox is "show sessions" and the first select is the theme.
     const boxes = await overlay.findElements(By.css('input[type="checkbox"]'));
-    assert.equal(boxes.length, 1); // show sessions
+    assert.ok(boxes.length >= 1);
     const themes = await overlay.findElements(By.css("select"));
-    assert.equal(themes.length, 1);
+    assert.ok(themes.length >= 1);
     assert.equal((await themes[0].findElements(By.css("option"))).length, 6);
     await boxes[0].click(); // uncheck
     await overlay.findElement(By.xpath('.//button[text()="Save"]')).click();
