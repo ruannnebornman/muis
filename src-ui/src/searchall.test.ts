@@ -46,6 +46,17 @@ describe("collectMatches", () => {
     expect(items.some((i) => i.text === "tab: logs")).toBe(true);
   });
 
+  it("supports regex matching", () => {
+    expect(collectMatches("h.llo", "all", 0, tabs, 50, { regex: true }).total).toBe(2);
+    expect(collectMatches("(", "all", 0, tabs, 50, { regex: true }).total).toBe(0);
+  });
+
+  it("honours case sensitivity", () => {
+    expect(collectMatches("HELLO", "all", 0, tabs, 50, { caseSensitive: true }).total).toBe(1);
+    expect(collectMatches("hello", "all", 0, tabs, 50, { caseSensitive: true }).total).toBe(1);
+    expect(collectMatches("hello", "all", 0, tabs, 50, { caseSensitive: false }).total).toBe(2);
+  });
+
   it("caps the item list but keeps the total", () => {
     const many = tab({ tabId: "m", lines: Array.from({ length: 80 }, () => "x foo") });
     const { total, items } = collectMatches("foo", "all", 0, [many], 10);

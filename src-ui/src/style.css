@@ -251,3 +251,6 @@ body{
 /* ---------- statusbar segment options ---------- */
 .seg-opts{display:flex; flex-wrap:wrap; gap:4px 12px}
 .seg-opt{display:inline-flex; align-items:center; gap:4px; font-size:12px}
+/* ---------- search toggles ---------- */
+.search-toggle{background:transparent; border:0; color:var(--dim); font:11px var(--mono,monospace); padding:0 4px; cursor:pointer; border-radius:4px}
+.search-toggle.on{color:#fff; background:#3a4045}

@@ -12,6 +12,7 @@ import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./them
 import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, type AppConfig } from "./config";
 import { clampIndex, filterCommands, type Command } from "./commands";
 import { segmentVisible } from "./config";
+import { QueryHistory } from "./history";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
@@ -880,7 +881,29 @@ const searchResults = document.createElement("div");
 searchResults.id = "searchResults";
 searchResults.className = "results";
 searchResults.style.display = "none";
-searchBox.append(searchGlyph, titleSearch, searchHint, searchResults);
+const caseBtn = document.createElement("button");
+caseBtn.className = "search-toggle";
+caseBtn.textContent = "Aa";
+caseBtn.title = "Match case";
+const regexBtn = document.createElement("button");
+regexBtn.className = "search-toggle";
+regexBtn.textContent = ".*";
+regexBtn.title = "Regular expression";
+searchBox.append(searchGlyph, titleSearch, caseBtn, regexBtn, searchHint, searchResults);
+let searchCase = false;
+let searchRegex = false;
+const searchHistory = new QueryHistory();
+let historyIndex = -1;
+caseBtn.addEventListener("click", () => {
+  searchCase = !searchCase;
+  caseBtn.classList.toggle("on", searchCase);
+  renderSearchResults();
+});
+regexBtn.addEventListener("click", () => {
+  searchRegex = !searchRegex;
+  regexBtn.classList.toggle("on", searchRegex);
+  renderSearchResults();
+});
 const winControls = document.createElement("div");
 winControls.className = "win-controls";
 const winMin = document.createElement("div");
@@ -941,6 +964,7 @@ app.append(titlebar, mainRow, panelSlot);
 /* ---------------- titlebar: search + window controls ---------------- */
 
 titleSearch.addEventListener("input", () => {
+  historyIndex = -1;
   renderSearchResults();
 });
 titleSearch.addEventListener("keydown", (e) => {
@@ -949,6 +973,25 @@ titleSearch.addEventListener("keydown", (e) => {
     e.preventDefault();
     const first = searchResults.querySelector<HTMLElement>(".r-item");
     if (first) first.click();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    const list = searchHistory.list();
+    if (list.length) {
+      historyIndex = Math.min(historyIndex + 1, list.length - 1);
+      titleSearch.value = list[historyIndex];
+      renderSearchResults();
+    }
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    const list = searchHistory.list();
+    if (historyIndex > 0) {
+      historyIndex -= 1;
+      titleSearch.value = list[historyIndex];
+    } else {
+      historyIndex = -1;
+      titleSearch.value = "";
+    }
+    renderSearchResults();
   } else if (e.key === "Escape") {
     e.preventDefault();
     titleSearch.value = "";
@@ -2672,7 +2715,10 @@ function renderSearchResults(): void {
     hideSearchResults();
     return;
   }
-  const { total, items } = collectMatches(q, searchScope, store.current, searchableTabs());
+  const { total, items } = collectMatches(q, searchScope, store.current, searchableTabs(), 50, {
+    regex: searchRegex,
+    caseSensitive: searchCase,
+  });
   searchResults.innerHTML = "";
   const head = el("div", "r-head");
   head.append(el("span", "", `${total} match${total === 1 ? "" : "es"}`));
@@ -2707,6 +2753,8 @@ function renderSearchResults(): void {
 }
 
 function jumpToResult(hit: SearchHit, q: string): void {
+  searchHistory.add(q);
+  historyIndex = -1;
   store.switch(hit.wsIndex);
   const ws = store.currentWorkspace();
   const ti = ws?.tabs.findIndex((t) => t.id === hit.tabId) ?? -1;
