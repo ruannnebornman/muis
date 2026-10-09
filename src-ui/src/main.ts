@@ -10,6 +10,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
 import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, type AppConfig } from "./config";
+import { clampIndex, filterCommands, type Command } from "./commands";
 import { WorkerClient, type Transport } from "./worker";
 import { SearchController } from "./search";
 import { SidePanelRegistry } from "./panels";
@@ -1992,6 +1993,10 @@ const onShortcut = (e: KeyboardEvent): void => {
       e.preventDefault();
       openSettings();
       break;
+    case "command-palette":
+      e.preventDefault();
+      openPalette();
+      break;
     case "switch-tab":
       if (action.index < ws.tabs.length) {
         e.preventDefault();
@@ -2175,6 +2180,132 @@ settingsSave.addEventListener("click", () => void applySettings());
 settingsCancel.addEventListener("click", closeSettings);
 settingsOverlay.addEventListener("click", (e) => {
   if (e.target === settingsOverlay) closeSettings();
+});
+
+/* ---------------- command palette ---------------- */
+
+interface PaletteItem extends Command {
+  run: () => void;
+}
+
+const paletteOverlay = document.createElement("div");
+paletteOverlay.className = "palette-overlay";
+paletteOverlay.style.display = "none";
+const paletteBox = document.createElement("div");
+paletteBox.className = "palette-box";
+const paletteInput = document.createElement("input");
+paletteInput.className = "palette-input";
+paletteInput.placeholder = "Type a command…";
+paletteInput.autocomplete = "off";
+paletteInput.spellcheck = false;
+const paletteList = document.createElement("div");
+paletteList.className = "palette-list";
+paletteBox.append(paletteInput, paletteList);
+paletteOverlay.append(paletteBox);
+document.body.append(paletteOverlay);
+
+let paletteItems: PaletteItem[] = [];
+let paletteMatches: PaletteItem[] = [];
+let paletteIndex = 0;
+
+function renderPalette(): void {
+  paletteMatches = filterCommands(paletteInput.value, paletteItems);
+  paletteIndex = clampIndex(paletteIndex, paletteMatches.length);
+  paletteList.innerHTML = "";
+  paletteMatches.forEach((c, i) => {
+    const row = document.createElement("div");
+    row.className = "palette-item" + (i === paletteIndex ? " on" : "");
+    row.textContent = c.title;
+    row.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      runPalette(i);
+    });
+    paletteList.append(row);
+  });
+}
+
+function runPalette(i: number): void {
+  const item = paletteMatches[i];
+  closePalette();
+  if (item) item.run();
+}
+
+function closePalette(): void {
+  paletteOverlay.style.display = "none";
+}
+
+function openPalette(): void {
+  const ws = store.currentWorkspace();
+  const active = ws?.tabs[ws.active];
+  paletteItems = [];
+  const add = (id: string, title: string, run: () => void): void => {
+    paletteItems.push({ id, title, run });
+  };
+  if (ws) {
+    add("new-tab", "New terminal tab", () => addShellTab(ws));
+    if (agentReady) add("new-agent", "New AI tab", () => addAgentTab(ws));
+    if (active) add("close-tab", "Close tab", () => closeTab(ws.id, active.id));
+    if (ws.tabs.length > 1) {
+      add("next-tab", "Next tab", () => {
+        ws.active = (ws.active + 1) % ws.tabs.length;
+        renderAll();
+      });
+      add("prev-tab", "Previous tab", () => {
+        ws.active = (ws.active - 1 + ws.tabs.length) % ws.tabs.length;
+        renderAll();
+      });
+    }
+    if (store.workspaces.length > 1) {
+      add("next-session", "Next session", () => {
+        store.switch((store.current + 1) % store.workspaces.length);
+        renderAll();
+      });
+      add("prev-session", "Previous session", () => {
+        store.switch((store.current - 1 + store.workspaces.length) % store.workspaces.length);
+        renderAll();
+      });
+    }
+    if (active) {
+      add("clear-scrollback", "Clear scrollback", () => clearScrollback(active.id));
+      add("focus-terminal", "Focus terminal", () => views.get(active.id)?.term.focus());
+    }
+    add("close-session", "Close session", () => closeSession(ws));
+  }
+  add("settings", "Open settings", () => openSettings());
+  add("search", "Search", () => {
+    titleSearch.focus();
+    titleSearch.select();
+  });
+  paletteInput.value = "";
+  paletteIndex = 0;
+  paletteOverlay.style.display = "flex";
+  renderPalette();
+  paletteInput.focus();
+}
+
+paletteInput.addEventListener("input", () => {
+  paletteIndex = 0;
+  renderPalette();
+});
+paletteInput.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    paletteIndex = clampIndex(paletteIndex + 1, paletteMatches.length);
+    renderPalette();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    paletteIndex = clampIndex(paletteIndex - 1, paletteMatches.length);
+    renderPalette();
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    runPalette(paletteIndex);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    closePalette();
+  }
+});
+paletteOverlay.addEventListener("click", (e) => {
+  if (e.target === paletteOverlay) closePalette();
 });
 
 /* ---------------- diagnosis hook ---------------- */

@@ -31,6 +31,9 @@ describe("resolveShortcut", () => {
     expect(resolveShortcut(key({ key: "w", ctrlKey: true, shiftKey: true }))).toEqual({ type: "close-tab" });
     expect(resolveShortcut(key({ key: "F12", ctrlKey: true, shiftKey: true }))).toEqual({ type: "focus-terminal" });
     expect(resolveShortcut(key({ key: ",", ctrlKey: true }))).toEqual({ type: "open-settings" });
+    expect(resolveShortcut(key({ key: "p", ctrlKey: true, shiftKey: true }))).toEqual({
+      type: "command-palette",
+    });
   });
 
   it("focuses search with ctrl+shift+f (and ctrl+f as a fallback)", () => {
