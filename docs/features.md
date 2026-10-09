@@ -96,38 +96,78 @@ First pass of the terminal-base list, each with tests:
 - **opencode TUI not filling the pane**: refit after `spawnTab` + a
   per-terminal `ResizeObserver` (the pty resize had raced the spawn).
 
+### Implemented — terminal base pass 2 (PR #55)
+
+Each with tests:
+
+- **Command palette** (`Ctrl+Shift+P`).
+- **Configurable statusbar segments** (Settings checkboxes).
+- **Regex + case search** (`Aa` / `.*` toggles).
+- **Search history** (Up/Down cycles recent queries).
+- **Per-workspace accent themes** (`workspaceThemes`).
+- **OSC 8 hyperlinks** (`open_url` opens http(s) in the browser).
+- **Dropped the dead `tabsOnTop`** field (no behavior to wire).
+- **Reset saved sessions**: `muis --reset-sessions` CLI flag, and a
+  Danger-zone **Reset sessions & restart** Settings button (confirmed).
+
 ### Still wanted
 
 Terminal base:
 
-- In-terminal **regex/case find bar** (`SearchController` exists but is
-  unwired; the search box drives the cross-session panel).
-- Search **history**.
-- **Configurable statusbar segments**.
-- **Per-workspace themes** and **background opacity**.
-- **Notification-click focuses the tab**; **notification grouping**.
-- Wire the dead **`tabsOnTop`**.
-- **"Open with muis here"**, **`muis` CLI flags**, **restore-on-login /
-  systemd unit**.
-- **Command palette**.
-- **OSC 8 hyperlinks**, **sixel/iTerm2 images**, **ligatures**.
+- **Background opacity** — needs a transparent window + compositor config,
+  not just CSS.
+- **Notification-click focuses the tab** and **notification grouping** —
+  the notification plugin exposes no JS click/action callback.
+- **Sixel/iTerm2 images** and **ligatures** — extra xterm addons/deps.
+- **Integration**: "Open with muis here" file-manager action; more `muis`
+  CLI flags; restore-on-login / systemd unit (packaging pass).
 
 ACP:
 
 - Phase 3/4 for Claude/Codex (deferred until those CLIs are installed).
-- Phase 5 (side-panel ACP + session linkage; Snor).
+- Phase 5 (side-panel ACP + session linkage; Snor) — parked.
 
 Deferred/platform: single Windows exe, Windows installer, Flatpak,
 aarch64, website, auto-update, Snor engine.
 
+### Terminal agent resume (behaviour)
+
+A terminal AI tab restores with this precedence:
+
+`opencode -s <id>` (exact captured id) → `opencode --continue`
+(`agentResume`) → configured `agentCommand`.
+
+The exact id comes from the auto-installed opencode plugin
+(`~/.config/opencode/plugins/muis.mjs`, marker-guarded; delete it to opt
+out) reporting via `muis-notify --agent-session`, routed by `MUIS_TAB_ID`.
+So opening a **new** tab and running `opencode` (or `opencode --continue`)
+captures that tab's session id and it restores exactly next launch;
+`--continue` is only the fallback when no id was captured (e.g. the
+plugin was not loaded because opencode had not been restarted). The
+plugin also fires the completion notification on `session.idle`.
+
+ACP (AI) panes are separate: a new AI tab starts a fresh session
+(`session/new`); restore resumes via the stored `acpSessionId`
+(`session/load`).
+
+### Release checklist
+
+- Bump the version in `crates/muis-shell/tauri.conf.json` (single
+  authority) and tag `vX.Y.Z`.
+- `aur/PKGBUILD` is stale (`pkgver=1.0.0`) — bump it when cutting a
+  release. The Veldmuis `veldmuis-muis` package repackages the signed
+  upstream release tarball, so a release is required before that package
+  can pick the new version up.
+- Clear local test state before switching builds: `muis --reset-sessions`,
+  Settings → *Reset sessions & restart*, or `rm -rf ~/.local/share/muis`.
+- Close superseded PRs #48/#49; review #51.
+
 ### PR map
 
-- #50 ACP pane (opencode) — `feature/acp-pane`
-- #52 pty-fill fix — `fix/opencode-pty-fill`
-- #47 settings/tab-move/resume — `feature/settings-and-tab-move`
-- #54 terminal base — `feature/terminal-base`
-- #53 docs refresh (this) — `docs/status-refresh`
-- Superseded by #53: #48, #49.
+- **Merged**: #43, #45, #46, #47, #50, #52, #53, #54.
+- **Open**: #55 terminal base pass 2 — `feature/terminal-base-2`.
+- Superseded by #53: #48, #49 (close them). #51 `docs/bugfixes` is
+  separate.
 
 ### Deferred
 
