@@ -3,10 +3,12 @@
 // the tab can resume that exact session, and notify muis when a turn
 // finishes so the tab gets the done badge + toast.
 //
-// Installed by muis at ~/.config/opencode/plugins/muis.mjs. It calls the
-// `muis-notify` binary, which muis ships and routes back to the tab via
-// MUIS_TAB_ID (injected into every pty). No-op when muis is not running.
-// The "muis-plugin" marker lets muis safely update its own file.
+// Installed by muis at ~/.config/opencode/plugins/muis.js. Must stay a
+// .js/.ts file: opencode only auto-loads those extensions from its plugin
+// directory, not .mjs. It calls the `muis-notify` binary, which muis ships
+// and routes back to the tab via MUIS_TAB_ID (injected into every pty).
+// No-op when muis is not running. The "muis-plugin" marker lets muis
+// safely update its own file.
 export const MuisPlugin = async ({ $ }) => {
   let last = "";
   const report = async (id) => {

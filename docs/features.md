@@ -74,8 +74,10 @@ Not in the original list; built during the ACP work. On `feature/decided-ux`
   tab gets the done badge/toast (#50).
 - **ACP polish** (#50): plan/steps cards, colored diffs, permission cards
   (tool + path), model picker, attachments, Stop unblocks the input.
-- **ACP Phase 2 detect-and-offer** (#50): typing a known agent in a shell
-  offers to open it in the AI panel.
+- **Agent tab detection** (#50): running a known agent in a shell tab
+  silently marks it as an agent tab (remembered for restore, exact session
+  id captured via the plugin). No chip/prompt — the AI tab button is the
+  opt-in path to the ACP panel.
 - **ACP Phase 5 decided** (not built): ACP panes as tabs *and* a
   session-linked side panel (Snor-ready); multiple ACP tabs allowed.
 
@@ -138,13 +140,15 @@ A terminal AI tab restores with this precedence:
 (`agentResume`) → configured `agentCommand`.
 
 The exact id comes from the auto-installed opencode plugin
-(`~/.config/opencode/plugins/muis.mjs`, marker-guarded; delete it to opt
+(`~/.config/opencode/plugins/muis.js`, marker-guarded; delete it to opt
 out) reporting via `muis-notify --agent-session`, routed by `MUIS_TAB_ID`.
-So opening a **new** tab and running `opencode` (or `opencode --continue`)
-captures that tab's session id and it restores exactly next launch;
-`--continue` is only the fallback when no id was captured (e.g. the
-plugin was not loaded because opencode had not been restarted). The
-plugin also fires the completion notification on `session.idle`.
+The plugin must stay a `.js`/`.ts` file: opencode only auto-loads those
+extensions, so the earlier `muis.mjs` name was silently ignored. So opening
+a **new** tab and running `opencode` (or `opencode --continue`) captures
+that tab's session id and it restores exactly next launch; `--continue` is
+only the fallback when no id was captured (e.g. the plugin was not loaded
+because opencode had not been restarted). The plugin also fires the
+completion notification on `session.idle`.
 
 ACP (AI) panes are separate: a new AI tab starts a fresh session
 (`session/new`); restore resumes via the stored `acpSessionId`

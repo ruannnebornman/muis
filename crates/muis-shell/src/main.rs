@@ -272,21 +272,32 @@ fn opencode_plugins_dir() -> Option<PathBuf> {
     Some(base.join("opencode").join("plugins"))
 }
 
+/// opencode only auto-loads `.js`/`.ts` files from its plugin directory.
+/// A `.mjs` name is silently ignored, so the exact session-id plugin never
+/// ran. Keep the installed name loadable and drop the old one.
+const OPENCODE_PLUGIN_FILE: &str = "muis.js";
+const OPENCODE_PLUGIN_LEGACY: &str = "muis.mjs";
+const OPENCODE_PLUGIN_MARKER: &str = "muis-plugin";
+const OPENCODE_PLUGIN_SRC: &str = include_str!("../opencode-plugin/muis.js");
+
 /// Install/update the muis opencode plugin. Writes it when missing, and
 /// updates it when the existing file is ours (carries the "muis-plugin"
 /// marker); never touches a foreign file. Returns the path.
 #[tauri::command]
 fn install_opencode_plugin() -> Result<String, String> {
     let dir = opencode_plugins_dir().ok_or("no config directory")?;
-    let path = dir.join("muis.mjs");
+    let path = dir.join(OPENCODE_PLUGIN_FILE);
     let ours = match std::fs::read_to_string(&path) {
-        Ok(existing) => existing.contains("muis-plugin"),
+        Ok(existing) => existing.contains(OPENCODE_PLUGIN_MARKER),
         Err(_) => true, // missing
     };
     if ours {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        std::fs::write(&path, include_str!("../opencode-plugin/muis.mjs"))
-            .map_err(|e| e.to_string())?;
+        std::fs::write(&path, OPENCODE_PLUGIN_SRC).map_err(|e| e.to_string())?;
+    }
+    let legacy = dir.join(OPENCODE_PLUGIN_LEGACY);
+    if std::fs::read_to_string(&legacy).is_ok_and(|s| s.contains(OPENCODE_PLUGIN_MARKER)) {
+        let _ = std::fs::remove_file(&legacy);
     }
     Ok(path.display().to_string())
 }
@@ -489,6 +500,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opencode_plugin_name_is_loadable_and_ours() {
+        // opencode silently ignores `.mjs` files in its plugin dir, so the
+        // installed plugin must use an extension opencode auto-loads.
+        assert!(OPENCODE_PLUGIN_FILE.ends_with(".js") || OPENCODE_PLUGIN_FILE.ends_with(".ts"));
+        assert_ne!(OPENCODE_PLUGIN_FILE, OPENCODE_PLUGIN_LEGACY);
+        assert!(OPENCODE_PLUGIN_SRC.contains(OPENCODE_PLUGIN_MARKER));
+    }
 
     #[test]
     fn worker_path_points_at_sibling_binary_when_present() {

@@ -88,6 +88,12 @@ cards**, **attachments** (text file → ACP resource part), and stop.
 
 ## Phase 2 — Detect-and-offer
 
+Dropped. The post-exec chip (the only part ever built) was removed: it
+fired on every new tab running an agent and got in the way of users who
+intentionally use the TUI. Detection now silently marks the tab as an
+agent tab so it resumes, and the `AI` button opens the ACP panel on
+demand. The pre-exec plan below is kept for reference only.
+
 When a user types `opencode`, `claude`, or `codex` in a `+` shell tab:
 
 - Detect **before exec** via a shell preexec hook (fish `fish_preexec`,
@@ -160,8 +166,9 @@ here. opencode is the supported agent for now.
 
 - `+` opens a fish shell tab; `AI` opens an ACP pane.
 - **ACP-first**: Phase 1 is the opencode ACP pane.
-- Typing a known agent in a shell → **detect and offer** (not silent
-  auto-convert).
+- Typing a known agent in a shell → **silent mark** (agent tab + session
+  capture). No detect-and-offer chip; the `AI` button is the opt-in path.
+  Never auto-convert.
 - **Terminal-tab session capture parked to Phase 4**; users who choose the
   TUI keep it unmodified by default.
 - Never alter a user-typed command; any terminal resume is opt-in.
@@ -178,8 +185,11 @@ Status notes (added during Phase 1 work):
   agent is flagged so it reopens, independent of the plugin.
 - **Staggered restore**: agent tabs load through a queue (core-scaled
   window, capped at 4, visible first, `nice`d) to avoid a startup spike.
-- **Phase 2 detect-and-offer**: done — typing a known agent in a shell tab
-  shows a chip to open it as an ACP tab.
+- **Phase 2 detect-and-offer**: superseded — the chip was removed. Typing a
+  known agent in a shell tab now silently marks the tab as an agent tab
+  (exact session id captured via the plugin) so it resumes on restore; the
+  `AI` button stays the opt-in path into the ACP panel. The chip fired on
+  every new tab and annoyed users who intentionally run the TUI.
 - **Phase 5**: ACP panes as tabs *and* a session-linked side panel
   (Snor-ready); multiple ACP tabs allowed.
 - **TUI opencode resume stays** (capture + `agentResumeCommand`), even for
