@@ -74,8 +74,10 @@ Not in the original list; built during the ACP work. On `feature/decided-ux`
   tab gets the done badge/toast (#50).
 - **ACP polish** (#50): plan/steps cards, colored diffs, permission cards
   (tool + path), model picker, attachments, Stop unblocks the input.
-- **ACP Phase 2 detect-and-offer** (#50): typing a known agent in a shell
-  offers to open it in the AI panel.
+- **Agent tab detection** (#50): running a known agent in a shell tab
+  silently marks it as an agent tab (remembered for restore, exact session
+  id captured via the plugin). No chip/prompt — the AI tab button is the
+  opt-in path to the ACP panel.
 - **ACP Phase 5 decided** (not built): ACP panes as tabs *and* a
   session-linked side panel (Snor-ready); multiple ACP tabs allowed.
 
