@@ -172,7 +172,7 @@ mod tests {
 
     fn store() -> SessionStore {
         let mut s = SessionStore::new();
-        s.ensure_default("home", "/home/kaazrot");
+        s.ensure_default("home", "/home/user");
         s
     }
 
@@ -189,7 +189,7 @@ mod tests {
         let mut s = store();
         assert!(!s.switch(7));
         assert_eq!(s.current, 0);
-        s.add_workspace("veldmuis", "/home/kaazrot/Projects/veldmuis");
+        s.add_workspace("veldmuis", "/home/user/Projects/veldmuis");
         assert!(s.switch(1));
         assert_eq!(s.current_workspace().unwrap().name, "veldmuis");
     }
@@ -197,11 +197,11 @@ mod tests {
     #[test]
     fn rapid_switching_keeps_per_workspace_active_tab() {
         let mut s = store();
-        s.new_tab("Terminal 2", "/home/kaazrot");
-        s.add_workspace("veldmuis", "/home/kaazrot/Projects/veldmuis");
+        s.new_tab("Terminal 2", "/home/user");
+        s.add_workspace("veldmuis", "/home/user/Projects/veldmuis");
         s.switch(1);
-        s.new_tab("v1", "/home/kaazrot/Projects/veldmuis");
-        s.new_tab("v2", "/home/kaazrot/Projects/veldmuis");
+        s.new_tab("v1", "/home/user/Projects/veldmuis");
+        s.new_tab("v2", "/home/user/Projects/veldmuis");
         s.switch(0);
         assert_eq!(s.active_tab().unwrap().title, "Terminal 2");
         s.switch(1);
@@ -211,8 +211,8 @@ mod tests {
     #[test]
     fn close_active_tab_clamps_to_live_tab() {
         let mut s = store();
-        s.new_tab("Terminal 2", "/home/kaazrot");
-        s.new_tab("Terminal 3", "/home/kaazrot");
+        s.new_tab("Terminal 2", "/home/user");
+        s.new_tab("Terminal 3", "/home/user");
         assert!(s.close_tab(0, 2));
         assert_eq!(s.active_tab().unwrap().title, "Terminal 2");
         assert!(s.close_tab(0, 0));
@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn session_json_roundtrip() {
         let mut s = store();
-        s.add_workspace("veldmuis", "/home/kaazrot/Projects/veldmuis");
+        s.add_workspace("veldmuis", "/home/user/Projects/veldmuis");
         let json = s.to_json().unwrap();
         let back = SessionStore::from_json(&json).unwrap();
         assert_eq!(s, back);

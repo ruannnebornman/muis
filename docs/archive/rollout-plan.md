@@ -105,7 +105,7 @@ releases; its PKGBUILD pins the muis tag.
 - **CI is the test bed** — build and smoke-test the AppImage and Flatpak in
   GitHub Actions containers (Arch, Fedora, Ubuntu), not on the dev machine.
 - **Versioning** — see above (`v1.0.0`, semver).
-- **`/home/kaazrot` hardcode** — `src-ui/src/main.ts:164` and
+- **`/home/user` hardcode** — `src-ui/src/main.ts:164` and
   `src-ui/src/main.ts:593` hardcode the home path; fix to use the real home
   (`default_cwd`/`home_dir`).
 - **Phase split** — Phase 0 + Phase 1 may land as one PR if convenient.
@@ -124,7 +124,7 @@ releases; its PKGBUILD pins the muis tag.
 - Add `@tauri-apps/cli` + a `tauri` npm script (x86_64 AppImage only).
 - `worker_path()` fallback to accept a triple-suffixed `muis-worker-*` sibling
   so the AppImage carries the sidecar regardless of bundler naming.
-- Replace the hardcoded `/home/kaazrot` (`src-ui/src/main.ts:164,593`) with the
+- Replace the hardcoded `/home/user` (`src-ui/src/main.ts:164,593`) with the
   real home from `default_cwd`.
 - Bundle `muis-worker` into the AppImage `usr/bin/` next to `muis` (via the
   `worker_path()` triple-suffix fallback and/or a post-bundle copy).

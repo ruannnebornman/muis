@@ -3,7 +3,7 @@ import { SessionStore, isDefaultTitle, newTabCwd, type Workspace } from "./sessi
 
 function store(): SessionStore {
   const s = new SessionStore();
-  s.ensureDefault("home", "/home/kaazrot");
+  s.ensureDefault("home", "/home/user");
   return s;
 }
 
@@ -22,11 +22,11 @@ describe("SessionStore", () => {
 
   it("keeps a visible tab per workspace across rapid switching", () => {
     const s = store();
-    s.newTab("Terminal 2", "/home/kaazrot");
-    s.addWorkspace("veldmuis", "/home/kaazrot/Projects/veldmuis");
+    s.newTab("Terminal 2", "/home/user");
+    s.addWorkspace("veldmuis", "/home/user/Projects/veldmuis");
     s.switch(1);
-    s.newTab("v1", "/home/kaazrot/Projects/veldmuis");
-    s.newTab("v2", "/home/kaazrot/Projects/veldmuis");
+    s.newTab("v1", "/home/user/Projects/veldmuis");
+    s.newTab("v2", "/home/user/Projects/veldmuis");
     s.switch(0);
     expect(s.activeTab()?.title).toBe("Terminal 2");
     s.switch(1);
@@ -35,8 +35,8 @@ describe("SessionStore", () => {
 
   it("clamps the visible tab on close", () => {
     const s = store();
-    s.newTab("Terminal 2", "/home/kaazrot");
-    s.newTab("Terminal 3", "/home/kaazrot");
+    s.newTab("Terminal 2", "/home/user");
+    s.newTab("Terminal 3", "/home/user");
     expect(s.closeTab(0, 2)).toBe(true);
     expect(s.activeTab()?.title).toBe("Terminal 2");
     expect(s.closeTab(0, 5)).toBe(false);
@@ -74,7 +74,7 @@ describe("SessionStore", () => {
     const s = store();
     const back = JSON.parse(s.toJSON()) as { workspaces: Workspace[] };
     expect(back.workspaces[0].name).toBe("home");
-    expect(back.workspaces[0].tabs[0].cwd).toBe("/home/kaazrot");
+    expect(back.workspaces[0].tabs[0].cwd).toBe("/home/user");
   });
 
   it("roundtrips through toJSON/fromJSON without reusing ids", () => {
@@ -176,9 +176,9 @@ describe("SessionStore", () => {
   });
 
   it("new tabs fall back to the workspace dir without a live tab", () => {
-    const ws: Workspace = { id: "w1", name: "home", dir: "/home/kaazrot", tabs: [], active: 0 };
-    expect(newTabCwd(ws)).toBe("/home/kaazrot");
+    const ws: Workspace = { id: "w1", name: "home", dir: "/home/user", tabs: [], active: 0 };
+    expect(newTabCwd(ws)).toBe("/home/user");
     ws.tabs.push({ id: "t1", title: "Terminal 1", cwd: "", manual: false });
-    expect(newTabCwd(ws)).toBe("/home/kaazrot");
+    expect(newTabCwd(ws)).toBe("/home/user");
   });
 });

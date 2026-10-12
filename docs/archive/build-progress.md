@@ -129,7 +129,7 @@ STATUS: done
   (nix termios; fish sets its own discipline right after). Old
   snapshots deleted once (they regenerate clean).
 - Test: spawned_shell_runs_with_echo_off (stty -a shows -echo).
-- Verified: cargo 27 green, fresh launch shows clean `kaazrot ›`
+- Verified: cargo 27 green, fresh launch shows clean `user ›`
   prompt, screenshot confirmed.
 
 ## Bugfix: active tab never highlighted (2026-09-26)

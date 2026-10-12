@@ -7,8 +7,8 @@ const ESC = "\x1b";
 describe("OscParser", () => {
   it("reads OSC 7 cwd and strips the file://host prefix", () => {
     const p = new OscParser();
-    const ev = p.push(enc.encode(`${ESC}]7;file://veldmuis/home/kaazrot\x07`));
-    expect(ev).toEqual([{ type: "cwd", path: "/home/kaazrot" }]);
+    const ev = p.push(enc.encode(`${ESC}]7;file://veldmuis/home/user\x07`));
+    expect(ev).toEqual([{ type: "cwd", path: "/home/user" }]);
   });
 
   it("reads OSC 0/2 titles with BEL or ST terminators", () => {
@@ -66,7 +66,7 @@ describe("OscParser", () => {
     ]);
     // 9;4 progress and 9;9 cwd are ConEmu extensions, not notifications.
     expect(p.push(enc.encode(`${ESC}]9;4;1;50\x07`))).toEqual([]);
-    expect(p.push(enc.encode(`${ESC}]9;9;/home/kaazrot\x07`))).toEqual([]);
+    expect(p.push(enc.encode(`${ESC}]9;9;/home/user\x07`))).toEqual([]);
   });
 
   it("reads OSC 777 notify with separate title and body", () => {
