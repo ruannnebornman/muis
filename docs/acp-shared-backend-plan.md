@@ -56,9 +56,10 @@ RSS.
   (`user_message_chunk`, `agent_message_chunk`,
   `available_commands_update`), and follow-up prompting retained prior
   context (asked for a word from the earlier turn and got it).
-- **`--pure` is not worth it.** Idle RSS differs by only ~15 MB (~4%)
-  between default and `--pure` (run-to-run variance is comparable), and it
-  disables external plugins, changing agent behaviour. Keep plugins on.
+- **`--pure` saves little.** Idle RSS differs by only ~15 MB (~4%) between
+  default and `--pure` (run-to-run variance is comparable), and it disables
+  external plugins. Exposed as an opt-in setting, not a default — see
+  "Resolved open questions".
 - **Idle session cost is negligible; the base dominates.** Measured RSS:
 
   | process state | RSS |
@@ -165,6 +166,8 @@ the reader/exit path, or from a dedicated reaper).
 - [ ] Close a tab → `session/close` (keep the session resumable on disk).
 - [ ] Idle kill + respawn; process-death recovery via `session/load`.
 - [ ] Tests (Rust + UI) including multi-session routing.
+- [ ] `--pure` setting (default off) → ACP launch args; spec in
+      `docs/features.md`.
 - [ ] Remove the process-per-tab path.
 - [ ] Update `docs/agent-integration.md` status once landed.
 
@@ -181,7 +184,10 @@ the reader/exit path, or from a dedicated reaper).
 - **Restart recovery** — `session/load` on a fresh process restores config,
   replays history, and retains conversation context; process-death
   recovery is viable.
-- **`--pure`** — only ~15 MB (~4%) and disables plugins; keep plugins on.
+- **`--pure`** — only ~15 MB (~4%), so it is an **opt-in setting** (default
+  off) rather than a hard-coded default. Spec:
+  `docs/features.md`, "Option to run the ACP agent in pure mode
+  (`--pure`)".
 
 ## References
 

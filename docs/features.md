@@ -456,6 +456,27 @@ Open questions: keep the 3-file zip as a fallback artifact, whether notify
 is embedded or folded into `muis.exe`, and the extraction/cleanup policy
 (per-user app dir, not `%TEMP%`, to reduce AV/SmartScreen noise).
 
+### Option to run the ACP agent in pure mode (`--pure`)
+
+Add a **setting** to launch the ACP agent with `--pure` (no external
+plugins). Measured delta on one idle `opencode acp`: **~15 MB (~4%)**, so
+it is a small optional win, not a default — and disabling plugins changes
+agent behaviour, so the user chooses.
+
+- Backend: include `--pure` in the ACP launch args when the setting is on
+  (`crates/muis-shell/src/agent.rs`; with the shared-backend plan the flag
+  applies to the single shared process).
+- Settings: a toggle, default **off** (e.g. "ACP agent: run without
+  plugins (pure)"). Per-agent launch config is the natural home if agents
+  become multi-agent.
+- Tests: unit-test arg assembly (pure on/off → exact argv).
+- Note: `--pure` also disables muis's own opencode plugin; harmless for ACP
+  panes (session ids come from the protocol) but it disables any other user
+  plugins too — hence opt-in.
+
+Decided (2026-10-12): expose as a user setting; keep plugins on by
+default.
+
 ## Known issues
 
 Bugs reported against muis. Documentation only — the implementation agent
