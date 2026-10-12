@@ -3,25 +3,25 @@ import { expandHome, shortPath } from "./paths";
 
 describe("shortPath", () => {
   it("collapses the home prefix to ~", () => {
-    expect(shortPath("/home/kaazrot", "/home/kaazrot")).toBe("~");
-    expect(shortPath("/home/kaazrot/code", "/home/kaazrot")).toBe("~/code");
+    expect(shortPath("/home/user", "/home/user")).toBe("~");
+    expect(shortPath("/home/user/code", "/home/user")).toBe("~/code");
   });
 
   it("leaves non-home paths and empty home alone", () => {
-    expect(shortPath("/etc/hosts", "/home/kaazrot")).toBe("/etc/hosts");
-    expect(shortPath("/home/kaazrot", "")).toBe("/home/kaazrot");
+    expect(shortPath("/etc/hosts", "/home/user")).toBe("/etc/hosts");
+    expect(shortPath("/home/user", "")).toBe("/home/user");
   });
 
   it("does not treat a prefix sibling as home", () => {
-    expect(shortPath("/home/kaazrot2/x", "/home/kaazrot")).toBe("/home/kaazrot2/x");
+    expect(shortPath("/home/user2/x", "/home/user")).toBe("/home/user2/x");
   });
 });
 
 describe("expandHome", () => {
   it("expands ~/ to the real home", () => {
-    expect(expandHome("~/code", "/home/kaazrot")).toBe("/home/kaazrot/code");
-    expect(expandHome("~", "/home/kaazrot")).toBe("~");
-    expect(expandHome("/abs/path", "/home/kaazrot")).toBe("/abs/path");
+    expect(expandHome("~/code", "/home/user")).toBe("/home/user/code");
+    expect(expandHome("~", "/home/user")).toBe("~");
+    expect(expandHome("/abs/path", "/home/user")).toBe("/abs/path");
   });
 
   it("leaves ~/ untouched when home is unknown", () => {
