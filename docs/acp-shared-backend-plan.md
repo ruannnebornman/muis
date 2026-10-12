@@ -40,9 +40,25 @@ RSS.
   distinct session ids from the same process.
 - **Per-session cwd: works.** Sessions created for two different project
   dirs on one process ran independently.
-- **Concurrent prompts: works.** Two `session/prompt` requests fired
-  without waiting both streamed back correct results and ended with
-  `stopReason: end_turn`. No serialization observed.
+- **Concurrent prompts: works, no cap observed.** Five sessions created on
+  one process, five `session/prompt` requests fired simultaneously; all
+  five returned distinct correct results with `stopReason: end_turn` in
+  **~3.0s total** (≈ a single prompt), i.e. genuinely parallel, not
+  serialized.
+- **`session/close` is supported.** Capability is advertised
+  (`sessionCapabilities: {close, fork, list, resume}`); closing returns
+  `{}`, the process survives, and closing an unknown id is a no-op. The
+  closed session **still appears in `session/list`** — close frees
+  in-process state, the session persists on disk and stays resumable.
+- **`session/load` after a process restart is a full restore.** A session
+  created, prompted, then killed with the process was loaded in a fresh
+  process: config options came back, history replayed via `session/update`
+  (`user_message_chunk`, `agent_message_chunk`,
+  `available_commands_update`), and follow-up prompting retained prior
+  context (asked for a word from the earlier turn and got it).
+- **`--pure` is not worth it.** Idle RSS differs by only ~15 MB (~4%)
+  between default and `--pure` (run-to-run variance is comparable), and it
+  disables external plugins, changing agent behaviour. Keep plugins on.
 - **Idle session cost is negligible; the base dominates.** Measured RSS:
 
   | process state | RSS |
@@ -75,7 +91,8 @@ wanted; cost tracks *active* sessions, not tab count.
   `sessionId`** (already present in `session/update` payloads).
 - New/renamed commands:
   - `agent_session_open(cwd) -> sessionId` (wraps `session/new`)
-  - `agent_session_close(sessionId)` (ACP `session/close` where supported)
+  - `agent_session_close(sessionId)` (ACP `session/close`, confirmed
+    supported)
   - `agent_write(line)` / `agent_spawn()` operate on the single transport
   - keep `agent_kill` semantics at the process level for shutdown
 - Correctly **reap** the child on natural exit (see "Related bug" below).
@@ -97,9 +114,8 @@ wanted; cost tracks *active* sessions, not tab count.
 - `model`/mode config options are **per session**
   (`session/set_config_option`); store them on the session handle.
 - Resume uses `session/load` with the persisted `acpSessionId`
-  (already stored per tab), now against the shared process.
-- opencode session storage is on disk, so a restarted shared process can
-  `session/load` every known session (verify after implementation).
+  (already stored per tab), now against the shared process. Verified: a
+  restart reloads config, replays history, and keeps conversation context.
 
 ## Lifecycle
 
@@ -109,12 +125,14 @@ wanted; cost tracks *active* sessions, not tab count.
   its tab is first viewed/activated; otherwise leave it inert. This alone
   removes the launch spike.
 - **Idle kill:** keep the shared process for the app lifetime while any
-  session is open; optionally terminate it after all sessions close, and
+  session is open. Closing a tab calls ACP `session/close` (frees
+  in-process state; the session persists on disk so it stays resumable).
+  Optionally terminate the shared process once no sessions remain, and
   respawn on demand.
 - **Failure handling (single point of failure):** if the shared process
   dies, all tabs lose their agent. On `agent-exit`, respawn and
-  `session/load` each open tab that had an `acpSessionId`, surfacing a
-  "reconnecting" state per pane.
+  `session/load` each open tab that had an `acpSessionId` (verified full
+  restore), surfacing a "reconnecting" state per pane.
 
 ## Related bug found during the spike
 
@@ -136,30 +154,34 @@ the reader/exit path, or from a dedicated reaper).
 
 ## Task breakdown
 
-- [x] Spike: confirm multi-session, multi-cwd, concurrent prompts, RSS.
+- [x] Spike: confirm multi-session, multi-cwd, concurrent prompts, RSS,
+      `session/close`, `session/load` after restart, `--pure`.
 - [ ] Approve design (this doc).
 - [ ] Rust: shared process + session registry; `agent_session_open`/
       `agent_session_close`; reaper.
 - [ ] Frontend: transport + `sessionId` router; keep `AcpClient` testable.
 - [ ] Tab ↔ session mapping + persistence via existing `acpSessionId`.
 - [ ] Lazy spawn on first view; no launch-time spawn of all agent tabs.
+- [ ] Close a tab → `session/close` (keep the session resumable on disk).
 - [ ] Idle kill + respawn; process-death recovery via `session/load`.
 - [ ] Tests (Rust + UI) including multi-session routing.
 - [ ] Remove the process-per-tab path.
 - [ ] Update `docs/agent-integration.md` status once landed.
 
-## Open questions
+## Resolved open questions (2026-10-12, spike-verified)
 
-- Does `opencode acp` expose `session/close`? If not, how to free an idle
-  session (drop tab) without killing the shared process.
-- Any concurrency cap on simultaneous prompts in one process? (None seen in
-  the spike; confirm under load.)
-- Should the shared process be per-app or per-project? (Spike says one
-  process can serve multiple cwds, so per-app is fine; revisit if a
-  long-lived session in one repo affects another.)
-- After a shared-process restart, does `session/load` fully restore
-  streaming state, or only history?
-- Does `--pure` (no external plugins) meaningfully trim the ~400 MB base?
+- **`session/close`** — supported and advertised; frees in-process state
+  while the session persists on disk (still in `session/list`), so it
+  stays resumable. Lifecycle closes a session on tab close.
+- **Concurrency cap** — none observed: 5 simultaneous prompts ran in
+  parallel (~3.0s total) with distinct results.
+- **Scope** — **per-app**: one shared process for the whole app; sessions
+  carry their own cwd. Revisit per-project isolation only if a heavy
+  session in one repo affects another.
+- **Restart recovery** — `session/load` on a fresh process restores config,
+  replays history, and retains conversation context; process-death
+  recovery is viable.
+- **`--pure`** — only ~15 MB (~4%) and disables plugins; keep plugins on.
 
 ## References
 
