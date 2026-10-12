@@ -79,6 +79,22 @@ right (most right).
 - Complements the bottom-left reorder already decided in
   `docs/features.md`.
 
+## Middle-click a tab should close it
+
+Middle-clicking a tab should do the same as clicking its `✕` close
+button.
+
+- The `✕` handler calls `closeTab(ws.id, tab.id)` (`tabElement`,
+  `src-ui/src/main.ts:983-988`).
+- Add a middle-button handler on the tab element (`auxclick` with
+  `button === 1`, or `mousedown`) that runs the same `closeTab` path,
+  including the busy confirmation and last-tab handling.
+- Middle-click is `mousedown`/`auxclick`, not `click`, so it does not
+  fire the tab's select handler or the reorder drag; make sure neither
+  is triggered and that the tab's context menu is suppressed.
+- The gesture is on the tab element only; xterm's own middle-click
+  paste inside the terminal surface is unaffected.
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
