@@ -189,7 +189,7 @@ mod tests {
         let mut s = store();
         assert!(!s.switch(7));
         assert_eq!(s.current, 0);
-        s.add_workspace("veldmuis", "/home/kaazrot/Documents/code/veldmuis");
+        s.add_workspace("veldmuis", "/home/kaazrot/Projects/veldmuis");
         assert!(s.switch(1));
         assert_eq!(s.current_workspace().unwrap().name, "veldmuis");
     }
@@ -198,10 +198,10 @@ mod tests {
     fn rapid_switching_keeps_per_workspace_active_tab() {
         let mut s = store();
         s.new_tab("Terminal 2", "/home/kaazrot");
-        s.add_workspace("veldmuis", "/home/kaazrot/Documents/code/veldmuis");
+        s.add_workspace("veldmuis", "/home/kaazrot/Projects/veldmuis");
         s.switch(1);
-        s.new_tab("v1", "/home/kaazrot/Documents/code/veldmuis");
-        s.new_tab("v2", "/home/kaazrot/Documents/code/veldmuis");
+        s.new_tab("v1", "/home/kaazrot/Projects/veldmuis");
+        s.new_tab("v2", "/home/kaazrot/Projects/veldmuis");
         s.switch(0);
         assert_eq!(s.active_tab().unwrap().title, "Terminal 2");
         s.switch(1);
@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn session_json_roundtrip() {
         let mut s = store();
-        s.add_workspace("veldmuis", "/home/kaazrot/Documents/code/veldmuis");
+        s.add_workspace("veldmuis", "/home/kaazrot/Projects/veldmuis");
         let json = s.to_json().unwrap();
         let back = SessionStore::from_json(&json).unwrap();
         assert_eq!(s, back);

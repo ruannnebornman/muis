@@ -23,10 +23,10 @@ describe("SessionStore", () => {
   it("keeps a visible tab per workspace across rapid switching", () => {
     const s = store();
     s.newTab("Terminal 2", "/home/kaazrot");
-    s.addWorkspace("veldmuis", "/home/kaazrot/Documents/code/veldmuis");
+    s.addWorkspace("veldmuis", "/home/kaazrot/Projects/veldmuis");
     s.switch(1);
-    s.newTab("v1", "/home/kaazrot/Documents/code/veldmuis");
-    s.newTab("v2", "/home/kaazrot/Documents/code/veldmuis");
+    s.newTab("v1", "/home/kaazrot/Projects/veldmuis");
+    s.newTab("v2", "/home/kaazrot/Projects/veldmuis");
     s.switch(0);
     expect(s.activeTab()?.title).toBe("Terminal 2");
     s.switch(1);

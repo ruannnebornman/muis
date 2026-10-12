@@ -75,7 +75,7 @@ describe("tabLabel", () => {
   it("prefers a meaningful shell title over the last command", () => {
     // opencode-style session title wins; fish's cwd path is ignored.
     expect(tabLabel("opencode · fix bug", false, "opencode")).toBe("opencode · fix bug");
-    expect(tabLabel("~/Documents/code/muis", false, "ls")).toBe("ls");
+    expect(tabLabel("~/Projects/muis", false, "ls")).toBe("ls");
     expect(tabLabel("/etc", false, "ls")).toBe("ls");
   });
 
