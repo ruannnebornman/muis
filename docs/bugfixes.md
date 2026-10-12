@@ -143,6 +143,21 @@ accent buttons (`src-ui/src/style.css:149-156`).
 - Recheck sizing (`min-width:300px`), overlay contrast, and overall
   balance with the rest of the UI.
 
+## Remove the fish message on new terminals
+
+Every new terminal spawned with fish prints fish's greeting banner
+("Welcome to fish, the friendly interactive shell"), which is noise in a
+tab that should start clean. Suppress it.
+
+- muis spawns fish interactively with only the OSC 133 integration flag
+  (`shell_argv`, `crates/muis-worker/src/main.rs:111-122`; integration
+  constant at `main.rs:20`).
+- Add fish's `-g`/`--no-greeting` flag alongside the existing
+  `-C <integration>` so the greeting is not printed.
+- Update the `shell_argv_adds_fish_integration` expectation
+  (`crates/muis-worker/src/main.rs:473-492`).
+- Fish only; other shells are unchanged.
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
