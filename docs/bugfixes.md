@@ -111,6 +111,24 @@ and the search glyph by `.search` (`font-size:12.5px`,
 (42px, `src-ui/src/style.css:38`) still fits without the controls
 overflowing.
 
+## CI pipeline is too slow
+
+CI builds take too long; investigate and speed them up
+(`.github/workflows/ci.yml`). Candidate directions:
+
+- Five jobs (`rust`, `ui`, `browser-e2e`, `native-xvfb`, `windows`) each
+  reinstall Tauri system deps and re-run `npm ci` / `npm run build`.
+  Share the built frontend via an artifact, or drop jobs that duplicate
+  a build.
+- Rust has no `Swatinem/rust-cache` (only the npm cache is configured);
+  add a Rust cache and check the `--locked` workspace test time.
+- The `native-xvfb` job builds Rust + the UI and installs Xvfb/xauth/
+  ImageMagick; see if it can reuse a cached build or only run on relevant
+  paths.
+- Consider path filters so docs-only PRs skip the heavy jobs.
+- Measure first: capture per-job and per-step timings from a recent run
+  to target the real bottleneck rather than guessing.
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
