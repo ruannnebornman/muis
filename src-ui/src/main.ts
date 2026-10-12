@@ -1842,7 +1842,7 @@ const stGpu = el("span", "pill", "");
 const stLoad = el("span", "pill", "");
 stLoad.style.display = "none";
 const stVersion = el("span", "pill", "");
-const stClock = el("span", "", "");
+const stClock = el("span", "clock", "");
 const stShell = el("span", "pill", "");
 // Left group order is deliberate: cwd, git, session·tab, user.
 statusbar.append(
@@ -1915,7 +1915,8 @@ function applyStatusbarVisibility(): void {
 
 function tickClock(): void {
   const f = () => {
-    stClock.textContent = clockText(new Date());
+    const text = clockText(new Date());
+    if (stClock.textContent !== text) stClock.textContent = text;
   };
   f();
   setInterval(f, 1000);
