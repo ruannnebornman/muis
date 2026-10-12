@@ -138,13 +138,15 @@ A terminal AI tab restores with this precedence:
 (`agentResume`) → configured `agentCommand`.
 
 The exact id comes from the auto-installed opencode plugin
-(`~/.config/opencode/plugins/muis.mjs`, marker-guarded; delete it to opt
+(`~/.config/opencode/plugins/muis.js`, marker-guarded; delete it to opt
 out) reporting via `muis-notify --agent-session`, routed by `MUIS_TAB_ID`.
-So opening a **new** tab and running `opencode` (or `opencode --continue`)
-captures that tab's session id and it restores exactly next launch;
-`--continue` is only the fallback when no id was captured (e.g. the
-plugin was not loaded because opencode had not been restarted). The
-plugin also fires the completion notification on `session.idle`.
+The plugin must stay a `.js`/`.ts` file: opencode only auto-loads those
+extensions, so the earlier `muis.mjs` name was silently ignored. So opening
+a **new** tab and running `opencode` (or `opencode --continue`) captures
+that tab's session id and it restores exactly next launch; `--continue` is
+only the fallback when no id was captured (e.g. the plugin was not loaded
+because opencode had not been restarted). The plugin also fires the
+completion notification on `session.idle`.
 
 ACP (AI) panes are separate: a new AI tab starts a fresh session
 (`session/new`); restore resumes via the stored `acpSessionId`
