@@ -95,6 +95,22 @@ button.
 - The gesture is on the tab element only; xterm's own middle-click
   paste inside the terminal surface is unaffected.
 
+## Settings button and search icon are too small
+
+Two chrome controls are hard to see/hit:
+
+- **Settings button** — the `⚙` button to the right of the tabbar
+  `+`/`AI` buttons (`el("button", "newtab settings", "⚙")`, from the
+  settings/tab-move work). Make it roughly 5x its current size.
+- **Search icon** — the `⌕` glyph at the left of the titlebar search box
+  (`searchGlyph`, `src-ui/src/main.ts:270-271`). Make it bigger.
+
+Both are sized by CSS: the gear by `.newtab.settings{font-size:14px}`
+and the search glyph by `.search` (`font-size:12.5px`,
+`src-ui/src/style.css:54-58`). Bump those and confirm the titlebar
+(42px, `src-ui/src/style.css:38`) still fits without the controls
+overflowing.
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
