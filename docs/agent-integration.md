@@ -155,6 +155,18 @@ Decided (2026-10-09), not yet built:
 - Snor is a separate engine behind the same pane surface, not a new
   protocol.
 
+## Phase 6 — shared ACP backend (one process, many sessions)
+
+Proposed (2026-10-12). Today the ACP pane spawns one `opencode acp`
+process per AI tab (~400 MB base each), and the shell starts every agent
+tab on launch — memory scales with tab count. A spike confirmed one
+opencode process can host many concurrent sessions (different cwds, truly
+concurrent prompts), with idle sessions costing almost nothing. Move to a
+single shared ACP process plus a session router.
+
+Full plan, spike data, architecture, lifecycle, and task breakdown:
+[`docs/acp-shared-backend-plan.md`](acp-shared-backend-plan.md).
+
 ## Deferred — Claude / Codex parity
 
 Phases 3 (Claude/Codex ACP adapters) and 4 (their terminal-tab session
