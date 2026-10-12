@@ -158,6 +158,59 @@ tab that should start clean. Suppress it.
   (`crates/muis-worker/src/main.rs:473-492`).
 - Fish only; other shells are unchanged.
 
+## The "＋ session" popup is bad
+
+Clicking `＋ session` (`renderSessions`, `src-ui/src/main.ts:1506`) fires a
+sequence of blocking native popups: `window.prompt("Session name:", …)`
+and then a directory chooser — the native folder picker inside Tauri, or
+a second `window.prompt("Session directory:", …)` in the browser preview
+(`pickDirectory`/`addSession`, `src-ui/src/main.ts:1520-1543`). They are
+unstyled, sit on top of the Breeze chrome, block the UI, and cannot be
+themed or validated. Desired: a single in-app dialog (or inline form)
+that collects the name and folder together, with validation and
+quick-pick locations, instead of any `window.prompt`.
+
+- Reuse the existing overlay pattern (`settingsOverlay`,
+  `paletteOverlay`, `src-ui/src/main.ts:2107,2311`) so it matches the
+  rest of the chrome and supports Esc / click-outside to close.
+- Session rename should use the same dialog; it is also a
+  `window.prompt` today (`renameSession`, `src-ui/src/main.ts:1553`).
+- Keep a typed-path fallback behind the `IN_TAURI` guard so the browser
+  preview and the Selenium suite still work without the native picker.
+- This is the visual/UX half of "Native folder picker for new sessions"
+  in `docs/features.md`; the button colour is tracked separately there.
+
+## Agent-finished desktop notification says only "turn finished"
+
+When an opencode turn ends, the plugin raises a desktop toast whose body
+is the hardcoded string `turn finished` and whose title is the constant
+`opencode` (`crates/muis-shell/opencode-plugin/muis.js:31`, on
+`session.idle`). Every completion reads exactly the same and says nothing
+about which tab/session or what finished. Desired: identify the source
+and the work.
+
+- Put the tab/session (or project directory) in the title and something
+  meaningful in the body (the tab's OSC title, the last command, or a
+  short summary) instead of the placeholder text.
+- Match the shell-finished toast, which already reads
+  `<lastCmd> finished` (`maybeNotifyFinished`,
+  `src-ui/src/main.ts:2597-2615`).
+- Keep the current gating: the toast fires only while the muis window is
+  unfocused (`sendDesktopNotification`, `src-ui/src/main.ts:88-98`), and
+  the tab still gets the done badge.
+
+To test the desktop notification:
+
+- Manual: focus a muis terminal, run
+  `muis-notify --title "test" --body "hello"`, then unfocus the window —
+  a toast should appear and the tab should be badged (routed via
+  `notifyEventFromCli` → `applyNotification`,
+  `src-ui/src/main.ts:2630-2663`).
+- The OS toast itself is best-effort and hard to assert, so cover the
+  routing and assert the plugin's `session.idle` payload is no longer the
+  placeholder. The live X11 suite currently exercises only the OSC notify
+  path (`tests/e2e/live-x11.sh:31-32`).
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
@@ -174,3 +227,9 @@ Cover the fixes above and the surrounding navigation behavior.
 - Keep the cross-session regression that exactly one terminal surface is
   visible (AGENTS.md) when touching terminal visibility or navigation,
   including the zero-tab case.
+- Desktop notification: cover the `muis-notify` CLI → event mapping
+  (`notifyEventFromCli`) and the plugin's `session.idle` payload; drive
+  `muis-notify` in the live X11 suite and assert the tab badge.
+- New-session dialog: assert the `＋ session` path no longer calls
+  `window.prompt` and that a session is created with the entered name and
+  folder (a decision/DOM helper where practical).
