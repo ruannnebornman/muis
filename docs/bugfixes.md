@@ -129,6 +129,20 @@ CI builds take too long; investigate and speed them up
 - Measure first: capture per-job and per-step timings from a recent run
   to target the real bottleneck rather than guessing.
 
+## Settings menu looks bad
+
+The settings dialog looks unpolished and needs a visual pass
+(`settingsOverlay`/`settingsBox`, `src-ui/src/main.ts:1268-1321`). The
+current styling is a bare centered box with label/control rows and two
+accent buttons (`src-ui/src/style.css:149-156`).
+
+- Bring it in line with the Breeze chrome and
+  `docs/target-mockup.png` instead of the plain modal.
+- Improve spacing, row separation, section grouping/labels, and the
+  Save/Cancel buttons (including hover/active/focus states).
+- Recheck sizing (`min-width:300px`), overlay contrast, and overall
+  balance with the rest of the UI.
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
