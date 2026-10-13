@@ -20,7 +20,7 @@ Branch `feature/ready-ux`, PR #43. Not yet exercised in a real client
 session; check each once it is merged/released.
 
 - **Date next to the clock** — done. Statusbar shows e.g.
-  `Tue 2026-10-06 19:48:46` (`clock.ts`). Test: date matches the local
+  `06 Oct 2026 19:48` (`clock.ts`). Test: date matches the local
   day and rolls over at midnight.
 - **Real muis icon in the titlebar** — done (bundled `assets/muis.png`).
   Test: looks crisp at normal and HiDPI scaling.

@@ -1,16 +1,24 @@
 /**
  * Statusbar clock text. Pure and locale-independent so the format is
- * testable: `Sun 2026-10-04 14:23:05`.
+ * testable: `04 Oct 2026 14:23`.
+ *
+ * Seconds are omitted: they tick noisily and steal attention. Every field
+ * has a fixed width (zero-padded day, three-letter month, four-digit year,
+ * zero-padded time), so the pill does not resize when the minute or the
+ * day rolls over.
  */
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
 function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
 export function clockText(now: Date): string {
-  const date = `${DAYS[now.getDay()]} ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const date = `${pad(now.getDate())} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
   return `${date} ${time}`;
 }
