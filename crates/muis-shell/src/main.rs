@@ -105,12 +105,13 @@ fn embedded_request() -> Option<&'static str> {
     }
 }
 
-/// Run an embedded helper in this consoleless GUI process.
+/// Run an embedded helper in this consoleless GUI process. The notify CLI
+/// gets the args after its `--muis-notify` mode flag.
 #[cfg(windows)]
 fn dispatch_embedded(mode: &str) -> i32 {
     match mode {
         "worker" => muis_worker::run(),
-        "notify" => muis_notify::run(),
+        "notify" => muis_notify::run_with(std::env::args().skip(2)),
         _ => 0,
     }
 }
