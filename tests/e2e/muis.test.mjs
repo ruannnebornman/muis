@@ -278,30 +278,18 @@ describe("muis chrome", () => {
     await shot("10-one-tab");
   });
 
-  it("closes the session when its last tab closes", async () => {
+  it("keeps a session open when its last tab closes", async () => {
     // Switch to the second session and close its only tab; the session
-    // must disappear and the first session take over.
+    // must stay in the sidebar with no tabs (only +/AI), not disappear.
     await (await driver.findElements(By.css(".session")))[1].click();
     await driver.wait(async () => (await tabs()).length === 1, 5000);
     await driver.findElement(By.css("#tabbar .tab .x")).click();
-    await driver.wait(
-      async () => (await driver.findElements(By.css(".session"))).length === 1,
-      5000,
-    );
-    assert.equal((await tabs()).length, 1);
-    await assertOneVisibleTerminal();
-    await shot("13-session-closed-with-last-tab");
-  });
-
-  it("leaves no sessions after the last session's last tab closes", async () => {
-    // Only the first session remains; closing its last tab empties the
-    // app instead of quitting or resurrecting a tab.
-    await driver.findElement(By.css("#tabbar .tab .x")).click();
-    await driver.wait(
-      async () => (await driver.findElements(By.css(".session"))).length === 0,
-      5000,
-    );
-    assert.equal((await tabs()).length, 0);
+    await driver.wait(async () => (await tabs()).length === 0, 5000);
+    const sessions = await driver.findElements(By.css(".session"));
+    assert.equal(sessions.length, 2);
+    const sub = await sessions[1].findElement(By.css(".s-sub")).getText();
+    assert.match(sub, /0 tabs/);
+    // No terminal surface is left behind for the emptied session.
     const visible = await driver.executeScript(() => {
       const boxes = [...document.querySelectorAll(".term-wrap .tabbox")];
       return boxes.filter((box) => {
@@ -310,25 +298,15 @@ describe("muis chrome", () => {
       }).length;
     });
     assert.equal(visible, 0);
-    await shot("14-no-sessions");
+    await shot("13-session-kept-empty");
+  });
 
-    // The empty state recovers: "+ session" mints a fresh session + tab.
-    await driver.findElement(By.css(".side-footer .btn")).click();
-    await driver.wait(until.alertIsPresent(), 5000);
-    const nameDialog = await driver.switchTo().alert();
-    await nameDialog.sendKeys("e2e-fresh");
-    await nameDialog.accept();
-    await driver.wait(until.alertIsPresent(), 5000);
-    const dirDialog = await driver.switchTo().alert();
-    await dirDialog.sendKeys("/tmp");
-    await dirDialog.accept();
-    await driver.wait(
-      async () => (await driver.findElements(By.css(".session"))).length === 1,
-      5000,
-    );
+  it("starts a new tab in an emptied session", async () => {
+    // The emptied session is current; + mints a fresh tab from its dir.
+    await driver.findElement(By.css("#tabbar .newtab")).click();
     await driver.wait(async () => (await tabs()).length === 1, 5000);
     await assertOneVisibleTerminal();
-    await shot("15-empty-state-recovers");
+    await shot("14-empty-session-recovers");
   });
 
   it("closes tabs and sessions from the context menu", async () => {
@@ -346,19 +324,44 @@ describe("muis chrome", () => {
     await driver.wait(async () => (await tabs()).length === 1, 5000);
     await shot("16-ctx-close-tab");
 
-    await driver.actions().contextClick(await driver.findElement(By.css(".session"))).perform();
-    const closeSession = await driver.wait(
-      until.elementLocated(
-        By.xpath("//div[contains(@class,'ctx-item')][.//span[text()='Close session']]"),
-      ),
-      3000,
-    );
-    await closeSession.click();
-    await driver.wait(
-      async () => (await driver.findElements(By.css(".session"))).length === 0,
-      5000,
-    );
+    // Close every session explicitly (including the last one, which leaves
+    // no sessions), re-fetching after each render.
+    let sessions = await driver.findElements(By.css(".session"));
+    while (sessions.length > 0) {
+      const before = sessions.length;
+      await driver.actions().contextClick(sessions[0]).perform();
+      const closeSession = await driver.wait(
+        until.elementLocated(
+          By.xpath("//div[contains(@class,'ctx-item')][.//span[text()='Close session']]"),
+        ),
+        3000,
+      );
+      await closeSession.click();
+      await driver.wait(
+        async () => (await driver.findElements(By.css(".session"))).length < before,
+        5000,
+      );
+      sessions = await driver.findElements(By.css(".session"));
+    }
     assert.equal((await tabs()).length, 0);
     await shot("17-ctx-close-session");
+
+    // The sessionless state recovers: "+ session" mints a fresh session+tab.
+    await driver.findElement(By.css(".side-footer .btn")).click();
+    await driver.wait(until.alertIsPresent(), 5000);
+    const nameDialog = await driver.switchTo().alert();
+    await nameDialog.sendKeys("e2e-fresh");
+    await nameDialog.accept();
+    await driver.wait(until.alertIsPresent(), 5000);
+    const dirDialog = await driver.switchTo().alert();
+    await dirDialog.sendKeys("/tmp");
+    await dirDialog.accept();
+    await driver.wait(
+      async () => (await driver.findElements(By.css(".session"))).length === 1,
+      5000,
+    );
+    await driver.wait(async () => (await tabs()).length === 1, 5000);
+    await assertOneVisibleTerminal();
+    await shot("18-empty-state-recovers");
   });
 });

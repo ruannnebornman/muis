@@ -1752,7 +1752,7 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   const meta = el("div", "s-meta");
   meta.append(
     el("div", "s-name", w.name),
-    el("div", "s-sub", `${w.tabs.length} tab${w.tabs.length > 1 ? "s" : ""} · ${shortPath(w.dir)}`),
+    el("div", "s-sub", `${w.tabs.length} tab${w.tabs.length === 1 ? "" : "s"} · ${shortPath(w.dir)}`),
   );
   d.append(icon, meta);
   if (doneN > 0) d.append(el("span", "s-badge", String(doneN)));
