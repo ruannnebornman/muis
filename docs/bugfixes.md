@@ -214,6 +214,21 @@ To test the desktop notification:
   placeholder. The live X11 suite currently exercises only the OSC notify
   path (`tests/e2e/live-x11.sh:31-32`).
 
+## Statusbar pills double-line when the window is not full screen
+
+The right-side statusbar pills — CPU, RAM, GPU, the clock/date, and
+`UTF-8 · <shell>` — render a weird double line when muis is not full
+screen (e.g. floating or tiled to a smaller window). It looks bad.
+
+- Direction: the pills are single-line at full screen but break once the
+  window narrows. Check the `.statusbar` flex layout for wrap/overflow and
+  whether the `.pill` border/height is duplicated or clipped when the row
+  runs out of room (`src-ui/src/style.css`, `.statusbar`/`.pill`).
+- Reflow, don't wrap: the pills should stay on one line and the statusbar
+  should not gain a second border/row or a scrollbar-like line.
+- Verify at a few window widths, including the minimum size, with all
+  segments visible.
+
 ## Add tests
 
 Cover the fixes above and the surrounding navigation behavior.
