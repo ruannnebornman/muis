@@ -117,31 +117,24 @@ impl SessionStore {
         Some(id)
     }
 
-    /// Close a tab. Closing the last tab closes its workspace (session)
-    /// too; the visible tab/workspace clamps to a live one. Returns false
-    /// when the workspace or tab index is out of range.
+    /// Close a tab. Closing the last tab keeps its workspace (session)
+    /// open with no tabs; the visible tab clamps to a live one. Returns
+    /// false when the workspace or tab index is out of range.
     pub fn close_tab(&mut self, ws_index: usize, tab_index: usize) -> bool {
-        let ws_now_empty = {
-            let Some(ws) = self.workspaces.get_mut(ws_index) else {
-                return false;
-            };
-            if tab_index >= ws.tabs.len() {
-                return false;
-            }
-            ws.tabs.remove(tab_index);
-            if ws.tabs.is_empty() {
-                true
-            } else {
-                if ws.active >= ws.tabs.len() {
-                    ws.active = ws.tabs.len() - 1;
-                } else if tab_index < ws.active {
-                    ws.active -= 1;
-                }
-                false
-            }
+        let Some(ws) = self.workspaces.get_mut(ws_index) else {
+            return false;
         };
-        if ws_now_empty {
-            self.remove_workspace(ws_index);
+        if tab_index >= ws.tabs.len() {
+            return false;
+        }
+        ws.tabs.remove(tab_index);
+        if ws.tabs.is_empty() {
+            // Keep the session: reset the visible index, nothing to show.
+            ws.active = 0;
+        } else if ws.active >= ws.tabs.len() {
+            ws.active = ws.tabs.len() - 1;
+        } else if tab_index < ws.active {
+            ws.active -= 1;
         }
         true
     }
@@ -222,21 +215,22 @@ mod tests {
     }
 
     #[test]
-    fn closing_last_tab_removes_its_workspace() {
+    fn closing_last_tab_keeps_its_workspace() {
         let mut s = store();
         s.add_workspace("veldmuis", "/tmp/veldmuis");
         s.switch(1);
         s.new_tab("v1", "/tmp/veldmuis");
         // Close the only tab of ws0 while ws1 is the current workspace.
         assert!(s.close_tab(0, 0));
-        assert_eq!(s.workspaces.len(), 1);
-        assert_eq!(s.current, 0);
+        assert_eq!(s.workspaces.len(), 2);
+        assert_eq!(s.workspaces[0].tabs.len(), 0);
+        assert_eq!(s.current, 1);
         assert_eq!(s.current_workspace().unwrap().name, "veldmuis");
         assert_eq!(s.active_tab().unwrap().title, "v1");
     }
 
     #[test]
-    fn closing_last_tab_of_current_workspace_switches_session() {
+    fn closing_last_tab_keeps_the_current_session() {
         let mut s = store();
         s.add_workspace("b", "/tmp/b");
         s.switch(1);
@@ -246,32 +240,34 @@ mod tests {
         s.new_tab("c1", "/tmp/c");
         s.switch(1);
         assert!(s.close_tab(1, 0));
-        assert_eq!(s.workspaces.len(), 2);
-        assert_eq!(s.current_workspace().unwrap().name, "c");
-        assert_eq!(s.active_tab().unwrap().title, "c1");
+        assert_eq!(s.workspaces.len(), 3);
+        assert_eq!(s.current, 1);
+        assert_eq!(s.current_workspace().unwrap().name, "b");
+        assert!(s.current_workspace().unwrap().tabs.is_empty());
+        assert!(s.active_tab().is_none());
     }
 
     #[test]
-    fn closing_last_tab_of_last_workspace_leaves_empty_store() {
+    fn closing_last_tab_leaves_an_empty_session() {
         let mut s = store();
         assert!(s.close_tab(0, 0));
-        assert!(s.workspaces.is_empty());
+        assert_eq!(s.workspaces.len(), 1);
         assert_eq!(s.current, 0);
+        assert!(s.current_workspace().unwrap().tabs.is_empty());
         assert!(s.active_tab().is_none());
-        assert!(s.current_workspace().is_none());
-        // A tab needs a workspace; adding one restores the invariant.
-        assert!(s.new_tab("x", "/tmp").is_none());
-        let idx = s.add_workspace("fresh", "/tmp");
-        assert!(s.new_tab("x", "/tmp").is_some());
-        assert_eq!(s.current, idx);
+        // A new tab seeds from the session dir (no active tab to inherit).
+        let dir = s.current_workspace().unwrap().dir.clone();
+        assert!(s.new_tab("x", &dir).is_some());
+        assert_eq!(s.active_tab().unwrap().cwd, "/home/user");
     }
 
     #[test]
-    fn empty_store_json_roundtrip() {
+    fn empty_session_json_roundtrip() {
         let mut s = store();
         assert!(s.close_tab(0, 0));
         let back = SessionStore::from_json(&s.to_json().unwrap()).unwrap();
-        assert!(back.workspaces.is_empty());
+        assert_eq!(back.workspaces.len(), 1);
+        assert!(back.workspaces[0].tabs.is_empty());
         assert_eq!(back.current, 0);
         assert!(back.active_tab().is_none());
     }

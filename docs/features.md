@@ -371,10 +371,11 @@ glyph `❯_` (`appIcon`, `src-ui/src/main.ts:232-234`; `.app-icon`,
 
 Two cases to distinguish:
 
-- User closes the last tab: already handled — `store.closeTab` removes the
-  workspace when its last tab goes (`src-ui/src/sessions.ts:84-87`, test
-  `src-ui/src/sessions.test.ts:45`, merged in the close-session-on-last-tab
-  branch).
+- User closes the last tab: the session is **kept** open with no tabs so it
+  survives in the sidebar — `store.closeTab` no longer removes the
+  workspace when its last tab goes (`src-ui/src/sessions.ts`, test
+  `src-ui/src/sessions.test.ts`). This reverses the earlier
+  close-session-on-last-tab behavior; see `docs/bugfixes.md`.
 - Process exit/kill: **gap**. When a pty exits, muis only marks the tab
   exited and prints `[process exited]` (`src-ui/src/main.ts:482-483`); the
   dead tab — and therefore a session whose only tab died — stays open.

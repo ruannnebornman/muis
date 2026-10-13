@@ -163,8 +163,9 @@ export class SessionStore {  workspaces: Workspace[] = [];
     if (!ws || tabIndex >= ws.tabs.length) return false;
     ws.tabs.splice(tabIndex, 1);
     if (ws.tabs.length === 0) {
-      // Closing the last tab closes its workspace (session) too.
-      this.removeWorkspace(wsIndex);
+      // Closing the last tab keeps the session open with no tabs, so it
+      // survives (name, dir, sidebar slot) even with no active work.
+      ws.active = 0;
       return true;
     }
     if (ws.active >= ws.tabs.length) ws.active = ws.tabs.length - 1;

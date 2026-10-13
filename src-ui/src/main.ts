@@ -1469,13 +1469,9 @@ function applyWorkspaceTheme(): void {
 function renderAll(): void {
   const ws = store.currentWorkspace();
   applyWorkspaceTheme();
-  if (ws && ws.tabs.length === 0) {
-    // A live workspace always shows a terminal. Only a fully closed
-    // workspace (no sessions left) is allowed to stay empty.
-    store.newTab("Terminal 1", ws.dir);
-    renderAll();
-    return;
-  }
+  // A session with no tabs is a valid state: it shows only the +/AI tab
+  // buttons and no terminal, and is kept until the user closes the session
+  // or exits its last process. New sessions open a tab in addSession.
   // Looking at a tab acknowledges its finished command.
   const active = ws?.tabs[ws.active];
   if (active) doneTabs.clear(active.id);
@@ -1540,6 +1536,8 @@ async function addSession(): Promise<void> {
   const dir = expandHome(dirRaw, homeDir);
   const idx = store.addWorkspace(name, dir);
   store.switch(idx);
+  // A new session opens a terminal; an emptied session later stays empty.
+  store.newTab("Terminal 1", dir);
   renderAll();
 }
 
