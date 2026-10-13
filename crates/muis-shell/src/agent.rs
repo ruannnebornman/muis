@@ -77,13 +77,17 @@ pub fn agent_spawn(
         c.args(&args);
         c
     };
+    log::info!("spawning agent in {cwd}: {program} {}", args.join(" "));
     let mut child = cmd
         .current_dir(&cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("spawn {program}: {e}"))?;
+        .map_err(|e| {
+            log::error!("failed to spawn agent {program} in {cwd}: {e}");
+            format!("spawn {program}: {e}")
+        })?;
 
     let id = format!("ag{}", pool.next.fetch_add(1, Ordering::Relaxed) + 1);
     let stdout = child.stdout.take().ok_or("agent has no stdout")?;
@@ -105,6 +109,7 @@ pub fn agent_spawn(
                 Err(_) => break,
             }
         }
+        log::info!("agent {reader_id} stdout closed");
         let _ = handle.emit(AGENT_EXIT, AgentExit { id: reader_id });
     });
 
