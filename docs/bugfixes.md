@@ -22,6 +22,11 @@ The bottom-right clock pill renders `Sun 2026-10-04 14:23:05`
 
 ## Clicking a tab or session should focus the terminal
 
+**Done** — selecting a tab or session focuses its terminal, so typing
+works immediately. Skips reorder drags and an in-use search box
+(`shouldFocusTerminal`, `src-ui/src/focus.ts`). In the `fix/bugfixes`
+batch.
+
 Selecting a tab or session changes the visible surface but leaves
 keyboard focus where it was, so typing does not reach the terminal until
 the user clicks the terminal itself. Desired: selecting a tab/session
@@ -38,6 +43,13 @@ focuses its terminal so the user can type immediately.
   do not fight the search box while it is open.
 
 ## Closing the last tab should keep the session open
+
+**Done** — closing the last tab keeps the session open with no tabs,
+showing only the `+`/`AI` buttons. `closeTab` no longer removes the
+workspace, `renderAll` no longer force-creates a terminal, and a new
+session opens its tab explicitly (`src-ui/src/main.ts`,
+`src-ui/src/sessions.ts`, mirrored in `crates/muis-core/src/session.rs`).
+Process exit still tears the session down. In the `fix/bugfixes` batch.
 
 Closing a session's last tab currently tears the whole session down
 (`SessionStore.closeTab`, `src-ui/src/sessions.ts:132-134`, reached from
