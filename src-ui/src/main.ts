@@ -25,6 +25,7 @@ import { DoneTracker } from "./done";
 import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
+import { shouldFocusTerminal } from "./focus";
 import { AcpClient, type PermissionRequest } from "./acp";
 import { agentResumeForCommand } from "./agents";
 import muisIcon from "./assets/muis.png";
@@ -1636,6 +1637,25 @@ function attachReorder(
   });
 }
 
+/** Put keyboard focus on the current workspace's active terminal, if any. */
+function focusActiveTerminal(): void {
+  const ws = store.currentWorkspace();
+  const tab = ws ? ws.tabs[ws.active] : undefined;
+  if (tab) views.get(tab.id)?.term.focus();
+}
+
+/** Focus the active terminal after a tab/session selection click. */
+function focusActiveTerminalOnSelect(): void {
+  if (
+    shouldFocusTerminal({
+      dragging: dragKind !== null,
+      searchFocused: searchBox.contains(document.activeElement),
+    })
+  ) {
+    focusActiveTerminal();
+  }
+}
+
 function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   const idx = store.workspaces.indexOf(w);
   const d = el("div", "session" + (selected ? " active" : ""));
@@ -1661,6 +1681,7 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   d.addEventListener("click", () => {
     store.switch(idx);
     renderAll();
+    focusActiveTerminalOnSelect();
   });
   d.addEventListener("dblclick", () => renameSession(w));
   attachReorder(d, "session", idx, "y", (from, to) => {
@@ -1772,6 +1793,7 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
   d.addEventListener("click", () => {
     ws.active = ws.tabs.findIndex((t) => t.id === tab.id);
     renderAll();
+    focusActiveTerminalOnSelect();
   });
   d.addEventListener("dblclick", () => renameTab(ws, tab));
   attachReorder(d, "tab", ws.tabs.findIndex((t) => t.id === tab.id), "x", (from, to) => {
