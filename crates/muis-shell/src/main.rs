@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 mod agent;
 mod bridge;
+mod logging;
 mod persist;
 
 use agent::AgentPool;
@@ -102,10 +103,14 @@ fn live_test_command() -> Option<String> {
 /// Frontend diagnosis snapshot (no devtools in release builds).
 #[tauri::command]
 fn debug_report(json: String) {
-    #[cfg(debug_assertions)]
-    eprintln!("muis-debug: {json}");
-    #[cfg(not(debug_assertions))]
-    let _ = json;
+    log::debug!("frontend report: {json}");
+}
+
+/// Path of the diagnostics log file, so the UI can point users at it when
+/// something fails (no console in release builds).
+#[tauri::command]
+fn log_path() -> String {
+    logging::log_file().to_string_lossy().into_owned()
 }
 
 #[tauri::command]
@@ -394,14 +399,20 @@ fn ensure_dmabuf_disabled() -> bool {
 }
 
 fn main() {
+    // First thing: release builds have no console on Windows, so without a
+    // file logger a start-up failure leaves nothing behind to diagnose.
+    if let Some(path) = logging::init() {
+        log::info!("muis shell starting; log file: {}", path.display());
+    }
+
     ensure_dmabuf_disabled();
 
     // `muis --reset-sessions`: clear saved sessions and exit (no window).
     if std::env::args().any(|a| a == "--reset-sessions") {
         match reset_sessions_state() {
-            Ok(()) => eprintln!("muis: cleared saved sessions"),
+            Ok(()) => log::info!("cleared saved sessions"),
             Err(e) => {
-                eprintln!("muis: could not clear sessions: {e}");
+                log::error!("could not clear sessions: {e}");
                 std::process::exit(1);
             }
         }
@@ -418,6 +429,7 @@ fn main() {
             default_cwd,
             live_test_command,
             debug_report,
+            log_path,
             sessions_load,
             sessions_save,
             config_load,
@@ -441,20 +453,33 @@ fn main() {
             agent::agent_kill
         ])
         .setup(|app| {
-            // Fail visibly in dev when the sidecar is missing; the release
-            // packages always ship both binaries together.
-            if worker_path().is_none() {
-                eprintln!(
-                    "muis: muis-worker not found next to {}",
+            log::info!(
+                "muis {} ready ({} {}); binary: {}",
+                app.package_info().version,
+                std::env::consts::OS,
+                std::env::consts::ARCH,
+                std::env::current_exe()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "<unknown>".to_string()),
+            );
+
+            // A missing sidecar is a real failure on every platform; the
+            // release packages always ship both binaries together.
+            let worker = worker_path();
+            match &worker {
+                Some(path) => log::info!("worker binary: {}", path.display()),
+                None => log::error!(
+                    "muis-worker not found next to {}",
                     std::env::current_exe()
                         .map(|p| p.display().to_string())
                         .unwrap_or_else(|_| "<unknown>".to_string())
-                );
+                ),
             }
+
             let handle = app.handle().clone();
             let sink: EventSink =
                 Arc::new(move |event| handle.emit(WORKER_EVENT, &event).is_ok());
-            app.handle().manage(WorkerPool::new(sink, worker_path()));
+            app.handle().manage(WorkerPool::new(sink, worker));
             app.handle().manage(AgentPool::new());
 
             // Notification endpoint for `muis-notify` clients. One per-user
@@ -466,7 +491,7 @@ fn main() {
             if let Err(e) = muis_core::notify::serve(&socket, move |req| {
                 let _ = handle.emit("muis-notify", &req);
             }) {
-                eprintln!("muis: notification endpoint unavailable ({socket}): {e}");
+                log::warn!("notification endpoint unavailable ({socket}): {e}");
             }
 
             // System monitor: one sampler for the window, pushing stats
