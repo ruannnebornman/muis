@@ -71,6 +71,13 @@ fn worker_available() -> bool {
     worker_path().is_some()
 }
 
+/// Whether this window is running in `--testmode`; the frontend shows a
+/// marker so a test window is never mistaken for the real one.
+#[tauri::command]
+fn is_test_mode() -> bool {
+    test_mode()
+}
+
 #[tauri::command]
 fn default_shell() -> String {
     muis_core::shell::default_shell().to_string_lossy().into_owned()
@@ -458,6 +465,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             ping,
             worker_available,
+            is_test_mode,
             default_shell,
             default_cwd,
             live_test_command,

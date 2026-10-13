@@ -44,6 +44,9 @@ import "./style.css";
 
 const IN_TAURI = "__TAURI_INTERNALS__" in window;
 
+/** Set once at init from the shell; true for `muis --testmode`. */
+let testModeActive = false;
+
 function reportDebugStage(stage: string, detail: unknown = undefined): void {
   if (!IN_TAURI) return;
   void invoke("debug_report", {
@@ -861,13 +864,16 @@ appIcon.append(appIconImg);
 const appTitle = document.createElement("div");
 appTitle.className = "app-title";
 appTitle.textContent = "muis";
-tbLeft.append(appIcon, appTitle);
+const testBadge = el("span", "test-badge", "test mode");
+testBadge.style.display = "none";
+tbLeft.append(appIcon, appTitle, testBadge);
 
 const tbRight = document.createElement("div");
 tbRight.className = "tb-right";
 const searchBox = document.createElement("div");
 searchBox.className = "search";
 const searchGlyph = document.createElement("span");
+searchGlyph.className = "search-glyph";
 searchGlyph.textContent = "⌕";
 const titleSearch = document.createElement("input");
 titleSearch.id = "titleSearch";
@@ -2884,7 +2890,8 @@ document.addEventListener("click", (e) => {
 
 function updateWindowTitle(): void {
   const n = doneTabs.count();
-  document.title = n > 0 ? `● (${n}) done — muis` : `muis — ${store.currentWorkspace()?.name ?? ""}`;
+  const base = n > 0 ? `● (${n}) done — muis` : `muis — ${store.currentWorkspace()?.name ?? ""}`;
+  document.title = testModeActive ? `[test] ${base}` : base;
 }
 
 /* ---------------- init ---------------- */
@@ -2894,6 +2901,13 @@ async function init(): Promise<void> {
   let home = "~";
   let resumed = false;
   if (IN_TAURI) {
+    try {
+      testModeActive = await invoke<boolean>("is_test_mode");
+      if (testModeActive) testBadge.style.display = "";
+      reportDebugStage("test-mode", testModeActive);
+    } catch {
+      /* the test-mode marker is best-effort */
+    }
     try {
       home = await invoke<string>("default_cwd");
       reportDebugStage("default-cwd-loaded");
