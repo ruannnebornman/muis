@@ -2228,10 +2228,41 @@ const settingsBox = document.createElement("div");
 settingsBox.className = "settings-box";
 const settingsTitle = document.createElement("h2");
 settingsTitle.textContent = "Settings";
+const settingsClose = document.createElement("button");
+settingsClose.type = "button";
+settingsClose.className = "settings-close";
+settingsClose.title = "Close";
+settingsClose.textContent = "✕";
+const settingsHeader = document.createElement("div");
+settingsHeader.className = "settings-header";
+settingsHeader.append(settingsTitle, settingsClose);
+const settingsBody = document.createElement("div");
+settingsBody.className = "settings-body";
 
 function settingsRow(label: string, input: HTMLElement): HTMLElement {
   const row = document.createElement("label");
   row.className = "settings-row";
+  const span = document.createElement("span");
+  span.textContent = label;
+  row.append(span, input);
+  return row;
+}
+
+/** A labelled group of settings rows. */
+function settingsSection(title: string, rows: HTMLElement[]): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "settings-section";
+  const h = document.createElement("h3");
+  h.className = "settings-section-title";
+  h.textContent = title;
+  section.append(h, ...rows);
+  return section;
+}
+
+/** A row whose control sits on its own line (e.g. a checkbox grid). */
+function settingsBlock(label: string, input: HTMLElement): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "settings-row settings-row-block";
   const span = document.createElement("span");
   span.textContent = label;
   row.append(span, input);
@@ -2334,25 +2365,35 @@ const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
 const settingsSave = document.createElement("button");
 settingsSave.textContent = "Save";
+settingsSave.classList.add("primary");
 const settingsCancel = document.createElement("button");
 settingsCancel.textContent = "Cancel";
-settingsButtons.append(settingsSave, settingsCancel);
-settingsBox.append(
-  settingsTitle,
-  settingsRow("Show sessions panel", optSessions),
-  settingsRow("Terminal font size", optFontSize),
-  settingsRow("Theme", optTheme),
-  settingsRow("AI tab command", optAgent),
-  settingsRow("AI resume command", optAgentResume),
-  settingsRow("ACP agent: run pure (no plugins)", optAgentPure),
-  settingsRow("Scrollback lines", optScrollback),
-  settingsRow("Font family", optFontFamily),
-  settingsRow("Cursor style", optCursorStyle),
-  settingsRow("Cursor blink", optCursorBlink),
-  settingsRow("Bell", optBell),
-  settingsRow("Statusbar", segBox),
-  settingsRow("Danger zone", resetSessionsBtn),
-  settingsButtons,
+settingsButtons.append(settingsCancel, settingsSave);
+settingsBox.append(settingsHeader, settingsBody, settingsButtons);
+settingsBody.append(
+  settingsSection("Appearance", [
+    settingsRow("Show sessions panel", optSessions),
+    settingsRow("Theme", optTheme),
+    settingsRow("Font family", optFontFamily),
+    settingsRow("Font size", optFontSize),
+    settingsRow("Cursor style", optCursorStyle),
+    settingsRow("Cursor blink", optCursorBlink),
+    settingsRow("Bell", optBell),
+  ]),
+  settingsSection("AI", [
+    settingsRow("AI tab command", optAgent),
+    settingsRow("AI resume command", optAgentResume),
+    settingsRow("Run ACP agent pure (no plugins)", optAgentPure),
+  ]),
+  settingsSection("Terminal", [
+    settingsRow("Scrollback lines", optScrollback),
+  ]),
+  settingsSection("Statusbar", [
+    settingsBlock("Visible segments", segBox),
+  ]),
+  settingsSection("Danger zone", [
+    settingsBlock("Reset sessions & restart", resetSessionsBtn),
+  ]),
 );
 settingsOverlay.append(settingsBox);
 document.body.append(settingsOverlay);
@@ -2421,6 +2462,7 @@ async function applySettings(): Promise<void> {
 
 settingsSave.addEventListener("click", () => void applySettings());
 settingsCancel.addEventListener("click", closeSettings);
+settingsClose.addEventListener("click", closeSettings);
 settingsOverlay.addEventListener("click", (e) => {
   if (e.target === settingsOverlay) closeSettings();
 });

@@ -196,15 +196,37 @@ body{
 .a-diff{margin:0; padding:6px 8px; background:var(--bg0); border-radius:6px; font:12px/1.45 monospace; white-space:pre-wrap; word-break:break-word; max-height:260px; overflow:auto}
 .a-tool-out{font-size:12px; color:var(--dim); white-space:pre-wrap}
 /* settings dialog + side panel slot, same tokens */
-.settings-overlay{position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55)}
-.settings-box{background:var(--bg3); color:var(--fg); border:1px solid var(--border-dark); border-radius:var(--radius); padding:16px 20px; min-width:300px; font-family:var(--uifont); font-size:12.5px}
-.settings-box h2{margin:0 0 12px; color:var(--fg); font-size:13.5px}
-.settings-row{display:flex; justify-content:space-between; align-items:center; gap:16px; margin:8px 0}
-.settings-row input[type="number"]{width:90px; background:var(--bg0); color:var(--fg); border:1px solid var(--border); border-radius:4px; font:inherit; padding:2px 6px}
-.settings-row select{background:var(--bg0); color:var(--fg); border:1px solid var(--border); border-radius:4px; font:inherit; padding:2px 6px}
+.settings-overlay{position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.62)}
+.settings-box{
+  background:#2b3035; color:var(--fg); border:1px solid var(--border);
+  border-radius:6px; box-shadow:0 18px 50px rgba(0,0,0,.6);
+  width:min(520px,92vw); max-height:86vh; display:flex; flex-direction:column;
+  font-family:var(--uifont); font-size:12.5px;
+}
+.settings-header{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px 10px; border-bottom:1px solid var(--border-dark)}
+.settings-box h2{margin:0; color:var(--fg); font-size:14px; font-weight:600}
+.settings-close{background:transparent; border:0; color:var(--dim); font-size:15px; line-height:1; padding:2px 8px; border-radius:4px; cursor:pointer}
+.settings-close:hover{background:#3a4045; color:#fff}
+.settings-close:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+.settings-body{padding:4px 18px 8px; overflow-y:auto}
+.settings-section{margin:12px 0}
+.settings-section-title{margin:4px 0 2px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dim)}
+.settings-row{display:flex; justify-content:space-between; align-items:center; gap:16px; padding:7px 0; border-bottom:1px solid rgba(255,255,255,.05)}
+.settings-section .settings-row:last-child{border-bottom:0}
+.settings-row-block{flex-direction:column; align-items:stretch; gap:7px}
+.settings-row > span:first-child{color:var(--fg)}
+.settings-row input[type="number"],.settings-row input[type="text"],.settings-row select{background:var(--bg0); color:var(--fg); border:1px solid var(--border); border-radius:4px; font:inherit; padding:3px 8px}
+.settings-row input[type="number"]{width:100px}
+.settings-row input[type="text"]{width:210px}
+.settings-row :is(input,select):focus{outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent)}
 .settings-row input[type="checkbox"]{accent-color:var(--accent); width:16px; height:16px}
-.settings-buttons{display:flex; justify-content:flex-end; gap:8px; margin-top:14px}
-.settings-buttons button{background:var(--accent); border:1px solid #1d99d6; color:#fff; border-radius:var(--radius); font:inherit; padding:4px 14px; cursor:pointer}
+.settings-buttons{display:flex; justify-content:flex-end; gap:8px; padding:12px 18px 14px; border-top:1px solid var(--border-dark); background:rgba(0,0,0,.12)}
+.settings-buttons button{background:#3a4045; border:1px solid var(--border); color:var(--fg); border-radius:var(--radius); font:inherit; padding:6px 16px; cursor:pointer}
+.settings-buttons button:hover{background:#434c53}
+.settings-buttons button:active{transform:translateY(1px)}
+.settings-buttons button:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+.settings-buttons button.primary{background:var(--accent); border-color:#1d99d6; color:#fff; font-weight:600}
+.settings-buttons button.primary:hover{background:#53b8ec}
 .sidepanel{width:300px; min-width:300px; background:var(--sidebar); border-left:1px solid var(--border-dark); flex-direction:column; overflow-y:auto; font-family:var(--uifont)}
 .sidepanel [data-panel-body]{flex:1; padding:8px}
 @media(max-width:900px){ .sidebar{width:76px} .s-meta,.side-label span,.side-footer{display:none} .s-icon{margin:auto} }
