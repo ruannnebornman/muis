@@ -6,6 +6,9 @@ work in `docs/deferred.md`, and the settled state in `ROADMAP.md`.
 
 ## Date/time in the status bar needs refinement
 
+**Done** — the clock now reads `04 Oct 2026 14:23` (day-month-year, no
+seconds, fixed width). PR #63.
+
 The bottom-right clock pill renders `Sun 2026-10-04 14:23:05`
 (`clockText`, `src-ui/src/clock.ts:12`). Refine the presentation:
 
