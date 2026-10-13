@@ -20,14 +20,26 @@ mod logging;
 mod persist;
 
 use agent::AgentPool;
-use bridge::{EventSink, WorkerPool, WORKER_EVENT};
+use bridge::{EventSink, WorkerLaunch, WorkerPool, WORKER_EVENT};
 use tauri::{Emitter, Manager};
 
+/// Hidden argument that runs the embedded pty worker in this same binary
+/// (Windows single-file build). See [`embedded_request`].
+#[cfg(windows)]
+const WORKER_ARG: &str = "--muis-worker";
+/// Hidden argument that runs the embedded notify CLI in this same binary.
+#[cfg(windows)]
+const NOTIFY_ARG: &str = "--muis-notify";
+
 /// Locate the worker binary in `dir`. Prefers the plain `muis-worker`
-/// sibling that the Arch package and Windows zip ship; falls back to the
-/// Tauri-style triple-suffixed sidecar name
-/// (`muis-worker-x86_64-unknown-linux-gnu`), which is how `bundle.externalBin`
-/// names it inside the AppImage.
+/// sibling that the Arch package ships; falls back to the Tauri-style
+/// triple-suffixed sidecar name
+/// (`muis-worker-x86_64-unknown-linux-gnu`), which is how
+/// `bundle.externalBin` names it inside the AppImage.
+///
+/// Windows does not use this (it re-execs the shell itself); it stays for
+/// the tests that lock the naming contract.
+#[cfg(any(not(windows), test))]
 fn find_worker_in(dir: &Path) -> Option<PathBuf> {
     let name = if cfg!(windows) {
         "muis-worker.exe"
@@ -54,12 +66,54 @@ fn find_worker_in(dir: &Path) -> Option<PathBuf> {
     matches.into_iter().next()
 }
 
-/// Locate the worker binary next to the shell executable. Same directory
-/// layout on all platforms: `muis` + `muis-worker[.exe]`, which is what
-/// both the Arch package and the Windows portable zip ship.
+/// Locate the sibling worker binary next to the shell executable, as the
+/// Linux packages ship it (`muis` + `muis-worker`).
+#[cfg(any(not(windows), test))]
 fn worker_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     find_worker_in(exe.parent()?)
+}
+
+/// How the shell starts a session worker. Linux packages spawn the sibling
+/// `muis-worker`; the Windows single-file build re-execs this same exe in
+/// the hidden `--muis-worker` mode, so nothing else ships alongside it.
+fn worker_launch() -> Option<WorkerLaunch> {
+    #[cfg(windows)]
+    {
+        // Always re-exec ourselves: no sibling to lose or leave stale, and
+        // the worker can never be a different version than the shell.
+        let exe = std::env::current_exe().ok()?;
+        Some(WorkerLaunch::SelfExe {
+            exe,
+            arg: WORKER_ARG.to_string(),
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        worker_path().map(WorkerLaunch::Exe)
+    }
+}
+
+/// Windows single-file mode selector: `Some("worker")`/`Some("notify")` when
+/// this is a re-exec of ourselves, `None` for a normal shell launch.
+#[cfg(windows)]
+fn embedded_request() -> Option<&'static str> {
+    match std::env::args().nth(1).as_deref() {
+        Some(WORKER_ARG) => Some("worker"),
+        Some(NOTIFY_ARG) => Some("notify"),
+        _ => None,
+    }
+}
+
+/// Run an embedded helper in this consoleless GUI process. The notify CLI
+/// gets the args after its `--muis-notify` mode flag.
+#[cfg(windows)]
+fn dispatch_embedded(mode: &str) -> i32 {
+    match mode {
+        "worker" => muis_worker::run(),
+        "notify" => muis_notify::run_with(std::env::args().skip(2)),
+        _ => 0,
+    }
 }
 
 #[tauri::command]
@@ -69,7 +123,7 @@ fn ping() -> String {
 
 #[tauri::command]
 fn worker_available() -> bool {
-    worker_path().is_some()
+    worker_launch().is_some()
 }
 
 #[tauri::command]
@@ -405,6 +459,17 @@ fn main() {
         log::info!("muis shell starting; log file: {}", path.display());
     }
 
+    // Windows single-file build: if we were re-exec'd as the embedded worker
+    // or notify CLI, run that and exit before Tauri starts. This process is
+    // windows-subsystem (no console), so no CLI window ever appears.
+    #[cfg(windows)]
+    {
+        if let Some(mode) = embedded_request() {
+            log::info!("embedded mode: {mode}");
+            std::process::exit(dispatch_embedded(mode));
+        }
+    }
+
     ensure_dmabuf_disabled();
 
     // `muis --reset-sessions`: clear saved sessions and exit (no window).
@@ -463,13 +528,19 @@ fn main() {
                     .unwrap_or_else(|_| "<unknown>".to_string()),
             );
 
-            // A missing sidecar is a real failure on every platform; the
-            // release packages always ship both binaries together.
-            let worker = worker_path();
-            match &worker {
-                Some(path) => log::info!("worker binary: {}", path.display()),
+            // How session workers start: a sibling binary, or (Windows
+            // single-file) this same exe re-exec'd in `--muis-worker` mode.
+            let launch = worker_launch();
+            match &launch {
+                Some(WorkerLaunch::Exe(path)) => {
+                    log::info!("worker binary: {}", path.display())
+                }
+                #[cfg(windows)]
+                Some(WorkerLaunch::SelfExe { exe, arg }) => {
+                    log::info!("worker mode: {} {arg}", exe.display())
+                }
                 None => log::error!(
-                    "muis-worker not found next to {}",
+                    "no muis-worker available next to {}",
                     std::env::current_exe()
                         .map(|p| p.display().to_string())
                         .unwrap_or_else(|_| "<unknown>".to_string())
@@ -479,7 +550,7 @@ fn main() {
             let handle = app.handle().clone();
             let sink: EventSink =
                 Arc::new(move |event| handle.emit(WORKER_EVENT, &event).is_ok());
-            app.handle().manage(WorkerPool::new(sink, worker));
+            app.handle().manage(WorkerPool::new(sink, launch));
             app.handle().manage(AgentPool::new());
 
             // Notification endpoint for `muis-notify` clients. One per-user

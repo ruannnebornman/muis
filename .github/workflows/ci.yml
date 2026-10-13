@@ -116,7 +116,7 @@ jobs:
           name: muis-native-xvfb
           path: tests/e2e/artifacts/live-x11/
 
-  windows-portable:
+  windows-single-exe:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -130,13 +130,10 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
-      - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
-      - name: Assemble portable zip
-        run: >
-          Compress-Archive -Path
-          target\release\muis.exe,target\release\muis-worker.exe,target\release\muis-notify.exe
-          -DestinationPath muis-portable.zip
+      # The shell links the worker and notify and re-execs itself on Windows,
+      # so muis.exe alone is the whole app.
+      - run: cargo build --release --locked -p muis-shell
       - uses: actions/upload-artifact@v6
         with:
-          name: muis-portable
-          path: muis-portable.zip
+          name: muis-windows
+          path: target\release\muis.exe
