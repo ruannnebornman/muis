@@ -100,6 +100,11 @@ right (most right).
 
 ## Middle-click a tab should close it
 
+**Done** — middle-clicking a tab closes it via the same `closeTab` path as
+the `✕` button (busy confirmation and last-tab handling included), using an
+`auxclick` (button 1) handler so the select/reorder handlers are untouched
+(`src-ui/src/main.ts`).
+
 Middle-clicking a tab should do the same as clicking its `✕` close
 button.
 
