@@ -1793,6 +1793,15 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
     renderAll();
     focusActiveTerminalOnSelect();
   });
+  // Middle-click closes the tab, same path as the ✕ button. auxclick is
+  // button-specific, so this leaves the select handler and the reorder
+  // drag (both primary-button) untouched.
+  d.addEventListener("auxclick", (e) => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeTab(ws.id, tab.id);
+  });
   d.addEventListener("dblclick", () => renameTab(ws, tab));
   attachReorder(d, "tab", ws.tabs.findIndex((t) => t.id === tab.id), "x", (from, to) => {
     const moved = store.moveTab(store.workspaces.indexOf(ws), from, to);
