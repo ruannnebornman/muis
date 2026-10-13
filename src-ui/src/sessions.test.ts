@@ -42,20 +42,20 @@ describe("SessionStore", () => {
     expect(s.closeTab(0, 5)).toBe(false);
   });
 
-  it("closes the session when its last tab closes", () => {
+  it("keeps the session open when its last tab closes", () => {
     const s = store();
     expect(s.closeTab(0, 0)).toBe(true);
-    expect(s.workspaces.length).toBe(0);
+    expect(s.workspaces.length).toBe(1);
+    expect(s.currentWorkspace()?.name).toBe("home");
+    expect(s.currentWorkspace()?.tabs.length).toBe(0);
     expect(s.activeTab()).toBeUndefined();
-    expect(s.currentWorkspace()).toBeUndefined();
-    // A tab needs a workspace; adding one restores the invariant.
-    expect(s.newTab("x", "/tmp")).toBeUndefined();
-    const idx = s.addWorkspace("fresh", "/tmp");
-    expect(s.newTab("x", "/tmp")).toBeDefined();
-    expect(s.current).toBe(idx);
+    // A new tab seeds from the session dir when there is no active tab.
+    const ws = s.currentWorkspace()!;
+    expect(s.newTab("Terminal 1", newTabCwd(ws))).toBeDefined();
+    expect(s.activeTab()?.cwd).toBe("/home/user");
   });
 
-  it("switches to a neighbor when the active session closes", () => {
+  it("keeps an emptied session current when its last tab closes", () => {
     const s = store();
     s.addWorkspace("b", "/tmp/b");
     s.switch(1);
@@ -65,9 +65,20 @@ describe("SessionStore", () => {
     s.newTab("c1", "/tmp/c");
     s.switch(1);
     expect(s.closeTab(1, 0)).toBe(true);
-    expect(s.workspaces.length).toBe(2);
-    expect(s.currentWorkspace()?.name).toBe("c");
-    expect(s.activeTab()?.title).toBe("c1");
+    expect(s.workspaces.length).toBe(3);
+    expect(s.currentWorkspace()?.name).toBe("b");
+    expect(s.currentWorkspace()?.tabs.length).toBe(0);
+    expect(s.activeTab()).toBeUndefined();
+  });
+
+  it("roundtrips a session with no tabs", () => {
+    const s = store();
+    s.closeTab(0, 0);
+    const back = SessionStore.fromJSON(s.toJSON());
+    expect(back.workspaces.length).toBe(1);
+    expect(back.workspaces[0].tabs.length).toBe(0);
+    expect(back.current).toBe(0);
+    expect(back.activeTab()).toBeUndefined();
   });
 
   it("serializes to the same shape as the Rust store", () => {

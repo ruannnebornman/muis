@@ -25,6 +25,7 @@ import { DoneTracker } from "./done";
 import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
+import { shouldFocusTerminal } from "./focus";
 import { AcpConnection, AcpClient, type PermissionRequest } from "./acp";
 import { agentResumeForCommand } from "./agents";
 import muisIcon from "./assets/muis.png";
@@ -42,6 +43,9 @@ import "./style.css";
  */
 
 const IN_TAURI = "__TAURI_INTERNALS__" in window;
+
+/** Set once at init from the shell; true for `muis --testmode`. */
+let testModeActive = false;
 
 function reportDebugStage(stage: string, detail: unknown = undefined): void {
   if (!IN_TAURI) return;
@@ -938,13 +942,16 @@ appIcon.append(appIconImg);
 const appTitle = document.createElement("div");
 appTitle.className = "app-title";
 appTitle.textContent = "muis";
-tbLeft.append(appIcon, appTitle);
+const testBadge = el("span", "test-badge", "test mode");
+testBadge.style.display = "none";
+tbLeft.append(appIcon, appTitle, testBadge);
 
 const tbRight = document.createElement("div");
 tbRight.className = "tb-right";
 const searchBox = document.createElement("div");
 searchBox.className = "search";
 const searchGlyph = document.createElement("span");
+searchGlyph.className = "search-glyph";
 searchGlyph.textContent = "⌕";
 const titleSearch = document.createElement("input");
 titleSearch.id = "titleSearch";
@@ -1546,13 +1553,9 @@ function applyWorkspaceTheme(): void {
 function renderAll(): void {
   const ws = store.currentWorkspace();
   applyWorkspaceTheme();
-  if (ws && ws.tabs.length === 0) {
-    // A live workspace always shows a terminal. Only a fully closed
-    // workspace (no sessions left) is allowed to stay empty.
-    store.newTab("Terminal 1", ws.dir);
-    renderAll();
-    return;
-  }
+  // A session with no tabs is a valid state: it shows only the +/AI tab
+  // buttons and no terminal, and is kept until the user closes the session
+  // or exits its last process. New sessions open a tab in addSession.
   // Looking at a tab acknowledges its finished command.
   const active = ws?.tabs[ws.active];
   if (active) doneTabs.clear(active.id);
@@ -1617,6 +1620,8 @@ async function addSession(): Promise<void> {
   const dir = expandHome(dirRaw, homeDir);
   const idx = store.addWorkspace(name, dir);
   store.switch(idx);
+  // A new session opens a terminal; an emptied session later stays empty.
+  store.newTab("Terminal 1", dir);
   renderAll();
 }
 
@@ -1714,6 +1719,25 @@ function attachReorder(
   });
 }
 
+/** Put keyboard focus on the current workspace's active terminal, if any. */
+function focusActiveTerminal(): void {
+  const ws = store.currentWorkspace();
+  const tab = ws ? ws.tabs[ws.active] : undefined;
+  if (tab) views.get(tab.id)?.term.focus();
+}
+
+/** Focus the active terminal after a tab/session selection click. */
+function focusActiveTerminalOnSelect(): void {
+  if (
+    shouldFocusTerminal({
+      dragging: dragKind !== null,
+      searchFocused: searchBox.contains(document.activeElement),
+    })
+  ) {
+    focusActiveTerminal();
+  }
+}
+
 function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   const idx = store.workspaces.indexOf(w);
   const d = el("div", "session" + (selected ? " active" : ""));
@@ -1728,7 +1752,7 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   const meta = el("div", "s-meta");
   meta.append(
     el("div", "s-name", w.name),
-    el("div", "s-sub", `${w.tabs.length} tab${w.tabs.length > 1 ? "s" : ""} · ${shortPath(w.dir)}`),
+    el("div", "s-sub", `${w.tabs.length} tab${w.tabs.length === 1 ? "" : "s"} · ${shortPath(w.dir)}`),
   );
   d.append(icon, meta);
   if (doneN > 0) d.append(el("span", "s-badge", String(doneN)));
@@ -1739,6 +1763,7 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   d.addEventListener("click", () => {
     store.switch(idx);
     renderAll();
+    focusActiveTerminalOnSelect();
   });
   d.addEventListener("dblclick", () => renameSession(w));
   attachReorder(d, "session", idx, "y", (from, to) => {
@@ -1850,6 +1875,16 @@ function tabElement(ws: Workspace, tab: Tab, selected: boolean): HTMLElement {
   d.addEventListener("click", () => {
     ws.active = ws.tabs.findIndex((t) => t.id === tab.id);
     renderAll();
+    focusActiveTerminalOnSelect();
+  });
+  // Middle-click closes the tab, same path as the ✕ button. auxclick is
+  // button-specific, so this leaves the select handler and the reorder
+  // drag (both primary-button) untouched.
+  d.addEventListener("auxclick", (e) => {
+    if (e.button !== 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeTab(ws.id, tab.id);
   });
   d.addEventListener("dblclick", () => renameTab(ws, tab));
   attachReorder(d, "tab", ws.tabs.findIndex((t) => t.id === tab.id), "x", (from, to) => {
@@ -1923,6 +1958,7 @@ const stVersion = el("span", "pill", "");
 const stClock = el("span", "clock", "");
 const stShell = el("span", "pill", "");
 // Left group order is deliberate: cwd, git, session·tab, user.
+// Right group order: CPU/RAM/GPU, shell, version, clock (far right).
 statusbar.append(
   stCwd,
   stGit,
@@ -1933,9 +1969,9 @@ statusbar.append(
   stRam,
   stGpu,
   stLoad,
+  stShell,
   stVersion,
   stClock,
-  stShell,
 );
 (statusbar.children[4] as HTMLElement).style.marginLeft = "auto";
 
@@ -1980,7 +2016,6 @@ function applyStatusbarVisibility(): void {
     ["user", stUser],
     ["cpu", stCpu],
     ["ram", stRam],
-    ["load", stLoad],
     ["version", stVersion],
     ["clock", stClock],
     ["shell", stShell],
@@ -1989,6 +2024,9 @@ function applyStatusbarVisibility(): void {
     node.style.display = segmentVisible(cfg.statusbar, id) ? "" : "none";
   }
   if (!segmentVisible(cfg.statusbar, "gpu")) stGpu.style.display = "none";
+  // The load pill is shown only while agents load, so let updateLoadingHint
+  // own its display (an empty visible pill otherwise leaks through).
+  updateLoadingHint();
 }
 
 function tickClock(): void {
@@ -2936,7 +2974,8 @@ document.addEventListener("click", (e) => {
 
 function updateWindowTitle(): void {
   const n = doneTabs.count();
-  document.title = n > 0 ? `● (${n}) done — muis` : `muis — ${store.currentWorkspace()?.name ?? ""}`;
+  const base = n > 0 ? `● (${n}) done — muis` : `muis — ${store.currentWorkspace()?.name ?? ""}`;
+  document.title = testModeActive ? `[test] ${base}` : base;
 }
 
 /* ---------------- init ---------------- */
@@ -2946,6 +2985,13 @@ async function init(): Promise<void> {
   let home = "~";
   let resumed = false;
   if (IN_TAURI) {
+    try {
+      testModeActive = await invoke<boolean>("is_test_mode");
+      if (testModeActive) testBadge.style.display = "";
+      reportDebugStage("test-mode", testModeActive);
+    } catch {
+      /* the test-mode marker is best-effort */
+    }
     try {
       home = await invoke<string>("default_cwd");
       reportDebugStage("default-cwd-loaded");

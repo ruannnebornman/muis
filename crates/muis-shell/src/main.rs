@@ -126,6 +126,13 @@ fn worker_available() -> bool {
     worker_launch().is_some()
 }
 
+/// Whether this window is running in `--testmode`; the frontend shows a
+/// marker so a test window is never mistaken for the real one.
+#[tauri::command]
+fn is_test_mode() -> bool {
+    test_mode()
+}
+
 #[tauri::command]
 fn default_shell() -> String {
     muis_core::shell::default_shell().to_string_lossy().into_owned()
@@ -169,11 +176,19 @@ fn log_path() -> String {
 
 #[tauri::command]
 fn sessions_load() -> Result<String, String> {
+    // Test mode starts fresh: never restore the real session.
+    if test_mode() {
+        return Ok(String::new());
+    }
     persist::read_text(&muis_core::paths::sessions_file())
 }
 
 #[tauri::command]
 fn sessions_save(json: String) -> Result<(), String> {
+    // Test mode never writes: the real session file is left untouched.
+    if test_mode() {
+        return Ok(());
+    }
     persist::write_json(&muis_core::paths::sessions_file(), &json)
 }
 
@@ -184,21 +199,35 @@ fn config_load() -> Result<String, String> {
 
 #[tauri::command]
 fn config_save(json: String) -> Result<(), String> {
+    // Settings are loaded in test mode (so the run reflects the real
+    // config), but never written, so a test can't overwrite them.
+    if test_mode() {
+        return Ok(());
+    }
     persist::write_json(&muis_core::paths::config_file(), &json)
 }
 
 #[tauri::command]
 fn snapshot_store(tab_id: String, data_b64: String) -> Result<(), String> {
+    if test_mode() {
+        return Ok(());
+    }
     persist::snapshot_store(&tab_id, &data_b64)
 }
 
 #[tauri::command]
 fn snapshot_read(tab_id: String) -> Result<String, String> {
+    if test_mode() {
+        return Ok(String::new());
+    }
     persist::snapshot_read(&tab_id)
 }
 
 #[tauri::command]
 fn snapshot_remove(tab_id: String) {
+    if test_mode() {
+        return;
+    }
     persist::snapshot_remove(&tab_id);
 }
 
@@ -255,6 +284,19 @@ struct SystemStats {
 
 /// Sampler pauses while the window is hidden (set by the frontend).
 static STATS_ACTIVE: AtomicBool = AtomicBool::new(true);
+
+/// `muis --testmode`: start from a fresh session and never persist anything.
+/// Real session/config files and scrollback snapshots are left untouched.
+static TEST_MODE: AtomicBool = AtomicBool::new(false);
+
+fn test_mode() -> bool {
+    TEST_MODE.load(Ordering::Relaxed)
+}
+
+/// True when `flag` appears verbatim in the process arguments.
+fn arg_present(args: &[String], flag: &str) -> bool {
+    args.iter().any(|a| a == flag)
+}
 
 /// Whole-percent GPU utilisation, best effort. NVIDIA first, then the
 /// AMD/Intel DRM counter. None when nothing can be read.
@@ -399,6 +441,10 @@ fn reset_sessions_state() -> Result<(), String> {
 /// Wipe saved sessions and relaunch the app in place.
 #[tauri::command]
 fn reset_sessions_and_restart(app: tauri::AppHandle) -> Result<(), String> {
+    // Never delete the real sessions from a test-mode window.
+    if test_mode() {
+        return Err("session reset is disabled in test mode".into());
+    }
     reset_sessions_state()?;
     if let Ok(exe) = std::env::current_exe() {
         let _ = std::process::Command::new(exe).spawn();
@@ -472,8 +518,13 @@ fn main() {
 
     ensure_dmabuf_disabled();
 
+    let args: Vec<String> = std::env::args().collect();
+    let test = arg_present(&args, "--testmode");
+    TEST_MODE.store(test, Ordering::Relaxed);
+
     // `muis --reset-sessions`: clear saved sessions and exit (no window).
-    if std::env::args().any(|a| a == "--reset-sessions") {
+    // Ignored in test mode so it can never touch the real sessions.
+    if !test && arg_present(&args, "--reset-sessions") {
         match reset_sessions_state() {
             Ok(()) => log::info!("cleared saved sessions"),
             Err(e) => {
@@ -490,6 +541,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             ping,
             worker_available,
+            is_test_mode,
             default_shell,
             default_cwd,
             live_test_command,
@@ -556,8 +608,14 @@ fn main() {
             // Notification endpoint for `muis-notify` clients. One per-user
             // socket; each request is forwarded to the frontend, which routes
             // it to the originating tab. Best-effort: a failure here only
-            // disables the CLI path, not the window.
-            let socket = muis_core::notify::socket_name();
+            // disables the CLI path, not the window. Test mode uses its own
+            // socket so it never steals notifications from a running muis.
+            let base_socket = muis_core::notify::socket_name();
+            let socket = if test_mode() {
+                format!("{base_socket}-testmode")
+            } else {
+                base_socket
+            };
             let handle = app.handle().clone();
             if let Err(e) = muis_core::notify::serve(&socket, move |req| {
                 let _ = handle.emit("muis-notify", &req);
@@ -694,5 +752,20 @@ mod tests {
             Ok("0")
         );
         std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
+    }
+
+    #[test]
+    fn testmode_flag_is_detected_exactly() {
+        let args = |extra: &[&str]| -> Vec<String> {
+            std::iter::once("muis".to_string())
+                .chain(extra.iter().map(|s| s.to_string()))
+                .collect()
+        };
+        assert!(!arg_present(&args(&[]), "--testmode"));
+        assert!(arg_present(&args(&["--testmode"]), "--testmode"));
+        assert!(arg_present(&args(&["--testmode", "--reset-sessions"]), "--testmode"));
+        // Exact match only: an unrelated flag or a value is not test mode.
+        assert!(!arg_present(&args(&["--test-mode"]), "--testmode"));
+        assert!(!arg_present(&args(&["--testmode=1"]), "--testmode"));
     }
 }

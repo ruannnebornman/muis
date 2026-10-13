@@ -53,6 +53,10 @@ cargo run -p muis-shell
   (`~/.local/share/muis`, `%APPDATA%\muis` on Windows).
 - Tabs track `cd` via OSC 7; fish on Veldmuis needs no setup.
 - Quitting with busy tabs asks first.
+- `muis --testmode` opens a throwaway window: it starts from a fresh
+  session and never persists, so real sessions, scrollback snapshots, and
+  settings are left untouched. A `test mode` badge marks the window.
+  (`muis --reset-sessions` clears the saved sessions and exits.)
 - Task notifications: terminal agents (Codex, Claude Code) are detected
   from their OSC 9/777/99 escapes; anything with a hook command can call
   `muis-notify --body "done"` (targets the current tab via `MUIS_TAB_ID`).

@@ -3,32 +3,51 @@ name: ci
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+
+# Superseded runs on the same ref are wasted work; cancel them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  rust:
+  # Which areas a PR touches, to decide whether the heavy end-to-end jobs are
+  # worth running. `main` pushes ignore this and always run the full suite.
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.filter.outputs.native }}
+      windows: ${{ steps.filter.outputs.windows }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - name: Install Tauri system deps
-        run: >
-          sudo apt-get update &&
-          sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
-          libjavascriptcoregtk-4.1-dev build-essential
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
-      - run: cargo test --workspace --locked
+          filters: |
+            native:
+              - 'crates/**'
+              - 'src-ui/**'
+              - 'tests/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/workflows/**'
+            windows:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'aur/**'
+              - 'packaging/**'
+              - '.github/workflows/**'
 
-  ui:
+  # Build + test the frontend once; every later job reuses dist/ instead of
+  # reinstalling and rebuilding it in each job.
+  build-ui:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -43,8 +62,52 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ui-dist
+          path: src-ui/dist
+          if-no-files-found: error
+
+  # Rust workspace tests (always), plus the native Tauri/WebKit PTY smoke
+  # (on `main`, or on a PR that touches native/UI paths), off one cached
+  # build. Previously two separate uncached Rust jobs.
+  rust:
+    needs: [build-ui, changes]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-linux
+      - uses: actions/download-artifact@v6
+        with:
+          name: ui-dist
+          path: src-ui/dist
+      - name: Install Tauri system deps
+        run: >
+          sudo apt-get update &&
+          sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
+          libjavascriptcoregtk-4.1-dev build-essential
+      - run: cargo test --workspace --locked
+      - name: Install virtual-display dependencies
+        if: github.event_name == 'push' || needs.changes.outputs.native == 'true'
+        run: sudo apt-get install -y xvfb xauth imagemagick
+      - name: Build shell and worker for the PTY smoke
+        if: github.event_name == 'push' || needs.changes.outputs.native == 'true'
+        run: cargo build --locked -p muis-shell -p muis-worker
+      - name: Run native Tauri PTY smoke under Xvfb
+        if: github.event_name == 'push' || needs.changes.outputs.native == 'true'
+        run: bash tests/e2e/live-x11.sh
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: muis-native-xvfb
+          path: tests/e2e/artifacts/live-x11/
 
   browser-e2e:
+    needs: build-ui
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -52,18 +115,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            src-ui/package-lock.json
-            tests/e2e/package-lock.json
+          cache-dependency-path: tests/e2e/package-lock.json
       - uses: browser-actions/setup-chrome@v2
         id: chrome
         with:
           chrome-version: stable
           install-chromedriver: true
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
+      - uses: actions/download-artifact@v6
+        with:
+          name: ui-dist
+          path: src-ui/dist
       - run: npm ci
         working-directory: tests/e2e
       - name: Run Selenium browser interactions
@@ -86,52 +147,23 @@ jobs:
           name: muis-browser-e2e
           path: tests/e2e/artifacts/browser/
 
-  native-xvfb-e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - name: Install Tauri and virtual-display dependencies
-        run: >
-          sudo apt-get update &&
-          sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
-          libjavascriptcoregtk-4.1-dev build-essential
-          xvfb xauth imagemagick
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
-      - run: cargo build --locked -p muis-shell -p muis-worker
-      - name: Run native Tauri PTY smoke under Xvfb
-        run: bash tests/e2e/live-x11.sh
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: muis-native-xvfb
-          path: tests/e2e/artifacts/live-x11/
-
+  # Packaging check: always on `main`, and on PRs that touch Rust or the
+  # packaging metadata (not UI-only changes). The shell links the worker and
+  # notify and re-execs itself on Windows, so muis.exe alone is the whole app.
   windows-single-exe:
+    needs: [build-ui, changes]
+    if: github.event_name == 'push' || needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v5
+      - uses: Swatinem/rust-cache@v2
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
-      # The shell links the worker and notify and re-execs itself on Windows,
-      # so muis.exe alone is the whole app.
+          shared-key: rust-windows
+      - uses: actions/download-artifact@v6
+        with:
+          name: ui-dist
+          path: src-ui/dist
       - run: cargo build --release --locked -p muis-shell
       - uses: actions/upload-artifact@v6
         with:
