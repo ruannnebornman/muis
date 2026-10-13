@@ -121,6 +121,9 @@ fn shell_argv(
         .and_then(|n| n.to_str())
         == Some("fish")
     {
+        // Suppress fish's greeting banner ("Welcome to fish, ..."); a new
+        // terminal should start clean.
+        argv.push("--no-greeting".to_string());
         argv.push("-C".to_string());
         argv.push(fish_integration.to_string());
     }
@@ -484,7 +487,7 @@ mod tests {
     fn shell_argv_adds_fish_integration() {
         assert_eq!(
             shell_argv("/usr/bin/fish", "/home/x", false, "INT", &[]),
-            vec!["/usr/bin/fish", "-C", "INT"]
+            vec!["/usr/bin/fish", "--no-greeting", "-C", "INT"]
         );
     }
 
@@ -500,7 +503,7 @@ mod tests {
         assert_eq!(argv[2], "--directory=/home/x");
         assert_eq!(argv[3], "--env=TERM=xterm-256color");
         assert_eq!(argv[4], "--env=LANG=C.UTF-8");
-        assert_eq!(&argv[5..], &["/usr/bin/fish", "-C", "INT"]);
+        assert_eq!(&argv[5..], &["/usr/bin/fish", "--no-greeting", "-C", "INT"]);
     }
 
     #[test]
