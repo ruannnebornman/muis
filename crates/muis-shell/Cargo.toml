@@ -19,6 +19,13 @@ log = "0.4"
 simplelog = "0.12"
 muis-core = { path = "../muis-core" }
 
+# Windows ships a single exe: the shell re-execs itself in `--muis-worker`
+# and `--muis-notify` modes, so it links those crates. Other platforms keep
+# spawning the sibling binaries and do not pull these in.
+[target.'cfg(windows)'.dependencies]
+muis-worker = { path = "../muis-worker" }
+muis-notify = { path = "../muis-notify" }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

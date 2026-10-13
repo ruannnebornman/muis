@@ -2136,6 +2136,8 @@ version = "0.1.0"
 dependencies = [
  "log",
  "muis-core",
+ "muis-notify",
+ "muis-worker",
  "serde",
  "serde_json",
  "simplelog",
