@@ -121,6 +121,10 @@ button.
 
 ## Settings button and search icon are too small
 
+**Done** — the settings gear is now `font-size:30px` (~5x area) and the
+search glyph 20px (matching the mock), via `.newtab.settings` and a new
+`.search-glyph` class (`src-ui/src/style.css`, `src-ui/src/main.ts`).
+
 Two chrome controls are hard to see/hit:
 
 - **Settings button** — the `⚙` button to the right of the tabbar
