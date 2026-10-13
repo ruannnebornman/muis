@@ -80,6 +80,10 @@ sidebar — survives for later even when there is no active work.
 
 ## Reorder the bottom-right statusbar items
 
+**Done** — the right group now reads `CPU, RAM, GPU, UTF-8 · <shell>,
+version, clock`. See the "Statusbar pills double-line" fix below (same
+commit, `fix/bugfixes`) for the empty-load-pill cleanup.
+
 The right-side group should read, left to right: CPU/RAM/GPU, then the
 `UTF-8 · <shell>` pill, then the muis version, then the clock at the far
 right (most right).
@@ -227,6 +231,12 @@ To test the desktop notification:
   path (`tests/e2e/live-x11.sh:31-32`).
 
 ## Statusbar pills double-line when the window is not full screen
+
+**Done** — at narrow widths the flex pills used to shrink and their text
+wrapped to a second line ("CPU" / "25%"), doubling every pill. The row is
+now `nowrap`, the pills no longer shrink, and the bar hides overflow, so
+it stays one line. Also fixed the empty "load" pill that leaked between
+GPU and the version (`src-ui/src/style.css`, `src-ui/src/main.ts`).
 
 The right-side statusbar pills — CPU, RAM, GPU, the clock/date, and
 `UTF-8 · <shell>` — render a weird double line when muis is not full
