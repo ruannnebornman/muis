@@ -3,32 +3,18 @@ name: ci
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
 
 jobs:
-  rust:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - name: Install Tauri system deps
-        run: >
-          sudo apt-get update &&
-          sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
-          libjavascriptcoregtk-4.1-dev build-essential
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
-      - run: cargo test --workspace --locked
-
-  ui:
+  # Build + test the frontend once; every later job reuses dist/ instead of
+  # reinstalling and rebuilding it five times.
+  build-ui:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -43,8 +29,46 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ui-dist
+          path: src-ui/dist
+          if-no-files-found: error
+
+  # Rust workspace tests plus the native Tauri/WebKit PTY smoke, sharing one
+  # cached build (previously two separate uncached Rust jobs).
+  rust:
+    needs: build-ui
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-linux
+      - uses: actions/download-artifact@v6
+        with:
+          name: ui-dist
+          path: src-ui/dist
+      - name: Install Tauri and virtual-display dependencies
+        run: >
+          sudo apt-get update &&
+          sudo apt-get install -y
+          libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
+          libjavascriptcoregtk-4.1-dev build-essential
+          xvfb xauth imagemagick
+      - run: cargo test --workspace --locked
+      - run: cargo build --locked -p muis-shell -p muis-worker
+      - name: Run native Tauri PTY smoke under Xvfb
+        run: bash tests/e2e/live-x11.sh
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: muis-native-xvfb
+          path: tests/e2e/artifacts/live-x11/
 
   browser-e2e:
+    needs: build-ui
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -52,18 +76,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            src-ui/package-lock.json
-            tests/e2e/package-lock.json
+          cache-dependency-path: tests/e2e/package-lock.json
       - uses: browser-actions/setup-chrome@v2
         id: chrome
         with:
           chrome-version: stable
           install-chromedriver: true
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
+      - uses: actions/download-artifact@v6
+        with:
+          name: ui-dist
+          path: src-ui/dist
       - run: npm ci
         working-directory: tests/e2e
       - name: Run Selenium browser interactions
@@ -86,50 +108,19 @@ jobs:
           name: muis-browser-e2e
           path: tests/e2e/artifacts/browser/
 
-  native-xvfb-e2e:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - name: Install Tauri and virtual-display dependencies
-        run: >
-          sudo apt-get update &&
-          sudo apt-get install -y
-          libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
-          libjavascriptcoregtk-4.1-dev build-essential
-          xvfb xauth imagemagick
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
-      - run: cargo build --locked -p muis-shell -p muis-worker
-      - name: Run native Tauri PTY smoke under Xvfb
-        run: bash tests/e2e/live-x11.sh
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: muis-native-xvfb
-          path: tests/e2e/artifacts/live-x11/
-
   windows-portable:
+    needs: build-ui
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v5
+      - uses: Swatinem/rust-cache@v2
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
+          shared-key: rust-windows
+      - uses: actions/download-artifact@v6
+        with:
+          name: ui-dist
+          path: src-ui/dist
       - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
       - name: Assemble portable zip
         run: >
