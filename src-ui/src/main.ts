@@ -1865,6 +1865,7 @@ const stVersion = el("span", "pill", "");
 const stClock = el("span", "clock", "");
 const stShell = el("span", "pill", "");
 // Left group order is deliberate: cwd, git, session·tab, user.
+// Right group order: CPU/RAM/GPU, shell, version, clock (far right).
 statusbar.append(
   stCwd,
   stGit,
@@ -1875,9 +1876,9 @@ statusbar.append(
   stRam,
   stGpu,
   stLoad,
+  stShell,
   stVersion,
   stClock,
-  stShell,
 );
 (statusbar.children[4] as HTMLElement).style.marginLeft = "auto";
 
@@ -1922,7 +1923,6 @@ function applyStatusbarVisibility(): void {
     ["user", stUser],
     ["cpu", stCpu],
     ["ram", stRam],
-    ["load", stLoad],
     ["version", stVersion],
     ["clock", stClock],
     ["shell", stShell],
@@ -1931,6 +1931,9 @@ function applyStatusbarVisibility(): void {
     node.style.display = segmentVisible(cfg.statusbar, id) ? "" : "none";
   }
   if (!segmentVisible(cfg.statusbar, "gpu")) stGpu.style.display = "none";
+  // The load pill is shown only while agents load, so let updateLoadingHint
+  // own its display (an empty visible pill otherwise leaks through).
+  updateLoadingHint();
 }
 
 function tickClock(): void {
