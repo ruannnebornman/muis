@@ -59,6 +59,20 @@ pub fn sessions_dir() -> PathBuf {
     state_dir().join("sessions")
 }
 
+/// Diagnostic log files live here. Windows uses %LOCALAPPDATA% (logs are
+/// machine-local, not roaming); other platforms follow the state dir.
+pub fn log_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            if !local.is_empty() {
+                return PathBuf::from(local).join("muis").join("logs");
+            }
+        }
+    }
+    state_dir().join("logs")
+}
+
 pub fn config_file() -> PathBuf {
     config_dir().join("muis.json")
 }
@@ -74,6 +88,7 @@ mod tests {
     #[test]
     fn dirs_end_in_muis_and_nest() {
         assert!(config_dir().ends_with("muis"));
+        assert!(log_dir().ends_with("logs"));
         assert_eq!(sessions_dir(), state_dir().join("sessions"));
         assert_eq!(config_file(), config_dir().join("muis.json"));
         assert_eq!(sessions_file(), state_dir().join("sessions.json"));

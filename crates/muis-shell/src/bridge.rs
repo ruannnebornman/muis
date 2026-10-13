@@ -77,19 +77,39 @@ impl WorkerPool {
             return Ok(());
         }
         let bin = self.worker_bin.clone().ok_or_else(|| {
+            log::error!("spawn requested but muis-worker was not found next to the muis binary");
             "muis-worker not found next to the muis binary".to_string()
         })?;
-        let mut child = Command::new(bin)
+        log::info!("starting muis-worker for session {session_id}: {}", bin.display());
+        let mut child = Command::new(&bin)
             // The worker forwards this to each pty so `muis-notify` can find
             // the shell's notification socket.
             .env("MUIS_SOCKET", muis_core::notify::socket_name())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            // Captured (not null) so worker panics land in the log instead of
+            // vanishing; the worker speaks JSON on stdout, so stderr is free.
+            .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("failed to start muis-worker: {e}"))?;
+            .map_err(|e| {
+                log::error!("failed to start muis-worker ({}): {e}", bin.display());
+                format!("failed to start muis-worker: {e}")
+            })?;
         let stdin = child.stdin.take().ok_or("worker stdin unavailable")?;
         let stdout = child.stdout.take().ok_or("worker stdout unavailable")?;
+
+        if let Some(stderr) = child.stderr.take() {
+            let id = session_id.to_string();
+            std::thread::spawn(move || {
+                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    log::warn!("muis-worker[{id}] {line}");
+                }
+            });
+        }
+
         let running = Arc::new(Running {
             stdin: Mutex::new(stdin),
             child: Mutex::new(child),
@@ -115,9 +135,13 @@ impl WorkerPool {
                             break;
                         }
                     }
-                    Err(_) => continue,
+                    Err(e) => {
+                        log::debug!("muis-worker[{id}] undecodable frame: {e}");
+                        continue;
+                    }
                 }
             }
+            log::warn!("muis-worker for session {id} ended");
             let _ = sink(Self::dead_worker_event(&id));
         });
         Ok(())
