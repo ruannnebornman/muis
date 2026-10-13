@@ -226,6 +226,33 @@ Decided (2026-10-06):
   cadence; the frontend only listens. Add an off-switch/pause when the
   window is hidden so the task does not sample needlessly.
 
+### Per-tab and per-session resource usage
+
+Want to see muis's own resource usage broken down per tab and per
+session, so a runaway shell or agent tab can be spotted — beyond the
+machine-wide CPU/RAM/GPU monitor above. How to surface it is undecided;
+capture the need first.
+
+- **What:** CPU and memory per tab (and per session = the sum of its
+  tabs, or its `muis-worker` process). GPU per tab is likely not
+  attributable.
+- **Where (undecided):** a statusbar readout for the active tab/session,
+  a column/tooltip in the sessions sidebar, a row in the settings/system
+  panel, or a dedicated monitor panel in the reserved `SidePanelRegistry`
+  slot (`src-ui/src/panels.ts`).
+- **Data:** one `muis-worker` process per session (AGENTS.md) and one pty
+  per tab inside it. The worker spawns each pty with `portable_pty`'s
+  `spawn_command` (`crates/muis-worker/src/main.rs:247`) and does not
+  currently report the child pid; per-tab accounting needs the worker to
+  surface each pty's pid (or process subtree) plus a `system_stats`-style
+  sampler (`sysinfo`) to read it, extending the system-monitor command
+  above.
+- **Open:** per-tab vs per-session only, refresh cadence, whether to show
+  anything with a single session, and how to handle restored or exited
+  pty processes.
+
+Related: "System monitor in the status bar (CPU / RAM / GPU)" above.
+
 ### Date next to the clock
 
 The clock is time-only today (`tickClock`, `src-ui/src/main.ts:837-847`).
