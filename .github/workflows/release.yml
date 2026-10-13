@@ -110,7 +110,7 @@ jobs:
             target/release/bundle/appimage/SHA256SUMS.appimage
 
   windows:
-    name: Windows portable
+    name: Windows single exe
     needs: version
     runs-on: windows-latest
     steps:
@@ -125,21 +125,18 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
-      - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
-      - name: Assemble portable zip
+      # The shell links the worker and notify and re-execs itself on Windows,
+      # so muis.exe alone is the whole app.
+      - run: cargo build --release --locked -p muis-shell
+      - name: Name the exe
         env:
           VERSION: ${{ needs.version.outputs.version }}
         shell: pwsh
-        run: |
-          $zip = "muis-portable-$env:VERSION.zip"
-          Compress-Archive -Path target\release\muis.exe,target\release\muis-worker.exe,target\release\muis-notify.exe -DestinationPath $zip
-          (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  " + $zip | Out-File -Encoding ascii "$zip.sha256"
+        run: Copy-Item target\release\muis.exe "muis-$env:VERSION-x86_64-windows.exe"
       - uses: actions/upload-artifact@v6
         with:
-          name: windows-portable
-          path: |
-            muis-portable-*.zip
-            muis-portable-*.zip.sha256
+          name: windows
+          path: muis-*-x86_64-windows.exe
 
   frontend:
     name: Frontend dist
@@ -223,7 +220,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          find . -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.flatpak' \) -print0 \
+          find . -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.exe' -o -name '*.flatpak' \) -print0 \
             | sort -z | xargs -0 sha256sum > SHA256SUMS
           cat SHA256SUMS
       - name: Sign release artifacts
@@ -243,7 +240,7 @@ jobs:
           gpg --batch --import "${key_file}"
 
           shopt -s nullglob
-          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.flatpak dist/SHA256SUMS)
+          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.exe dist/*.flatpak dist/SHA256SUMS)
           for artifact in "${artifacts[@]}"; do
             gpg --batch --yes --pinentry-mode loopback \
               --passphrase-file "${pass_file}" \
@@ -255,7 +252,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.flatpak dist/SHA256SUMS)
+          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.exe dist/*.flatpak dist/SHA256SUMS)
           for artifact in "${artifacts[@]}"; do
             gpgv --keyring packaging/keys/muis-release.gpg "${artifact}.asc" "${artifact}"
           done
@@ -265,6 +262,6 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "${GITHUB_REF_NAME}" \
-            dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.flatpak \
+            dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.exe dist/*.flatpak \
             dist/SHA256SUMS dist/*.asc packaging/keys/muis-release.asc \
             --title "muis ${GITHUB_REF_NAME}" --generate-notes

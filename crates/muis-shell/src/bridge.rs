@@ -46,18 +46,43 @@ struct Running {
     child: Mutex<Child>,
 }
 
+/// How to start a session worker: a separate `muis-worker` executable, or
+/// the shell's own binary re-exec'd in its hidden worker mode (Windows
+/// single-file build). Either way a worker is its own process, one per
+/// session.
+#[derive(Clone, Debug)]
+pub enum WorkerLaunch {
+    /// Non-Windows: spawn a sibling `muis-worker` (constructed only there).
+    #[allow(dead_code)]
+    Exe(PathBuf),
+    /// Windows: re-exec the shell's own binary in worker mode.
+    #[cfg(windows)]
+    SelfExe { exe: PathBuf, arg: String },
+}
+
+impl WorkerLaunch {
+    /// Human-readable "program + args" for logs.
+    fn describe(&self) -> String {
+        match self {
+            WorkerLaunch::Exe(path) => path.display().to_string(),
+            #[cfg(windows)]
+            WorkerLaunch::SelfExe { exe, arg } => format!("{} {arg}", exe.display()),
+        }
+    }
+}
+
 pub struct WorkerPool {
     sink: EventSink,
     workers: Mutex<HashMap<String, Arc<Running>>>,
-    worker_bin: Option<PathBuf>,
+    launch: Option<WorkerLaunch>,
 }
 
 impl WorkerPool {
-    pub fn new(sink: EventSink, worker_bin: Option<PathBuf>) -> Self {
+    pub fn new(sink: EventSink, launch: Option<WorkerLaunch>) -> Self {
         Self {
             sink,
             workers: Mutex::new(HashMap::new()),
-            worker_bin,
+            launch,
         }
     }
 
@@ -76,20 +101,61 @@ impl WorkerPool {
         if self.workers.lock().unwrap().contains_key(session_id) {
             return Ok(());
         }
-        let bin = self.worker_bin.clone().ok_or_else(|| {
+        let launch = self.launch.clone().ok_or_else(|| {
+            log::error!("spawn requested but no muis-worker is available");
             "muis-worker not found next to the muis binary".to_string()
         })?;
-        let mut child = Command::new(bin)
+
+        let mut command = match &launch {
+            WorkerLaunch::Exe(path) => Command::new(path),
+            #[cfg(windows)]
+            WorkerLaunch::SelfExe { exe, arg } => {
+                let mut c = Command::new(exe);
+                c.arg(arg);
+                c
+            }
+        };
+        log::info!("starting worker for session {session_id}: {}", launch.describe());
+        command
             // The worker forwards this to each pty so `muis-notify` can find
             // the shell's notification socket.
             .env("MUIS_SOCKET", muis_core::notify::socket_name())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("failed to start muis-worker: {e}"))?;
+            // Captured (not null) so worker panics land in the log instead of
+            // vanishing; the worker speaks JSON on stdout, so stderr is free.
+            .stderr(Stdio::piped());
+        // Never flash a console for the worker, even from a console-subsystem
+        // debug build, and point hooks at this exe so `muis.exe --muis-notify`
+        // works without a separate notify binary.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+            if let WorkerLaunch::SelfExe { exe, .. } = &launch {
+                command.env("MUIS_BIN", exe);
+            }
+        }
+        let mut child = command.spawn().map_err(|e| {
+            log::error!("failed to start worker ({}): {e}", launch.describe());
+            format!("failed to start muis-worker: {e}")
+        })?;
         let stdin = child.stdin.take().ok_or("worker stdin unavailable")?;
         let stdout = child.stdout.take().ok_or("worker stdout unavailable")?;
+
+        if let Some(stderr) = child.stderr.take() {
+            let id = session_id.to_string();
+            std::thread::spawn(move || {
+                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    log::warn!("muis-worker[{id}] {line}");
+                }
+            });
+        }
+
         let running = Arc::new(Running {
             stdin: Mutex::new(stdin),
             child: Mutex::new(child),
@@ -115,9 +181,13 @@ impl WorkerPool {
                             break;
                         }
                     }
-                    Err(_) => continue,
+                    Err(e) => {
+                        log::debug!("muis-worker[{id}] undecodable frame: {e}");
+                        continue;
+                    }
                 }
             }
+            log::warn!("muis-worker for session {id} ended");
             let _ = sink(Self::dead_worker_event(&id));
         });
         Ok(())
@@ -216,7 +286,7 @@ mod tests {
 
         let (tx, rx) = channel::<SessionEvent>();
         let sink: EventSink = Arc::new(move |event| tx.send(event).is_ok());
-        let pool = WorkerPool::new(sink, Some(worker));
+        let pool = WorkerPool::new(sink, Some(WorkerLaunch::Exe(worker)));
 
         // Two sessions, one double-spawn to prove idempotency.
         pool.spawn_session("s1").unwrap();

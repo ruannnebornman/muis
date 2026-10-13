@@ -26,7 +26,7 @@ import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
 import { shouldFocusTerminal } from "./focus";
-import { AcpClient, type PermissionRequest } from "./acp";
+import { AcpConnection, AcpClient, type PermissionRequest } from "./acp";
 import { agentResumeForCommand } from "./agents";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
@@ -248,7 +248,6 @@ interface AgentView {
   stop: HTMLButtonElement;
   status: HTMLElement;
   client: AcpClient;
-  agentId: string;
   tabId: string;
   sessionId: string;
   started: boolean;
@@ -275,9 +274,110 @@ interface AgentView {
 }
 
 const agentViews = new Map<string, AgentView>();
-const agentById = new Map<string, AgentView>();
-/** Lines that arrived before the view registered its agent id. */
-const pendingAgentMsgs = new Map<string, string[]>();
+
+/**
+ * One shared ACP process serves every AI pane. The transport is created
+ * lazily; panes get a per-session `AcpClient` over it. Sessions are routed
+ * by the session id carried in each message.
+ */
+let acpConn: AcpConnection | null = null;
+let acpSpawned = false;
+/** Set while we intentionally stop the shared process (idle kill). */
+let acpStopping = false;
+let acpIdleTimer: number | null = null;
+
+function agentConnection(): AcpConnection {
+  if (!acpConn) {
+    acpConn = new AcpConnection((line) => {
+      if (IN_TAURI) void invoke("agent_write", { line }).catch(() => {});
+    });
+  }
+  return acpConn;
+}
+
+/** Spawn the shared agent process on first use (idempotent). */
+async function ensureSharedAgent(cwd: string): Promise<void> {
+  if (!IN_TAURI || acpSpawned) return;
+  const command = cfg.agentCommand.trim() || "opencode";
+  await invoke("agent_spawn", { cwd, command, pure: cfg.agentPure });
+  acpSpawned = true;
+}
+
+/** Handshake the shared connection, retrying until the agent answers. */
+async function handshake(conn: AcpConnection): Promise<boolean> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      await conn.initialize(1500);
+      return true;
+    } catch {
+      await new Promise((r) => window.setTimeout(r, 400));
+    }
+  }
+  return false;
+}
+
+function cancelIdleStop(): void {
+  if (acpIdleTimer !== null) {
+    window.clearTimeout(acpIdleTimer);
+    acpIdleTimer = null;
+  }
+}
+
+/** Kill the shared process once no AI pane remains (after a grace period). */
+function maybeStopIdleAgent(): void {
+  if (!IN_TAURI) return;
+  cancelIdleStop();
+  if (agentViews.size > 0) return;
+  acpIdleTimer = window.setTimeout(() => {
+    acpIdleTimer = null;
+    if (agentViews.size === 0) stopSharedAgent();
+  }, 30000);
+}
+
+function stopSharedAgent(): void {
+  if (!IN_TAURI || !acpSpawned) return;
+  acpStopping = true;
+  acpSpawned = false;
+  acpConn?.reset();
+  void invoke("agent_kill")
+    .catch(() => {})
+    .finally(() => {
+      window.setTimeout(() => {
+        acpStopping = false;
+      }, 1000);
+    });
+}
+
+/**
+ * Recover after the shared process died unexpectedly: respawn, re-init, and
+ * reload every open pane's session (config, history, and context come back).
+ */
+async function recoverSharedAgent(): Promise<void> {
+  if (!IN_TAURI) return;
+  acpSpawned = false;
+  const conn = agentConnection();
+  conn.reset();
+  const views = [...agentViews.values()];
+  if (views.length === 0) return;
+  const cwd = findTab(views[0].tabId)?.cwd || homeDir || "/";
+  for (const v of views) appendAgentNode(v, "a-sys", "agent exited; reconnecting…");
+  try {
+    await ensureSharedAgent(cwd);
+    if (!(await handshake(conn))) return;
+    for (const v of views) {
+      const tab = findTab(v.tabId);
+      if (!v.sessionId || !tab) continue;
+      try {
+        await v.client.loadSession(tab.cwd, v.sessionId);
+        appendAgentNode(v, "a-sys", `resumed ${v.sessionId}`);
+      } catch (e) {
+        appendAgentNode(v, "a-msg error", `reconnect failed: ${String(e)}`);
+      }
+    }
+  } catch (e) {
+    for (const v of views) appendAgentNode(v, "a-msg error", `agent exited: ${String(e)}`);
+  }
+}
 
 function findTab(tabId: string): Tab | undefined {
   for (const w of store.workspaces) {
@@ -541,37 +641,32 @@ function ensureAgentView(tab: Tab): AgentView {
   termWrap.append(box);
 
   let v!: AgentView;
-  const client = new AcpClient(
-    (line) => {
-      if (v.agentId) void invoke("agent_write", { id: v.agentId, line }).catch(() => {});
+  const client = new AcpClient(agentConnection(), {
+    onUpdate: (u) => renderAgentUpdate(v, u),
+    onPermission: (req) => renderPermission(v, req),
+    onSession: (sid) => {
+      v.sessionId = sid;
+      const t = findTab(v.tabId);
+      if (t) {
+        t.acpSessionId = sid;
+        scheduleSave();
+      }
     },
-    {
-      onUpdate: (u) => renderAgentUpdate(v, u),
-      onPermission: (req) => renderPermission(v, req),
-      onSession: (sid) => {
-        v.sessionId = sid;
-        const t = findTab(v.tabId);
-        if (t) {
-          t.acpSessionId = sid;
-          scheduleSave();
-        }
-      },
-      onConfig: (options) => {
-        const m = options.find((o) => o.id === "model" && o.type === "select");
-        if (!m) return;
-        model.innerHTML = "";
-        for (const o of m.options ?? []) {
-          const opt = document.createElement("option");
-          opt.value = o.value;
-          opt.textContent = o.name;
-          model.append(opt);
-        }
-        model.value = m.currentValue ?? "";
-        model.style.display = "";
-      },
-      onError: (m) => appendAgentNode(v, "a-msg error", m),
+    onConfig: (options) => {
+      const m = options.find((o) => o.id === "model" && o.type === "select");
+      if (!m) return;
+      model.innerHTML = "";
+      for (const o of m.options ?? []) {
+        const opt = document.createElement("option");
+        opt.value = o.value;
+        opt.textContent = o.name;
+        model.append(opt);
+      }
+      model.value = m.currentValue ?? "";
+      model.style.display = "";
     },
-  );
+    onError: (m) => appendAgentNode(v, "a-msg error", m),
+  });
   v = {
     box,
     log,
@@ -580,7 +675,6 @@ function ensureAgentView(tab: Tab): AgentView {
     stop,
     status,
     client,
-    agentId: "",
     tabId: tab.id,
     sessionId: "",
     started: false,
@@ -606,7 +700,7 @@ function ensureAgentView(tab: Tab): AgentView {
     }
   });
   stop.addEventListener("click", () => {
-    if (!v.agentId) return;
+    if (!v.ready) return;
     v.client.cancel();
     // Unblock the input immediately; the turn's promise may resolve later.
     v.running = false;
@@ -622,28 +716,12 @@ async function startAgent(v: AgentView, tab: Tab): Promise<void> {
     return;
   }
   appendAgentNode(v, "a-sys", "starting agent…");
+  cancelIdleStop();
   try {
-    const command = cfg.agentCommand.trim() || "opencode";
-    const id = await invoke<string>("agent_spawn", { cwd: tab.cwd, command });
-    v.agentId = id;
-    agentById.set(id, v);
-    const buffered = pendingAgentMsgs.get(id);
-    if (buffered) {
-      pendingAgentMsgs.delete(id);
-      for (const line of buffered) v.client.receive(line);
-    }
-    // opencode acp can drop stdin written before it is ready; retry the
-    // handshake until it answers instead of hanging on a single attempt.
-    let handshaken = false;
-    for (let attempt = 0; attempt < 8 && !handshaken; attempt++) {
-      try {
-        await v.client.initialize(1500);
-        handshaken = true;
-      } catch {
-        await new Promise((r) => setTimeout(r, 400));
-      }
-    }
-    if (!handshaken) {
+    // One shared process for every pane; sessions are multiplexed on it.
+    await ensureSharedAgent(tab.cwd);
+    const conn = agentConnection();
+    if (!(await handshake(conn))) {
       appendAgentNode(v, "a-msg error", "agent did not respond to initialize");
       return;
     }
@@ -721,12 +799,12 @@ async function sendPrompt(v: AgentView): Promise<void> {
 }
 
 function disposeAgentView(v: AgentView): void {
-  if (v.agentId) {
-    agentById.delete(v.agentId);
-    if (IN_TAURI) void invoke("agent_kill", { id: v.agentId }).catch(() => {});
-  }
+  // Close the session (freeing agent-side state) but keep the shared
+  // process alive for other panes; it is killed once no pane remains.
+  void v.client.close();
   v.box.remove();
   agentViews.delete(v.tabId);
+  maybeStopIdleAgent();
 }
 
 /* ---------------- staggered agent restore ---------------- */
@@ -2183,6 +2261,9 @@ const optAgentResume = document.createElement("input");
 optAgentResume.type = "text";
 optAgentResume.placeholder = "opencode --continue";
 optAgentResume.title = "Command run when an AI tab is restored";
+const optAgentPure = document.createElement("input");
+optAgentPure.type = "checkbox";
+optAgentPure.title = "Launch the ACP agent with --pure (no external plugins)";
 const optScrollback = document.createElement("input");
 optScrollback.type = "number";
 optScrollback.min = "1000";
@@ -2263,6 +2344,7 @@ settingsBox.append(
   settingsRow("Theme", optTheme),
   settingsRow("AI tab command", optAgent),
   settingsRow("AI resume command", optAgentResume),
+  settingsRow("ACP agent: run pure (no plugins)", optAgentPure),
   settingsRow("Scrollback lines", optScrollback),
   settingsRow("Font family", optFontFamily),
   settingsRow("Cursor style", optCursorStyle),
@@ -2281,6 +2363,7 @@ function openSettings(): void {
   optTheme.value = cfg.theme ?? "default";
   optAgent.value = cfg.agentCommand;
   optAgentResume.value = cfg.agentResumeCommand;
+  optAgentPure.checked = cfg.agentPure;
   optScrollback.value = cfg.scrollback.toString();
   optFontFamily.value = cfg.fontFamily ?? "";
   optCursorStyle.value = cfg.cursorStyle;
@@ -2304,6 +2387,7 @@ async function applySettings(): Promise<void> {
     theme: optTheme.value === "default" ? null : optTheme.value,
     agentCommand: optAgent.value.trim(),
     agentResumeCommand: optAgentResume.value.trim(),
+    agentPure: optAgentPure.checked,
     scrollback: clampScrollback(Number(optScrollback.value)),
     keybindings: cfg.keybindings,
     copyOnSelect: cfg.copyOnSelect,
@@ -2934,20 +3018,15 @@ async function init(): Promise<void> {
     } catch {
       /* system monitor is best-effort */
     }
-    // ACP agent bridge: route stdout lines to the owning pane.
+    // ACP agent bridge: one shared process; the transport routes each
+    // line to its session's pane.
     try {
-      await listen<{ id: string; line: string }>("agent-msg", (e) => {
-        const v = agentById.get(e.payload.id);
-        if (v) v.client.receive(e.payload.line);
-        else {
-          const arr = pendingAgentMsgs.get(e.payload.id) ?? [];
-          arr.push(e.payload.line);
-          pendingAgentMsgs.set(e.payload.id, arr);
-        }
+      await listen<{ line: string }>("agent-msg", (e) => {
+        agentConnection().receive(e.payload.line);
       });
-      await listen<{ id: string }>("agent-exit", (e) => {
-        const v = agentById.get(e.payload.id);
-        if (v) appendAgentNode(v, "a-sys", "agent exited");
+      await listen("agent-exit", () => {
+        if (acpStopping) return; // we stopped it on purpose (idle kill)
+        void recoverSharedAgent();
       });
     } catch {
       /* agent bridge is best-effort */

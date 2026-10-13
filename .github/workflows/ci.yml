@@ -46,7 +46,7 @@ jobs:
               - '.github/workflows/**'
 
   # Build + test the frontend once; every later job reuses dist/ instead of
-  # reinstalling and rebuilding it five times.
+  # reinstalling and rebuilding it in each job.
   build-ui:
     runs-on: ubuntu-latest
     steps:
@@ -148,8 +148,9 @@ jobs:
           path: tests/e2e/artifacts/browser/
 
   # Packaging check: always on `main`, and on PRs that touch Rust or the
-  # packaging metadata (not UI-only changes).
-  windows-portable:
+  # packaging metadata (not UI-only changes). The shell links the worker and
+  # notify and re-execs itself on Windows, so muis.exe alone is the whole app.
+  windows-single-exe:
     needs: [build-ui, changes]
     if: github.event_name == 'push' || needs.changes.outputs.windows == 'true'
     runs-on: windows-latest
@@ -163,13 +164,8 @@ jobs:
         with:
           name: ui-dist
           path: src-ui/dist
-      - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
-      - name: Assemble portable zip
-        run: >
-          Compress-Archive -Path
-          target\release\muis.exe,target\release\muis-worker.exe,target\release\muis-notify.exe
-          -DestinationPath muis-portable.zip
+      - run: cargo build --release --locked -p muis-shell
       - uses: actions/upload-artifact@v6
         with:
-          name: muis-portable
-          path: muis-portable.zip
+          name: muis-windows
+          path: target\release\muis.exe

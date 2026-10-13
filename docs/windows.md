@@ -7,16 +7,20 @@ traces.
 
 ## What ships
 
-`muis-portable-<version>.zip` containing, at the top level:
+A single self-contained executable:
 
 ```text
-muis.exe            Tauri shell (WebView2 window + xterm frontend)
-muis-worker.exe     pty sidecar, resolved as a sibling of muis.exe
-muis-notify.exe     CLI: send a notification to the running muis window
+muis-<version>-x86_64-windows.exe
 ```
 
-Unzip anywhere (Desktop, USB stick, `%LOCALAPPDATA%\muis`) and run
-`muis.exe`.
+`muis.exe` links the pty worker and the `muis-notify` CLI and re-execs
+itself in hidden `--muis-worker` / `--muis-notify` modes, so there are no
+sidecar files to keep next to it. Both modes run in the same consoleless
+GUI process (release builds are `windows-subsystem`), so no CLI window ever
+appears.
+
+Download it, drop it anywhere (Desktop, USB stick, `%LOCALAPPDATA%\muis`),
+and run it. There is no unzip step and no sibling binary to lose.
 
 ## Requirements on the work machine
 
@@ -26,34 +30,44 @@ Unzip anywhere (Desktop, USB stick, `%LOCALAPPDATA%\muis`) and run
 
 ## Building
 
-CI does this: `.github/workflows/ci.yml` (`windows-portable` artifact) and
-`.github/workflows/release.yml` (`windows` signed release asset).
+CI does this: `.github/workflows/ci.yml` (`windows-single-exe` artifact)
+and `.github/workflows/release.yml` (`windows` release asset).
 
 Manual recipe on a Windows machine with Rust stable:
 
 ```powershell
-cargo build --release -p muis-shell -p muis-worker -p muis-notify
-Compress-Archive -Path target\release\muis.exe,target\release\muis-worker.exe,target\release\muis-notify.exe `
-  -DestinationPath muis-portable-<version>.zip
+cargo build --release -p muis-shell
+Copy-Item target\release\muis.exe "muis-<version>-x86_64-windows.exe"
 ```
 
-The frontend is embedded in `muis.exe` at compile time from
-`src-ui/dist` (rebuild it first with `npm run build`).
+Only the shell target is built: on Windows it links `muis-worker` and
+`muis-notify` and re-execs itself, so no separate sidecars exist. The
+frontend is embedded in `muis.exe` at compile time from `src-ui/dist`
+(rebuild it first with `npm run build`).
 
 ## Shells and state
 
 Probe order: `pwsh` → `powershell` → `cmd`. State lives in
-`%APPDATA%\muis` (sessions, snapshots). Deleting that folder resets muis
-to first-run with no uninstall step needed.
+`%APPDATA%\muis` (sessions, snapshots); diagnostics live in
+`%LOCALAPPDATA%\muis\logs`. Deleting those folders resets muis to
+first-run with no uninstall step needed.
+
+## Diagnostics
+
+Release builds have no console, so runtime diagnostics go to
+`%LOCALAPPDATA%\muis\logs\muis.log`. If that file is missing after a launch
+attempt, the process never started — an OS-level block (Defender/ASR or a
+persistent "blocked" file attribute), not a muis failure.
 
 ## Verification
 
-- v1.0.0 portable zip was tested on real Windows (maintainer).
 - Re-check per release:
-  - unzip anywhere and run `muis.exe`; no UAC/admin prompt, no install;
+  - download and run the exe; no UAC/admin prompt, no install, and no extra
+    console window;
   - shell probe picks `pwsh` / `powershell` / `cmd`;
   - state is written to `%APPDATA%\muis`, and deleting it resets;
-  - `muis-notify --body done` from a tab raises a toast.
+  - `muis.exe --muis-notify --body done` from a tab raises a toast (the
+    opencode plugin reaches it through `MUIS_BIN`).
 
 ## Per-user installer (optional, not planned)
 
@@ -68,4 +82,5 @@ empty until then.
 - No admin/UAC, so it runs on locked-down work machines.
 - Nothing appears in Add/Remove Programs or the Start Menu.
 - State is a single deletable folder; no uninstaller required.
-- Same layout on every platform: `muis` + `muis-worker[.exe]` siblings.
+- Windows is one self-contained exe; Linux packages still ship
+  `muis` + `muis-worker` + `muis-notify` as siblings.
