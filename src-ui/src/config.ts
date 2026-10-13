@@ -9,6 +9,8 @@ export interface AppConfig {
   agentCommand: string;
   /** Command an AI tab runs when restored, so it resumes its last session. */
   agentResumeCommand: string;
+  /** Launch the ACP agent with --pure (no external plugins; default off). */
+  agentPure: boolean;
   /** Terminal scrollback buffer, in lines (clamped 1000..500000). */
   scrollback: number;
   /** Chord overrides per action, e.g. { "close-tab": "ctrl+q" }. */
@@ -56,6 +58,7 @@ export function defaultConfig(): AppConfig {
     theme: null,
     agentCommand: "opencode",
     agentResumeCommand: "opencode --continue",
+    agentPure: false,
     scrollback: 50000,
     keybindings: {},
     copyOnSelect: false,
@@ -129,6 +132,7 @@ export function configFromJSON(json: string): AppConfig {
       typeof r.agentResumeCommand === "string"
         ? r.agentResumeCommand
         : base.agentResumeCommand,
+    agentPure: typeof r.agentPure === "boolean" ? r.agentPure : base.agentPure,
     scrollback:
       typeof r.scrollback === "number" ? clampScrollback(r.scrollback) : base.scrollback,
     keybindings: parseKeybindings(r.keybindings, base.keybindings),

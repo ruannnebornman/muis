@@ -9,6 +9,7 @@ describe("AppConfig", () => {
       theme: null,
       agentCommand: "opencode",
       agentResumeCommand: "opencode --continue",
+      agentPure: false,
       scrollback: 50000,
       keybindings: {},
       copyOnSelect: false,
@@ -85,6 +86,7 @@ describe("AppConfig", () => {
       theme: "nord",
       agentCommand: "aider",
       agentResumeCommand: "aider --resume",
+      agentPure: true,
       scrollback: 20000,
       keybindings: { "close-tab": "ctrl+q" },
       copyOnSelect: true,
@@ -106,6 +108,8 @@ describe("AppConfig", () => {
       "claude -c",
     );
     expect(configFromJSON("").agentResumeCommand).toBe("opencode --continue");
+    expect(configFromJSON('{"agentPure":true}').agentPure).toBe(true);
+    expect(configFromJSON("").agentPure).toBe(false);
   });
 
   it("ignores corrupt values field by field, never entirely", () => {

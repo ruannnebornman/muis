@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { spawn, execSync } from "node:child_process";
-import { AcpClient } from "./acp";
+import { AcpConnection, AcpClient } from "./acp";
 
 /**
  * End-to-end check of the ACP client against the real `opencode acp`.
@@ -18,30 +18,31 @@ function hasOpencode(): boolean {
 
 const enabled = process.env.MUIS_ACP_IT === "1" && hasOpencode();
 
-describe.skipIf(!enabled)("AcpClient against real opencode acp", () => {
-  it("initializes and creates a session", async () => {
+describe.skipIf(!enabled)("AcpConnection against real opencode acp", () => {
+  it("initializes and hosts two concurrent sessions on one process", async () => {
+    const cwd = process.env.TMPDIR ?? "/tmp";
     const proc = spawn("opencode", ["acp"], {
-      cwd: process.env.TMPDIR ?? "/tmp",
+      cwd,
       stdio: ["pipe", "pipe", "ignore"],
     });
     let buf = "";
-    const client = new AcpClient(
-      (line) => proc.stdin.write(`${line}\n`),
-      {
-        onUpdate: () => {},
-        onPermission: () => {},
-        onSession: () => {},
-        onConfig: () => {},
-        onError: () => {},
-      },
-    );
+    const conn = new AcpConnection((line) => proc.stdin.write(`${line}\n`));
+    const noop = {
+      onUpdate: () => {},
+      onPermission: () => {},
+      onSession: () => {},
+      onConfig: () => {},
+      onError: () => {},
+    };
+    const a = new AcpClient(conn, noop);
+    const b = new AcpClient(conn, noop);
     proc.stdout.on("data", (d: Buffer) => {
       buf += d.toString();
       let i = buf.indexOf("\n");
       while (i >= 0) {
         const line = buf.slice(0, i);
         buf = buf.slice(i + 1);
-        if (line.trim()) client.receive(line);
+        if (line.trim()) conn.receive(line);
         i = buf.indexOf("\n");
       }
     });
@@ -52,16 +53,19 @@ describe.skipIf(!enabled)("AcpClient against real opencode acp", () => {
       let handshaken = false;
       for (let attempt = 0; attempt < 8 && !handshaken; attempt++) {
         try {
-          await client.initialize(1500);
+          await conn.initialize(1500);
           handshaken = true;
         } catch {
           await new Promise((r) => setTimeout(r, 400));
         }
       }
       expect(handshaken).toBe(true);
-      const sid = await client.newSession(process.env.TMPDIR ?? "/tmp");
-      expect(sid).toMatch(/^ses_/);
-      expect(client.session).toBe(sid);
+      const [sidA, sidB] = await Promise.all([a.newSession(cwd), b.newSession(cwd)]);
+      expect(sidA).toMatch(/^ses_/);
+      expect(sidB).toMatch(/^ses_/);
+      expect(sidA).not.toBe(sidB);
+      expect(a.session).toBe(sidA);
+      expect(b.session).toBe(sidB);
     } finally {
       proc.kill();
     }
