@@ -165,7 +165,12 @@ jobs:
           name: ui-dist
           path: src-ui/dist
       - run: cargo build --release --locked -p muis-shell
+      # Zipped so the browser download is quiet; the exe starts the worker
+      # from a staged copy (see docs/windows.md), which the zip's MOTW hits.
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path target\release\muis.exe -DestinationPath muis-windows.zip
       - uses: actions/upload-artifact@v6
         with:
           name: muis-windows
-          path: target\release\muis.exe
+          path: muis-windows.zip
