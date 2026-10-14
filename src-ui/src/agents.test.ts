@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { agentResumeForCommand } from "./agents";
+import { AGENT_CANDIDATES, agentResumeForCommand, availableAgents } from "./agents";
 
 describe("agentResumeForCommand", () => {
   it("recognises the known TUI agents", () => {
@@ -28,5 +28,24 @@ describe("agentResumeForCommand", () => {
     expect(agentResumeForCommand("")).toBeNull();
     expect(agentResumeForCommand(null)).toBeNull();
     expect(agentResumeForCommand("   ")).toBeNull();
+  });
+});
+
+describe("availableAgents", () => {
+  it("exposes the known candidates in display order", () => {
+    expect([...AGENT_CANDIDATES]).toEqual(["opencode", "claude", "codex", "ollama"]);
+  });
+
+  it("keeps only the candidates the probe finds", async () => {
+    const found = new Set(["claude", "codex"]);
+    expect(await availableAgents(async (c) => found.has(c))).toEqual(["claude", "codex"]);
+  });
+
+  it("treats a throwing probe as absent", async () => {
+    const avail = await availableAgents(async (c) => {
+      if (c === "opencode") throw new Error("boom");
+      return c === "ollama";
+    });
+    expect(avail).toEqual(["ollama"]);
   });
 });
