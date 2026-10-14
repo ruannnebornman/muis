@@ -53,7 +53,7 @@ export const MuisPlugin = async ({ $ }) => {
         const project = dir ? dir.replace(/\/+$/, "").split("/").pop() : "";
         const title = project || "opencode";
         const summary = typeof s.title === "string" ? s.title.trim() : "";
-        const body = summary || `${project || "opencode"} finished`;
+        const body = summary ? `${summary} has finished` : "opencode has finished";
         try {
           await notify(["--title", title, "--body", body]);
         } catch {
