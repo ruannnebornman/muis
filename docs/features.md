@@ -158,8 +158,9 @@ agent process in another project cannot overwrite a tab's real session. On
 restore the stored id is validated against `opencode session list --format
 json`; when it is missing or foreign, the tab is matched by its label
 (`OC | <title>`, prefix-tolerant of truncation) within its directory before
-falling back to `--continue`. The list is fetched once per launch, only
-when a restored tab needs it.
+falling back to `--continue`. Because `opencode session list` is scoped to
+its working directory, the list is fetched per directory (at most once per
+launch), only when a restored tab needs it.
 
 ACP (AI) panes are separate: a new AI tab starts a fresh session
 (`session/new`); restore resumes via the stored `acpSessionId`
