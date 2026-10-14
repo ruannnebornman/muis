@@ -231,6 +231,12 @@ quick-pick locations, instead of any `window.prompt`.
 
 ## Agent-finished desktop notification says only "turn finished"
 
+**Done** — the opencode plugin now caches the session title/directory
+(from `session.created`/`updated`) and sends the project folder as the
+title and the session title as the body on `session.idle`, instead of the
+constant `opencode` / `turn finished` (`crates/muis-shell/opencode-plugin/muis.js`,
+covered by `tests/e2e/muis-plugin.test.mjs`).
+
 When an opencode turn ends, the plugin raises a desktop toast whose body
 is the hardcoded string `turn finished` and whose title is the constant
 `opencode` (`crates/muis-shell/opencode-plugin/muis.js:31`, on
