@@ -7,11 +7,18 @@ traces.
 
 ## What ships
 
-A single self-contained executable:
+A zip containing a single self-contained executable:
 
 ```text
-muis-<version>-x86_64-windows.exe
+muis-<version>-x86_64-windows.zip
+└── muis.exe
 ```
+
+It is zipped because a bare `.exe` download trips Chrome/Edge's "this type
+of file can harm your computer" and SmartScreen's "isn't commonly
+downloaded" warnings; `.zip` is not on their risky-type list, so the
+download is quiet. Unzip it anywhere (Desktop, USB stick, `%LOCALAPPDATA%\muis`)
+and run `muis.exe`.
 
 `muis.exe` links the pty worker and the `muis-notify` CLI and runs them in
 hidden `--muis-worker` / `--muis-notify` modes, so there are no sidecar
@@ -21,14 +28,11 @@ appears.
 
 On first run muis copies itself to
 `%LOCALAPPDATA%\muis\bin\muis-worker-<stamp>.exe` and starts the worker from
-that copy. It has to: a downloaded exe carries a Mark-of-the-Web, and
-Windows denies a program starting such a file (`Access is denied`, os error
-5) even when you can force-launch it yourself — spawning the worker straight
-out of `Downloads` fails. A file muis writes has no MOTW, so the copy
-starts fine. Old copies are pruned on the next launch.
-
-Download it, drop it anywhere (Desktop, USB stick, `%LOCALAPPDATA%\muis`),
-and run it. There is no unzip step and no sibling binary to lose.
+that copy. It has to: a downloaded/extracted exe carries a Mark-of-the-Web,
+and Windows denies a program starting such a file (`Access is denied`, os
+error 5) even when you can force-launch it yourself — spawning the worker
+from the unzipped `muis.exe` fails. A file muis writes has no MOTW, so the
+copy starts fine. Old copies are pruned on the next launch.
 
 ## Requirements on the work machine
 
@@ -38,14 +42,15 @@ and run it. There is no unzip step and no sibling binary to lose.
 
 ## Building
 
-CI does this: `.github/workflows/ci.yml` (`windows-single-exe` artifact)
-and `.github/workflows/release.yml` (`windows` release asset).
+CI does this: `.github/workflows/ci.yml` (`windows-single-exe` job,
+`muis-windows` artifact) and `.github/workflows/release.yml` (`windows`
+release asset).
 
 Manual recipe on a Windows machine with Rust stable:
 
 ```powershell
 cargo build --release -p muis-shell
-Copy-Item target\release\muis.exe "muis-<version>-x86_64-windows.exe"
+Compress-Archive -Path target\release\muis.exe "muis-<version>-x86_64-windows.zip"
 ```
 
 Only the shell target is built: on Windows it links `muis-worker` and
@@ -78,8 +83,8 @@ exclusion or code signing.
 ## Verification
 
 - Re-check per release:
-  - download and run the exe; no UAC/admin prompt, no install, and no extra
-    console window;
+  - download the zip, unzip, and run `muis.exe`; no UAC/admin prompt, no
+    install, and no extra console window;
   - shell probe picks `pwsh` / `powershell` / `cmd`;
   - state is written to `%APPDATA%\muis`, and deleting it resets;
   - `muis.exe --muis-notify --body done` from a tab raises a toast (the
@@ -98,5 +103,5 @@ empty until then.
 - No admin/UAC, so it runs on locked-down work machines.
 - Nothing appears in Add/Remove Programs or the Start Menu.
 - State is a single deletable folder; no uninstaller required.
-- Windows is one self-contained exe; Linux packages still ship
+- Windows is one self-contained exe (in a zip); Linux packages still ship
   `muis` + `muis-worker` + `muis-notify` as siblings.
