@@ -1587,42 +1587,164 @@ function renderSessions(): void {
   const addBtn = el("button", "btn", "＋ session");
   addBtn.style.flex = "1";
   addBtn.addEventListener("click", () => {
-    void addSession();
+    openSessionDialog("new");
   });
   footer.append(addBtn);
   sidebar.append(footer);
 }
 
 /**
- * Directory chooser for a new session. Inside Tauri this opens the native
- * folder picker; the browser preview keeps the typed-path prompt so the
- * Selenium suite and plain `vite dev` still work.
+ * Directory chooser for a new session. Inside Tauri the Browse button opens
+ * the native folder picker; the browser preview types the path directly, so
+ * the Selenium suite and plain `vite dev` work without the native picker.
  */
 async function pickDirectory(start: string): Promise<string | null> {
-  const typed = (): string | null => window.prompt("Session directory:", start);
-  if (!IN_TAURI) return typed();
+  if (!IN_TAURI) return null;
   try {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const picked = await open({ directory: true, multiple: false, defaultPath: start });
     if (typeof picked === "string") return picked;
     if (Array.isArray(picked) && typeof picked[0] === "string") return picked[0];
-    return null;
   } catch {
-    return typed();
+    /* fall back to the typed path */
+  }
+  return null;
+}
+
+/* ---------------- new / rename session dialog ---------------- */
+
+const sessionOverlay = el("div", "session-overlay");
+sessionOverlay.style.display = "none";
+const sessionBox = el("div", "settings-box session-box");
+const sessionHeader = el("div", "settings-header");
+const sessionTitle = el("h2", "", "New session");
+const sessionClose = el("button", "settings-close", "✕") as HTMLButtonElement;
+sessionClose.type = "button";
+sessionClose.title = "Close";
+sessionHeader.append(sessionTitle, sessionClose);
+
+const sessionBody = el("div", "settings-body");
+const sessionName = document.createElement("input");
+sessionName.type = "text";
+sessionName.placeholder = "session name";
+sessionName.autocomplete = "off";
+sessionName.spellcheck = false;
+const sessionDir = document.createElement("input");
+sessionDir.type = "text";
+sessionDir.placeholder = "~";
+sessionDir.autocomplete = "off";
+sessionDir.spellcheck = false;
+const sessionBrowse = el("button", "btn", "Browse…") as HTMLButtonElement;
+sessionBrowse.type = "button";
+if (!IN_TAURI) sessionBrowse.style.display = "none";
+const dirWrap = el("span", "dir-pick");
+dirWrap.append(sessionDir, sessionBrowse);
+const sessionQuick = el("div", "quick-picks");
+const sessionNameRow = settingsRow("Name", sessionName);
+const sessionDirRow = settingsRow("Directory", dirWrap);
+const sessionError = el("div", "session-error");
+sessionError.style.display = "none";
+sessionBody.append(sessionNameRow, sessionDirRow, sessionQuick, sessionError);
+
+const sessionButtons = el("div", "settings-buttons");
+const sessionCancel = el("button", "", "Cancel");
+const sessionSubmit = el("button", "primary", "Create");
+sessionButtons.append(sessionCancel, sessionSubmit);
+
+sessionBox.append(sessionHeader, sessionBody, sessionButtons);
+sessionOverlay.append(sessionBox);
+document.body.append(sessionOverlay);
+
+let sessionRenameTarget: Workspace | null = null;
+
+function renderSessionQuickPicks(): void {
+  sessionQuick.replaceChildren();
+  const choices: [string, string][] = [];
+  if (homeDir) choices.push(["Home", homeDir]);
+  const cur = store.currentWorkspace();
+  if (cur && cur.dir !== homeDir) choices.push(["Current session", cur.dir]);
+  for (const [label, value] of choices) {
+    const b = el("button", "quick-pick", label) as HTMLButtonElement;
+    b.type = "button";
+    b.addEventListener("click", () => {
+      sessionDir.value = value;
+    });
+    sessionQuick.append(b);
   }
 }
 
-async function addSession(): Promise<void> {
-  const name = window.prompt("Session name:", `session-${store.workspaces.length + 1}`);
-  if (!name) return;
-  const dirRaw = await pickDirectory(store.currentWorkspace()?.dir ?? "~");
-  if (dirRaw === null) return;
-  const dir = expandHome(dirRaw, homeDir);
-  const idx = store.addWorkspace(name, dir);
-  store.switch(idx);
-  // A new session opens a terminal; an emptied session later stays empty.
-  store.newTab("Terminal 1", dir);
+function openSessionDialog(mode: "new" | "rename", target?: Workspace): void {
+  sessionRenameTarget = mode === "rename" ? target ?? null : null;
+  sessionError.style.display = "none";
+  const isNew = mode === "new";
+  sessionTitle.textContent = isNew ? "New session" : "Rename session";
+  sessionSubmit.textContent = isNew ? "Create" : "Save";
+  sessionDirRow.style.display = isNew ? "" : "none";
+  sessionQuick.style.display = isNew ? "" : "none";
+  if (isNew) {
+    sessionName.value = `session-${store.workspaces.length + 1}`;
+    sessionDir.value = store.currentWorkspace()?.dir || homeDir || "~";
+    renderSessionQuickPicks();
+  } else {
+    sessionName.value = target ? target.name : "";
+  }
+  sessionOverlay.style.display = "flex";
+  sessionName.focus();
+  sessionName.select();
+}
+
+function closeSessionDialog(): void {
+  sessionOverlay.style.display = "none";
+  sessionRenameTarget = null;
+}
+
+function submitSessionDialog(): void {
+  const name = sessionName.value.trim();
+  if (!name) {
+    sessionError.textContent = "Enter a name.";
+    sessionError.style.display = "";
+    return;
+  }
+  if (sessionRenameTarget) {
+    sessionRenameTarget.name = name;
+  } else {
+    const dirRaw = sessionDir.value.trim();
+    if (!dirRaw) {
+      sessionError.textContent = "Enter a directory.";
+      sessionError.style.display = "";
+      return;
+    }
+    const dir = expandHome(dirRaw, homeDir);
+    const idx = store.addWorkspace(name, dir);
+    store.switch(idx);
+    // A new session opens a terminal; an emptied session later stays empty.
+    store.newTab("Terminal 1", dir);
+  }
+  closeSessionDialog();
   renderAll();
+}
+
+sessionClose.addEventListener("click", closeSessionDialog);
+sessionCancel.addEventListener("click", closeSessionDialog);
+sessionSubmit.addEventListener("click", submitSessionDialog);
+sessionBrowse.addEventListener("click", () => {
+  void pickDirectory(sessionDir.value.trim() || homeDir).then((picked) => {
+    if (picked) sessionDir.value = picked;
+  });
+});
+sessionOverlay.addEventListener("click", (e) => {
+  if (e.target === sessionOverlay) closeSessionDialog();
+});
+for (const input of [sessionName, sessionDir]) {
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitSessionDialog();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeSessionDialog();
+    }
+  });
 }
 
 /** Stable per-session glyph (mock shows an icon per session). */
@@ -1634,11 +1756,7 @@ function sessionGlyph(name: string): string {
 }
 
 function renameSession(w: Workspace): void {
-  const name = window.prompt("Session name", w.name);
-  if (name) {
-    w.name = name;
-    renderAll();
-  }
+  openSessionDialog("rename", w);
 }
 
 /* ---------------- drag reorder (tabs + sessions) ---------------- */
@@ -2212,7 +2330,8 @@ const onShortcut = (e: KeyboardEvent): void => {
       break;
     }
     case "close-overlay":
-      if (settingsOverlay.style.display !== "none") closeSettings();
+      if (sessionOverlay.style.display !== "none") closeSessionDialog();
+      else if (settingsOverlay.style.display !== "none") closeSettings();
       break;
   }
 };

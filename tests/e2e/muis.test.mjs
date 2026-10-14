@@ -88,6 +88,21 @@ async function assertOneVisibleTerminal() {
   assert.equal(state.visible, 1, `expected exactly one visible xterm surface, got ${JSON.stringify(state)}`);
 }
 
+/** Create a session through the in-app dialog (name, default directory). */
+async function createSession(name) {
+  await driver.findElement(By.css(".side-footer .btn")).click();
+  const overlay = await driver.wait(
+    until.elementLocated(By.css(".session-overlay")),
+    5000,
+  );
+  await driver.wait(async () => overlay.isDisplayed(), 5000);
+  const nameInput = await overlay.findElement(By.css('input[type="text"]'));
+  await nameInput.clear();
+  await nameInput.sendKeys(name);
+  await overlay.findElement(By.xpath('.//button[text()="Create"]')).click();
+  await driver.wait(async () => !(await overlay.isDisplayed()), 5000);
+}
+
 describe("muis chrome", () => {
   before(async () => {
     const options = new chrome.Options()
@@ -220,15 +235,7 @@ describe("muis chrome", () => {
   });
 
   it("keeps one terminal visible while switching sessions and tabs", async () => {
-    await driver.findElement(By.css(".side-footer .btn")).click();
-    await driver.wait(until.alertIsPresent(), 5000);
-    const nameDialog = await driver.switchTo().alert();
-    await nameDialog.sendKeys("e2e-second");
-    await nameDialog.accept();
-    await driver.wait(until.alertIsPresent(), 5000);
-    const dirDialog = await driver.switchTo().alert();
-    await dirDialog.sendKeys("/tmp");
-    await dirDialog.accept();
+    await createSession("e2e-second");
     await driver.wait(async () => (await driver.findElements(By.css(".session"))).length === 2, 5000);
 
     await assertOneVisibleTerminal();
@@ -347,15 +354,7 @@ describe("muis chrome", () => {
     await shot("17-ctx-close-session");
 
     // The sessionless state recovers: "+ session" mints a fresh session+tab.
-    await driver.findElement(By.css(".side-footer .btn")).click();
-    await driver.wait(until.alertIsPresent(), 5000);
-    const nameDialog = await driver.switchTo().alert();
-    await nameDialog.sendKeys("e2e-fresh");
-    await nameDialog.accept();
-    await driver.wait(until.alertIsPresent(), 5000);
-    const dirDialog = await driver.switchTo().alert();
-    await dirDialog.sendKeys("/tmp");
-    await dirDialog.accept();
+    await createSession("e2e-fresh");
     await driver.wait(
       async () => (await driver.findElements(By.css(".session"))).length === 1,
       5000,
