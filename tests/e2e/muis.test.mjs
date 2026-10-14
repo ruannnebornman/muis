@@ -363,4 +363,20 @@ describe("muis chrome", () => {
     await assertOneVisibleTerminal();
     await shot("18-empty-state-recovers");
   });
+
+  it("creates a session without window.prompt", async () => {
+    // The in-app dialog must be the only path: a native prompt would block
+    // and be recorded here.
+    await driver.executeScript(() => {
+      window.__muisPrompted = false;
+      window.prompt = () => {
+        window.__muisPrompted = true;
+        return null;
+      };
+    });
+    await createSession("e2e-noprompt");
+    assert.equal(await driver.executeScript(() => window.__muisPrompted), false);
+    assert.equal((await driver.findElements(By.css(".session"))).length, 2);
+    await shot("19-no-prompt");
+  });
 });
