@@ -55,7 +55,7 @@ pub enum WorkerLaunch {
     /// Non-Windows: spawn a sibling `muis-worker` (constructed only there).
     #[allow(dead_code)]
     Exe(PathBuf),
-    /// Windows: re-exec the shell's own binary in worker mode.
+    /// Windows: run a staged copy of the shell binary in worker mode.
     #[cfg(windows)]
     SelfExe { exe: PathBuf, arg: String },
 }

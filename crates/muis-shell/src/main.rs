@@ -74,15 +74,69 @@ fn worker_path() -> Option<PathBuf> {
     find_worker_in(exe.parent()?)
 }
 
+/// Copy this executable to a per-user app dir and return the copy.
+///
+/// A downloaded exe carries a Mark-of-the-Web, and Windows denies a
+/// program's `CreateProcess` on such a file ("Access is denied", os error 5)
+/// even though the user can force-launch it — which is exactly why spawning
+/// the worker out of `Downloads` fails. A file muis writes itself has no
+/// MOTW, so the worker can be started from it.
+#[cfg(windows)]
+fn staged_worker() -> Option<PathBuf> {
+    let src = std::env::current_exe().ok()?;
+    let meta = std::fs::metadata(&src).ok()?;
+    let stamp = format!(
+        "{}-{}",
+        meta.len(),
+        meta.modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    );
+    let dir = muis_core::paths::bin_dir();
+    std::fs::create_dir_all(&dir).ok()?;
+    let dst = dir.join(format!("muis-worker-{stamp}.exe"));
+    if !dst.exists() {
+        // Read + write rather than fs::copy: that copies only the default
+        // data stream, so no Zone.Identifier (MOTW) rides along.
+        let bytes = std::fs::read(&src).ok()?;
+        let tmp = dst.with_extension(format!("{}.tmp", std::process::id()));
+        std::fs::write(&tmp, &bytes).ok()?;
+        std::fs::rename(&tmp, &dst).ok()?;
+        prune_staged(&dir, &dst);
+    }
+    Some(dst)
+}
+
+/// Best effort: drop older staged copies. Ones still mapped by running
+/// workers can't be deleted on Windows and are skipped.
+#[cfg(windows)]
+fn prune_staged(dir: &Path, keep: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|entry| entry.path()) {
+        let old_worker = path != keep
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("muis-worker-") && name.ends_with(".exe"));
+        if old_worker {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 /// How the shell starts a session worker. Linux packages spawn the sibling
-/// `muis-worker`; the Windows single-file build re-execs this same exe in
-/// the hidden `--muis-worker` mode, so nothing else ships alongside it.
+/// `muis-worker`; Windows stages a copy of this exe in a per-user dir and
+/// runs the worker from that (see [`staged_worker`]).
 fn worker_launch() -> Option<WorkerLaunch> {
     #[cfg(windows)]
     {
-        // Always re-exec ourselves: no sibling to lose or leave stale, and
-        // the worker can never be a different version than the shell.
-        let exe = std::env::current_exe().ok()?;
+        // Fall back to the running exe only if staging fails; that still
+        // works when muis was not downloaded (dev builds, no MOTW).
+        let exe = staged_worker().or_else(|| std::env::current_exe().ok())?;
         Some(WorkerLaunch::SelfExe {
             exe,
             arg: WORKER_ARG.to_string(),

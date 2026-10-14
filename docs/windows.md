@@ -13,11 +13,19 @@ A single self-contained executable:
 muis-<version>-x86_64-windows.exe
 ```
 
-`muis.exe` links the pty worker and the `muis-notify` CLI and re-execs
-itself in hidden `--muis-worker` / `--muis-notify` modes, so there are no
-sidecar files to keep next to it. Both modes run in the same consoleless
-GUI process (release builds are `windows-subsystem`), so no CLI window ever
+`muis.exe` links the pty worker and the `muis-notify` CLI and runs them in
+hidden `--muis-worker` / `--muis-notify` modes, so there are no sidecar
+files to keep next to it. Both modes run in the same consoleless GUI
+process (release builds are `windows-subsystem`), so no CLI window ever
 appears.
+
+On first run muis copies itself to
+`%LOCALAPPDATA%\muis\bin\muis-worker-<stamp>.exe` and starts the worker from
+that copy. It has to: a downloaded exe carries a Mark-of-the-Web, and
+Windows denies a program starting such a file (`Access is denied`, os error
+5) even when you can force-launch it yourself — spawning the worker straight
+out of `Downloads` fails. A file muis writes has no MOTW, so the copy
+starts fine. Old copies are pruned on the next launch.
 
 Download it, drop it anywhere (Desktop, USB stick, `%LOCALAPPDATA%\muis`),
 and run it. There is no unzip step and no sibling binary to lose.
@@ -41,16 +49,17 @@ Copy-Item target\release\muis.exe "muis-<version>-x86_64-windows.exe"
 ```
 
 Only the shell target is built: on Windows it links `muis-worker` and
-`muis-notify` and re-execs itself, so no separate sidecars exist. The
-frontend is embedded in `muis.exe` at compile time from `src-ui/dist`
-(rebuild it first with `npm run build`).
+`muis-notify`, so no separate sidecars exist. The frontend is embedded in
+`muis.exe` at compile time from `src-ui/dist` (rebuild it first with
+`npm run build`).
 
 ## Shells and state
 
 Probe order: `pwsh` → `powershell` → `cmd`. State lives in
-`%APPDATA%\muis` (sessions, snapshots); diagnostics live in
-`%LOCALAPPDATA%\muis\logs`. Deleting those folders resets muis to
-first-run with no uninstall step needed.
+`%APPDATA%\muis` (sessions, snapshots). Diagnostics live in
+`%LOCALAPPDATA%\muis\logs` and the staged worker copy in
+`%LOCALAPPDATA%\muis\bin`. Deleting those folders resets muis to first-run
+with no uninstall step needed; the worker copy is re-staged on next launch.
 
 ## Diagnostics
 
@@ -58,6 +67,13 @@ Release builds have no console, so runtime diagnostics go to
 `%LOCALAPPDATA%\muis\logs\muis.log`. If that file is missing after a launch
 attempt, the process never started — an OS-level block (Defender/ASR or a
 persistent "blocked" file attribute), not a muis failure.
+
+If the log shows `failed to start worker … Access is denied. (os error 5)`,
+the worker could not be started. muis already stages the worker into
+`%LOCALAPPDATA%\muis\bin` to dodge the Mark-of-the-Web case; if it still
+fails, a machine policy (Defender ASR "block exe unless prevalent/aged/
+trusted", AppLocker/WDAC) is blocking unsigned executables, which needs an
+exclusion or code signing.
 
 ## Verification
 
