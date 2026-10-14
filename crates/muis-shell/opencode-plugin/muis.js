@@ -17,6 +17,10 @@ export const MuisPlugin = async ({ $ }) => {
     bin ? $`${bin} --muis-notify ${args}` : $`muis-notify ${args}`;
 
   let last = "";
+  // Session id -> { title, directory }, learned from session.created/updated
+  // (session.idle itself only carries the id).
+  const sessions = new Map();
+
   const report = async (id) => {
     if (!id || typeof id !== "string" || !id.startsWith("ses_") || id === last) return;
     last = id;
@@ -26,15 +30,32 @@ export const MuisPlugin = async ({ $ }) => {
       // muis not running, or notify unavailable — nothing to do
     }
   };
+
   return {
     event: async ({ event }) => {
       const type = event?.type;
       if (typeof type !== "string" || !type.startsWith("session.")) return;
       const p = event.properties ?? {};
-      await report(p.sessionID ?? p.sessionId ?? p.info?.id ?? p.session?.id);
+      const info = p.info;
+      if (info && typeof info.id === "string") {
+        sessions.set(info.id, {
+          title: typeof info.title === "string" ? info.title : "",
+          directory: typeof info.directory === "string" ? info.directory : "",
+        });
+      }
+      const id = p.sessionID ?? p.sessionId ?? info?.id ?? p.session?.id;
+      await report(id);
       if (type === "session.idle") {
+        // Identify where (project/tab) in the title and what (the session
+        // title) in the body, instead of the old constant text.
+        const s = (id && sessions.get(id)) || {};
+        const dir = typeof s.directory === "string" ? s.directory : "";
+        const project = dir ? dir.replace(/\/+$/, "").split("/").pop() : "";
+        const title = project || "opencode";
+        const summary = typeof s.title === "string" ? s.title.trim() : "";
+        const body = summary ? `${summary} has finished` : "opencode has finished";
         try {
-          await notify(["--title", "opencode", "--body", "turn finished"]);
+          await notify(["--title", title, "--body", body]);
         } catch {
           // muis not running
         }
