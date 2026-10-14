@@ -464,6 +464,25 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| format!("not a UTF-8 text file: {e}"))
 }
 
+/// Names of up to `limit` non-hidden subdirectories of `path`, sorted. Used
+/// by the new-session dialog's subfolder quick picks. Best effort: a missing
+/// or unreadable path yields an empty list.
+#[tauri::command]
+fn list_subdirs(path: String, limit: usize) -> Vec<String> {
+    let mut names: Vec<String> = match std::fs::read_dir(&path) {
+        Ok(entries) => entries
+            .flatten()
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .filter_map(|e| e.file_name().to_str().map(str::to_string))
+            .filter(|n| !n.starts_with('.'))
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    names.sort();
+    names.truncate(limit.min(50));
+    names
+}
+
 #[tauri::command]
 fn worker_spawn(pool: tauri::State<WorkerPool>, session_id: String) -> Result<(), String> {
     pool.spawn_session(&session_id)
@@ -560,6 +579,7 @@ fn main() {
             command_available,
             install_opencode_plugin,
             read_text_file,
+            list_subdirs,
             open_url,
             reset_sessions_and_restart,
             worker_spawn,
@@ -728,6 +748,23 @@ mod tests {
         assert!(!command_available("   ".to_string()));
         let exe = std::env::current_exe().unwrap();
         assert!(command_available(exe.to_string_lossy().into_owned()));
+    }
+
+    #[test]
+    fn list_subdirs_sorts_filters_and_caps() {
+        let dir = std::env::temp_dir().join(format!("muis-subdirs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("beta")).unwrap();
+        std::fs::create_dir_all(dir.join("alpha")).unwrap();
+        std::fs::create_dir_all(dir.join(".hidden")).unwrap();
+        std::fs::write(dir.join("file.txt"), b"x").unwrap();
+        let path = dir.to_string_lossy().into_owned();
+        // Directories only, hidden excluded, sorted.
+        assert_eq!(list_subdirs(path.clone(), 10), vec!["alpha", "beta"]);
+        // Limit is respected, and a missing path is empty (never errors).
+        assert_eq!(list_subdirs(path, 1), vec!["alpha"]);
+        assert!(list_subdirs("/no/such/path-9f3a".to_string(), 10).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
