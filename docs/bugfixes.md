@@ -203,6 +203,12 @@ tab that should start clean. Suppress it.
 
 ## The "＋ session" popup is bad
 
+**Done** — `＋ session` now opens a single in-app dialog (name + directory,
+native Browse under Tauri, Home/current-session quick picks, inline
+validation, Esc/click-outside/Enter), and session rename uses the same
+dialog. No more `window.prompt` (`src-ui/src/main.ts`,
+`src-ui/src/style.css`).
+
 Clicking `＋ session` (`renderSessions`, `src-ui/src/main.ts:1506`) fires a
 sequence of blocking native popups: `window.prompt("Session name:", …)`
 and then a directory chooser — the native folder picker inside Tauri, or
