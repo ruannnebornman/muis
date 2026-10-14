@@ -220,7 +220,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          find . -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.exe' -o -name '*.flatpak' \) -print0 \
+          find . -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.exe' -o -name '*.flatpak' \) -print0 \
             | sort -z | xargs -0 sha256sum > SHA256SUMS
           cat SHA256SUMS
       - name: Sign release artifacts
@@ -240,7 +240,7 @@ jobs:
           gpg --batch --import "${key_file}"
 
           shopt -s nullglob
-          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.exe dist/*.flatpak dist/SHA256SUMS)
+          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.exe dist/*.flatpak dist/SHA256SUMS)
           for artifact in "${artifacts[@]}"; do
             gpg --batch --yes --pinentry-mode loopback \
               --passphrase-file "${pass_file}" \
@@ -252,7 +252,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.exe dist/*.flatpak dist/SHA256SUMS)
+          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.exe dist/*.flatpak dist/SHA256SUMS)
           for artifact in "${artifacts[@]}"; do
             gpgv --keyring packaging/keys/muis-release.gpg "${artifact}.asc" "${artifact}"
           done
@@ -261,7 +261,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
           gh release create "${GITHUB_REF_NAME}" \
-            dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.exe dist/*.flatpak \
+            dist/*.AppImage dist/*.tar.gz dist/*.exe dist/*.flatpak \
             dist/SHA256SUMS dist/*.asc packaging/keys/muis-release.asc \
             --title "muis ${GITHUB_REF_NAME}" --generate-notes
