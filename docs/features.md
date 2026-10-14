@@ -402,7 +402,7 @@ Two cases to distinguish:
   survives in the sidebar — `store.closeTab` no longer removes the
   workspace when its last tab goes (`src-ui/src/sessions.ts`, test
   `src-ui/src/sessions.test.ts`). This reverses the earlier
-  close-session-on-last-tab behavior; see `docs/bugfixes.md`.
+  close-session-on-last-tab behavior; see `docs/archive/bugfixes.md`.
 - Process exit/kill: **gap**. When a pty exits, muis only marks the tab
   exited and prints `[process exited]` (`src-ui/src/main.ts:482-483`); the
   dead tab — and therefore a session whose only tab died — stays open.
