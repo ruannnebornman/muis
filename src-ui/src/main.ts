@@ -1656,19 +1656,46 @@ sessionOverlay.append(sessionBox);
 document.body.append(sessionOverlay);
 
 let sessionRenameTarget: Workspace | null = null;
+/** True once the user edits the name, so picking a folder stops renaming it. */
+let sessionNameEdited = false;
+
+/** Last path segment, e.g. /home/x/Projects -> Projects. */
+function sessionDirName(dir: string): string {
+  const trimmed = dir.replace(/\/+$/, "");
+  if (!trimmed) return "";
+  return trimmed.slice(trimmed.lastIndexOf("/") + 1) || trimmed;
+}
+
+/** Point the directory field at `dir`; derive the name from it unless edited. */
+function applyPickedDir(dir: string): void {
+  sessionDir.value = dir;
+  if (!sessionNameEdited) {
+    const name = sessionDirName(dir);
+    if (name) sessionName.value = name;
+  }
+}
 
 function renderSessionQuickPicks(): void {
   sessionQuick.replaceChildren();
   const choices: [string, string][] = [];
-  if (homeDir) choices.push(["Home", homeDir]);
+  if (homeDir) {
+    choices.push(["Home", homeDir]);
+    for (const sub of ["Desktop", "Documents", "Downloads", "Projects"]) {
+      choices.push([sub, `${homeDir}/${sub}`]);
+    }
+  } else {
+    choices.push(["Home", "~"]);
+  }
+  choices.push(["/tmp", "/tmp"]);
   const cur = store.currentWorkspace();
-  if (cur && cur.dir !== homeDir) choices.push(["Current session", cur.dir]);
+  if (cur && cur.dir && !choices.some(([, v]) => v === cur.dir)) {
+    choices.push(["Current session", cur.dir]);
+  }
   for (const [label, value] of choices) {
     const b = el("button", "quick-pick", label) as HTMLButtonElement;
     b.type = "button";
-    b.addEventListener("click", () => {
-      sessionDir.value = value;
-    });
+    b.title = value;
+    b.addEventListener("click", () => applyPickedDir(value));
     sessionQuick.append(b);
   }
 }
@@ -1682,6 +1709,7 @@ function openSessionDialog(mode: "new" | "rename", target?: Workspace): void {
   sessionDirRow.style.display = isNew ? "" : "none";
   sessionQuick.style.display = isNew ? "" : "none";
   if (isNew) {
+    sessionNameEdited = false;
     sessionName.value = `session-${store.workspaces.length + 1}`;
     sessionDir.value = store.currentWorkspace()?.dir || homeDir || "~";
     renderSessionQuickPicks();
@@ -1729,8 +1757,11 @@ sessionCancel.addEventListener("click", closeSessionDialog);
 sessionSubmit.addEventListener("click", submitSessionDialog);
 sessionBrowse.addEventListener("click", () => {
   void pickDirectory(sessionDir.value.trim() || homeDir).then((picked) => {
-    if (picked) sessionDir.value = picked;
+    if (picked) applyPickedDir(picked);
   });
+});
+sessionName.addEventListener("input", () => {
+  sessionNameEdited = true;
 });
 sessionOverlay.addEventListener("click", (e) => {
   if (e.target === sessionOverlay) closeSessionDialog();
