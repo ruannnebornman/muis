@@ -289,6 +289,13 @@ screen (e.g. floating or tiled to a smaller window). It looks bad.
 
 ## Add tests
 
+**Done** — every fix has coverage: `clock.test.ts`, `focus.test.ts`,
+`sessions.test.ts`, `notify.test.ts`; the Selenium suite (navigation,
+create-session-without-`window.prompt`, one-visible-terminal incl. the
+zero-tab case); `tests/e2e/muis-plugin.test.mjs` (plugin payload); and the
+live X11 smoke, which now also drives the `muis-notify` CLI and asserts the
+background-tab badge.
+
 Cover the fixes above and the surrounding navigation behavior.
 
 - Clock: `clock.test.ts` covers shape/padding; add a case for the refined
