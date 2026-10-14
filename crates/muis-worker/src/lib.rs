@@ -23,6 +23,10 @@ const SCROLLBACK_CAP: usize = 256 * 1024;
 /// exit status on finish) using fish's preexec/postexec events.
 const FISH_INTEGRATION: &str = r"function __muis_preexec --on-event fish_preexec; printf '\e]133;C\e\\'; end; function __muis_postexec --on-event fish_postexec; printf '\e]133;D;%d\e\\' $status; end";
 
+/// Init command that silences fish's welcome banner. Fish prints it from the
+/// `fish_greeting` function/variable (there is no `--no-greeting` flag).
+const FISH_NO_GREETING: &str = "set -g fish_greeting ''";
+
 /// True when the worker is running inside a Flatpak sandbox.
 fn in_flatpak() -> bool {
     std::path::Path::new("/.flatpak-info").exists()
@@ -121,6 +125,12 @@ fn shell_argv(
         .and_then(|n| n.to_str())
         == Some("fish")
     {
+        // Suppress fish's greeting banner ("Welcome to fish, ..."). Fish has
+        // no --no-greeting flag; the banner comes from the fish_greeting
+        // function/variable, so clear the variable via an init command.
+        argv.push("-C".to_string());
+        argv.push(FISH_NO_GREETING.to_string());
+        // Publish OSC 133 command markers for the last-command bar.
         argv.push("-C".to_string());
         argv.push(fish_integration.to_string());
     }
@@ -484,7 +494,13 @@ mod tests {
     fn shell_argv_adds_fish_integration() {
         assert_eq!(
             shell_argv("/usr/bin/fish", "/home/x", false, "INT", &[]),
-            vec!["/usr/bin/fish", "-C", "INT"]
+            vec![
+                "/usr/bin/fish",
+                "-C",
+                FISH_NO_GREETING,
+                "-C",
+                "INT",
+            ]
         );
     }
 
@@ -500,7 +516,10 @@ mod tests {
         assert_eq!(argv[2], "--directory=/home/x");
         assert_eq!(argv[3], "--env=TERM=xterm-256color");
         assert_eq!(argv[4], "--env=LANG=C.UTF-8");
-        assert_eq!(&argv[5..], &["/usr/bin/fish", "-C", "INT"]);
+        assert_eq!(
+            &argv[5..],
+            &["/usr/bin/fish", "-C", FISH_NO_GREETING, "-C", "INT"]
+        );
     }
 
     #[test]

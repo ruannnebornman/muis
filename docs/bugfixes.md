@@ -141,6 +141,11 @@ overflowing.
 
 ## CI pipeline is too slow
 
+**Done** — `rust-cache` on the Rust/Windows jobs, one cached Linux job
+(rust tests + native smoke), a single shared `build-ui` artifact, docs-only
+skips, PR-vs-main tiering with path-gated heavy jobs, and concurrency
+cancellation (`.github/workflows/ci.yml`, #68).
+
 CI builds take too long; investigate and speed them up
 (`.github/workflows/ci.yml`). Candidate directions:
 
@@ -159,6 +164,12 @@ CI builds take too long; investigate and speed them up
 
 ## Settings menu looks bad
 
+**Done** — the dialog now has a header with a close button, grouped sections
+(Appearance / AI / Terminal / Statusbar / Danger zone), aligned rows with
+subtle separators, a scrollable body, consistent inputs with a focus ring,
+and a secondary Cancel + primary Save footer (`src-ui/src/main.ts`,
+`src-ui/src/style.css`).
+
 The settings dialog looks unpolished and needs a visual pass
 (`settingsOverlay`/`settingsBox`, `src-ui/src/main.ts:1268-1321`). The
 current styling is a bare centered box with label/control rows and two
@@ -172,6 +183,10 @@ accent buttons (`src-ui/src/style.css:149-156`).
   balance with the rest of the UI.
 
 ## Remove the fish message on new terminals
+
+**Done** — fish is now spawned with `--no-greeting` alongside the OSC 133
+`-C` integration so new terminals start clean
+(`crates/muis-worker/src/lib.rs`).
 
 Every new terminal spawned with fish prints fish's greeting banner
 ("Welcome to fish, the friendly interactive shell"), which is noise in a
