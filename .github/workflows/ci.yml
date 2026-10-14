@@ -94,9 +94,9 @@ jobs:
       - name: Install virtual-display dependencies
         if: github.event_name == 'push' || needs.changes.outputs.native == 'true'
         run: sudo apt-get install -y xvfb xauth imagemagick
-      - name: Build shell and worker for the PTY smoke
+      - name: Build shell, worker, and notify for the PTY smoke
         if: github.event_name == 'push' || needs.changes.outputs.native == 'true'
-        run: cargo build --locked -p muis-shell -p muis-worker
+        run: cargo build --locked -p muis-shell -p muis-worker -p muis-notify
       - name: Run native Tauri PTY smoke under Xvfb
         if: github.event_name == 'push' || needs.changes.outputs.native == 'true'
         run: bash tests/e2e/live-x11.sh

@@ -25,11 +25,23 @@ INSTALL_DIR="$RUN_DIR/install"
 mkdir -p "$INSTALL_DIR"
 cp "$ROOT/target/debug/muis" "$INSTALL_DIR/muis"
 cp "$ROOT/target/debug/muis-worker" "$INSTALL_DIR/muis-worker"
+cp "$ROOT/target/debug/muis-notify" "$INSTALL_DIR/muis-notify"
+
+# Seed two workspaces so a background tab (t2) exists to notify: the CLI
+# request targets it and must badge it (markDone) since it is not visible.
+mkdir -p "$STATE_HOME/muis"
+cat > "$STATE_HOME/muis/sessions.json" <<JSON
+{"workspaces":[{"id":"w1","name":"home","dir":"$HOME","active":0,"tabs":[{"id":"t1","title":"Terminal 1","cwd":"$HOME"}]},{"id":"w2","name":"other","dir":"$HOME","active":0,"tabs":[{"id":"t2","title":"Terminal 1","cwd":"$HOME"}]}],"current":0,"next_id":3}
+JSON
 
 export ROOT STATE_HOME CONFIG_HOME MARKER SCREENSHOT LOG RUN_DIR INSTALL_DIR
+# Use a distinct per-run socket so the smoke never fights a real muis for the
+# per-user socket (CI has none, but a developer's session does).
+export MUIS_SOCKET_NAME="muis-notify-live-${RANDOM}${RANDOM}"
 # After the marker, emit each notification protocol so the frontend's OSC
-# observer exercises the real notify path (OSC 9, OSC 777, OSC 99).
-export MUIS_TEST_COMMAND="echo $MARKER; printf '\033]9;muis-osc9\007\033]777;notify;muis-osc777;body777\007\033]99;i=1:d=1;muis-osc99\007'"
+# observer exercises the real notify path (OSC 9, OSC 777, OSC 99), then
+# drive the real `muis-notify` CLI against the background tab t2.
+export MUIS_TEST_COMMAND="echo $MARKER; printf '\033]9;muis-osc9\007\033]777;notify;muis-osc777;body777\007\033]99;i=1:d=1;muis-osc99\007'; $INSTALL_DIR/muis-notify --tab t2 --title muis-live --body cli-notify"
 export GDK_BACKEND=x11
 export LIBGL_ALWAYS_SOFTWARE=1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
@@ -121,6 +133,26 @@ PY
       exit 1
     fi
   done
+
+  # The real `muis-notify` CLI must reach the frontend, and a request for a
+  # non-visible tab must badge it (applyNotification logs markDone).
+  cli_deadline=$((SECONDS + 20))
+  while (( SECONDS < cli_deadline )); do
+    if grep -Fq "\"source\":\"cli\"" "$LOG" && grep -Fq "\"markDone\":true" "$LOG"; then
+      break
+    fi
+    sleep 0.3
+  done
+  if ! grep -Fq "\"source\":\"cli\"" "$LOG"; then
+    echo "muis-notify CLI notification never reached the frontend" >&2
+    echo "test artifacts: $RUN_DIR" >&2
+    exit 1
+  fi
+  if ! grep -Fq "\"markDone\":true" "$LOG"; then
+    echo "notification for a background tab did not badge it" >&2
+    echo "test artifacts: $RUN_DIR" >&2
+    exit 1
+  fi
 
   if python3 - "$sessions_dir" <<"PY"
 import pathlib, sys

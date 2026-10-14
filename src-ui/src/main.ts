@@ -2987,6 +2987,11 @@ function applyNotification(tab: Tab, ev: NotifyEvent): boolean {
     Date.now(),
   );
   if (!decision) return false;
+  reportDebugStage("notify-routed", {
+    source: ev.source,
+    markDone: decision.markDone,
+    toast: decision.toast,
+  });
   if (decision.toast) {
     void sendDesktopNotification(ev.title ?? tab.title ?? "muis", ev.body);
   }
