@@ -1,4 +1,4 @@
-// muis-plugin v2
+// muis-plugin v3
 // muis opencode plugin: report the active session id to the muis tab so
 // the tab can resume that exact session, and notify muis when a turn
 // finishes so the tab gets the done badge + toast.
@@ -25,7 +25,12 @@ export const MuisPlugin = async ({ $ }) => {
     if (!id || typeof id !== "string" || !id.startsWith("ses_") || id === last) return;
     last = id;
     try {
-      await notify(["--agent-session", id]);
+      // Report the session's directory too, so muis can reject an id that
+      // leaked in from another project before latching it to this tab.
+      const dir = sessions.get(id)?.directory;
+      const args = ["--agent-session", id];
+      if (dir) args.push("--agent-session-dir", dir);
+      await notify(args);
     } catch {
       // muis not running, or notify unavailable — nothing to do
     }

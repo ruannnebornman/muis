@@ -16,12 +16,13 @@ use muis_core::notify::{self, NotifyRequest};
 
 const USAGE: &str = "\
 usage: muis-notify --body TEXT [--title TEXT] [--tab ID] [--urgency 0|1|2] [--socket NAME]
-       muis-notify --agent-session ID [--tab ID]
+       muis-notify --agent-session ID [--agent-session-dir DIR] [--tab ID]
 
 Sends a desktop notification to a running muis window, or reports the
-agent session id for a tab (so it can resume that exact session).
-Defaults for --socket and --tab come from the MUIS_SOCKET and MUIS_TAB_ID
-environment variables, which muis sets inside its terminals.";
+agent session id for a tab (so it can resume that exact session). Pass
+--agent-session-dir so muis can reject an id that leaked in from another
+project. Defaults for --socket and --tab come from the MUIS_SOCKET and
+MUIS_TAB_ID environment variables, which muis sets inside its terminals.";
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Cli {
@@ -31,6 +32,7 @@ struct Cli {
     urgency: Option<u8>,
     socket: Option<String>,
     agent_session: Option<String>,
+    agent_session_dir: Option<String>,
 }
 
 fn parse_args(args: impl Iterator<Item = String>) -> Result<Cli, String> {
@@ -44,6 +46,7 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Cli, String> {
             "--tab" => cli.tab_id = Some(value()?),
             "--socket" => cli.socket = Some(value()?),
             "--agent-session" => cli.agent_session = Some(value()?),
+            "--agent-session-dir" => cli.agent_session_dir = Some(value()?),
             "--urgency" => {
                 let urgency: u8 = value()?
                     .parse()
@@ -103,6 +106,7 @@ pub fn run_with(args: impl IntoIterator<Item = String>) -> i32 {
         tab_id: cli.tab_id.or_else(|| std::env::var("MUIS_TAB_ID").ok()),
         urgency: cli.urgency,
         agent_session: cli.agent_session,
+        agent_session_dir: cli.agent_session_dir,
     };
 
     match notify::send(&socket, &req) {
@@ -137,6 +141,7 @@ mod tests {
                 urgency: Some(2),
                 socket: Some("s".into()),
                 agent_session: None,
+                agent_session_dir: None,
             }
         );
     }
@@ -146,6 +151,15 @@ mod tests {
         let cli = parse_args(args(&["--agent-session", "ses_1"])).unwrap();
         assert_eq!(cli.agent_session.as_deref(), Some("ses_1"));
         assert_eq!(cli.body, None);
+    }
+
+    #[test]
+    fn parses_agent_session_dir() {
+        let cli =
+            parse_args(args(&["--agent-session", "ses_1", "--agent-session-dir", "/p/a"]))
+                .unwrap();
+        assert_eq!(cli.agent_session.as_deref(), Some("ses_1"));
+        assert_eq!(cli.agent_session_dir.as_deref(), Some("/p/a"));
     }
 
     #[test]
