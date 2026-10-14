@@ -182,15 +182,20 @@ const agentLaunched = new Set<string>();
 const restoredTabs = new Set<string>();
 
 /**
- * opencode's session list, fetched once per launch. Used only when a
- * restored tab has no validated session id; cached so several restored
- * tabs share one call. Empty when opencode is absent or errors.
+ * opencode's session list for a tab's directory, fetched at most once per
+ * directory per launch (`opencode session list` is scoped to its working
+ * directory). Used only when a restored tab has no validated session id.
+ * Empty when opencode is absent or errors.
  */
-let opencodeSessionsCache: Promise<AgentSessionInfo[]> | null = null;
-function opencodeSessions(): Promise<AgentSessionInfo[]> {
+const opencodeSessionsCache = new Map<string, Promise<AgentSessionInfo[]>>();
+function opencodeSessions(cwd: string): Promise<AgentSessionInfo[]> {
   if (!IN_TAURI) return Promise.resolve([]);
-  opencodeSessionsCache ??= invoke<AgentSessionInfo[]>("opencode_sessions").catch(() => []);
-  return opencodeSessionsCache;
+  let pending = opencodeSessionsCache.get(cwd);
+  if (!pending) {
+    pending = invoke<AgentSessionInfo[]>("opencode_sessions", { cwd }).catch(() => []);
+    opencodeSessionsCache.set(cwd, pending);
+  }
+  return pending;
 }
 
 /** Probe PATH for the configured agent; hide the AI option when absent. */
@@ -1345,7 +1350,7 @@ function ensureView(sessionId: string, tab: Tab): TabView {
           // not, and neither does one whose stored id already checks out.
           const needsLookup =
             restored && !(tab.agentSession && dirsCompatible(tab.agentSessionDir, tab.cwd));
-          const sessions = needsLookup ? await opencodeSessions() : [];
+          const sessions = needsLookup ? await opencodeSessions(tab.cwd) : [];
           if (agentLaunched.has(tab.id)) return;
           const command = restoreCommand(tab, {
             restored,

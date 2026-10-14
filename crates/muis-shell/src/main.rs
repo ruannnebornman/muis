@@ -466,29 +466,33 @@ fn parse_agent_sessions(json: &str) -> Result<Vec<AgentSession>, String> {
         .collect())
 }
 
-/// List opencode sessions so a restored tab whose stored session id is
-/// missing or foreign can still find the right session by title/directory.
-/// Bounded by a timeout, so a stuck opencode can never freeze the window.
-/// Empty when opencode is missing or errors.
+/// List opencode sessions for one tab's directory. `opencode session list`
+/// is scoped to the project of its working directory, so the command must
+/// run from the tab's cwd to see that project's sessions. Bounded by a
+/// timeout, so a stuck opencode can never freeze the window. Empty when
+/// opencode is missing or errors.
 #[tauri::command]
-async fn opencode_sessions() -> Vec<AgentSession> {
-    tauri::async_runtime::spawn_blocking(list_opencode_sessions)
+async fn opencode_sessions(cwd: String) -> Vec<AgentSession> {
+    tauri::async_runtime::spawn_blocking(move || list_opencode_sessions(&cwd))
         .await
         .unwrap_or_default()
 }
 
-fn list_opencode_sessions() -> Vec<AgentSession> {
+fn list_opencode_sessions(cwd: &str) -> Vec<AgentSession> {
     use std::io::Read;
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
 
-    let mut child = match Command::new("opencode")
-        .args(["session", "list", "--format", "json", "--max-count", "200"])
+    let mut cmd = Command::new("opencode");
+    cmd.args(["session", "list", "--format", "json", "--max-count", "200"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-    {
+        .stderr(Stdio::null());
+    let dir = cwd.trim();
+    if !dir.is_empty() && Path::new(dir).is_dir() {
+        cmd.current_dir(dir);
+    }
+    let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(_) => return Vec::new(),
     };
