@@ -6,7 +6,7 @@
 //! muis shell: the native window around the xterm.js frontend.
 //!
 //! The shell owns no terminal state. It spawns one `muis-worker` process
-//! per session (see docs/architecture-rust-xterm.md) and renders
+//! per session (see docs/archive/architecture-rust-xterm.md) and renders
 //! src-ui. A worker crash therefore takes down one session, never the
 //! window or the other sessions.
 
@@ -524,7 +524,7 @@ fn worker_stop(pool: tauri::State<WorkerPool>, session_id: String) {
 /// only; XWayland never hits it). Fall back to shared-memory compositing
 /// unless the user already chose. Invisible for a terminal, and the window
 /// actually opens. Returns true when this call set the variable.
-/// See docs/architecture-rust-xterm.md §8.
+/// See docs/archive/architecture-rust-xterm.md §8.
 fn ensure_dmabuf_disabled() -> bool {
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
