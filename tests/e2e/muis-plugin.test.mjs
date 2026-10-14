@@ -48,7 +48,7 @@ test("session.idle toast names the project and the work", async () => {
   await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_abc" } } });
   const joined = calls.join("\n");
   assert.match(joined, /--title muis/);
-  assert.match(joined, /--body Fix the clock/);
+  assert.match(joined, /--body Fix the clock has finished/);
   assert.doesNotMatch(joined, /turn finished/);
 });
 
@@ -58,5 +58,6 @@ test("session.idle without known info still avoids the placeholder", async () =>
   await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_unknown" } } });
   const joined = calls.join("\n");
   assert.match(joined, /--title opencode/);
+  assert.match(joined, /--body opencode has finished/);
   assert.doesNotMatch(joined, /turn finished/);
 });
