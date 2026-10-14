@@ -296,8 +296,13 @@ fn test_mode() -> bool {
 /// Notification socket this shell serves and injects into every pty. Test
 /// mode uses a distinct socket so it never collides with a running muis (and
 /// its terminals' `muis-notify` reaches the test window, not the real one).
+/// `MUIS_SOCKET_NAME` overrides the base name (the live smoke test sets it so
+/// it does not fight a real muis for the per-user socket).
 pub(crate) fn notify_socket_name() -> String {
-    let base = muis_core::notify::socket_name();
+    let base = std::env::var("MUIS_SOCKET_NAME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(muis_core::notify::socket_name);
     if test_mode() {
         format!("{base}-testmode")
     } else {
