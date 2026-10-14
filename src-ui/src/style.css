@@ -258,7 +258,10 @@ body{
 .session-box{width:min(460px,92vw)}
 .dir-pick{display:flex; gap:6px; align-items:center; flex:1; min-width:0}
 .dir-pick input{width:auto; flex:1; min-width:0}
+.dir-pick .btn{padding:4px 12px; line-height:1.3}
 .quick-picks{display:flex; flex-wrap:wrap; gap:6px; padding:2px 0 4px}
+.quick-label{font-size:10.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); margin-right:2px; align-self:center}
+.session-subs{border-top:1px solid rgba(255,255,255,.07); margin-top:2px; padding-top:9px; align-items:center}
 .quick-pick{background:#3a4045; border:1px solid var(--border); color:var(--fg); border-radius:999px; font:inherit; font-size:11.5px; padding:3px 10px; cursor:pointer}
 .quick-pick:hover{background:#434c53; border-color:var(--accent); color:var(--accent)}
 .session-error{color:var(--red); font-size:11.5px; padding:2px 0 4px}
