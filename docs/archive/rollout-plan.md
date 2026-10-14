@@ -51,7 +51,7 @@ This document is the plan; the status above tracks what has landed.
 - **No admin on Windows.** Everything is per-user; state lives in
   `%APPDATA%\muis`.
 - **Veldmuis Linux is Arch, not AppImage.** Veldmuis itself ships native
-  pacman packages (`docs/architecture-rust-xterm.md:67,74`). The AppImage is a
+  pacman packages (`docs/archive/architecture-rust-xterm.md:67,74`). The AppImage is a
   convenience download for Linux users who are not on Veldmuis.
 - **AppImage must bundle `muis-worker` next to `muis`.** Tauri's sidecar
   (`bundle.externalBin`) names the file with the target triple; the AppDir must
