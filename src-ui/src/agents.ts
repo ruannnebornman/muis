@@ -14,6 +14,29 @@ const AGENT_RESUME: Record<string, string> = {
 /** Prefixes that wrap the real program without changing what runs. */
 const WRAPPERS = new Set(["sudo", "command", "exec", "env", "nice", "time", "doas"]);
 
+/** Agent binaries muis looks for on PATH, in display order. */
+export const AGENT_CANDIDATES: readonly string[] = ["opencode", "claude", "codex", "ollama"];
+
+/**
+ * Candidates that resolve to an executable, per an injected probe (so this
+ * stays testable without Tauri). Probes run in parallel; a probe that throws
+ * counts as absent.
+ */
+export async function availableAgents(
+  probe: (command: string) => Promise<boolean>,
+): Promise<string[]> {
+  const results = await Promise.all(
+    AGENT_CANDIDATES.map(async (command) => {
+      try {
+        return (await probe(command)) ? command : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return results.filter((c): c is string => c !== null);
+}
+
 /**
  * If `cmd` launches a known TUI coding agent, return the resume command
  * to use when reopening that tab; otherwise null. Only the program

@@ -27,7 +27,7 @@ import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
 import { shouldFocusTerminal } from "./focus";
 import { AcpConnection, AcpClient, type PermissionRequest } from "./acp";
-import { agentResumeForCommand } from "./agents";
+import { AGENT_CANDIDATES, agentResumeForCommand, availableAgents } from "./agents";
 import {
   dirsCompatible,
   latchPatch,
@@ -208,6 +208,12 @@ async function refreshAgentReady(): Promise<void> {
   } catch {
     agentReady = false;
   }
+}
+
+/** Probe PATH for the known agent binaries that back the settings choices. */
+async function scanAgents(): Promise<string[]> {
+  if (!IN_TAURI) return [...AGENT_CANDIDATES];
+  return availableAgents((command) => invoke<boolean>("command_available", { command }));
 }
 
 /** Pty liveness for dirty-tab / quit confirmations. */
@@ -2020,8 +2026,9 @@ function renderTabs(): void {
   // The AI tab is only offered when the configured agent is on PATH.
   if (agentReady) {
     const ai = el("button", "newtab ai", "AI");
-    ai.title = `New ${cfg.agentCommand.trim()} tab`;
-    ai.addEventListener("click", () => addAgentTab(ws));
+    const mode = cfg.agentLaunchMode === "tui" ? "TUI" : "ACP";
+    ai.title = `New ${cfg.agentCommand.trim()} ${mode} tab`;
+    ai.addEventListener("click", () => launchAgentTab(ws));
     tabbar.append(ai);
   }
   const gear = el("button", "newtab settings", "⚙");
@@ -2040,6 +2047,21 @@ function addAgentTab(ws: Workspace): void {
   // AI button opens an ACP pane, not a shell running the agent.
   const label = cfg.agentCommand.trim() || "AI";
   store.newTab(label, newTabCwd(ws), "agent");
+  renderAll();
+}
+
+/** Launch the AI action in the configured mode. */
+function launchAgentTab(ws: Workspace): void {
+  if (cfg.agentLaunchMode === "tui") addAgentTuiTab(ws);
+  else addAgentTab(ws);
+}
+
+/** Open a shell tab that runs the configured agent's TUI (not the ACP pane). */
+function addAgentTuiTab(ws: Workspace): void {
+  const label = cfg.agentCommand.trim() || "AI";
+  const id = store.newTab(label, newTabCwd(ws));
+  const tab = id ? findTab(id) : undefined;
+  if (tab) tab.agent = true;
   renderAll();
 }
 
@@ -2373,7 +2395,7 @@ const onShortcut = (e: KeyboardEvent): void => {
       break;
     case "new-agent-tab":
       e.preventDefault();
-      if (agentReady) addAgentTab(ws);
+      if (agentReady) launchAgentTab(ws);
       break;
     case "close-tab": {
       e.preventDefault();
@@ -2499,10 +2521,26 @@ for (const name of themeNames()) {
   o.textContent = name;
   optTheme.append(o);
 }
-const optAgent = document.createElement("input");
-optAgent.type = "text";
-optAgent.placeholder = "opencode";
-optAgent.title = "Command for the New AI tab; empty disables it";
+const optAgentMode = document.createElement("select");
+for (const [value, label] of [
+  ["acp", "ACP pane"],
+  ["tui", "TUI tab"],
+] as const) {
+  const o = document.createElement("option");
+  o.value = value;
+  o.textContent = label;
+  optAgentMode.append(o);
+}
+optAgentMode.title = "What the AI button opens";
+const optAgent = document.createElement("select");
+optAgent.title = "Detected AI agent; choose Custom for any command";
+const optAgentCustom = document.createElement("input");
+optAgentCustom.type = "text";
+optAgentCustom.placeholder = "opencode";
+optAgentCustom.title = "Custom AI command; empty disables the AI option";
+const agentPick = document.createElement("span");
+agentPick.className = "agent-pick";
+agentPick.append(optAgent, optAgentCustom);
 const optAgentResume = document.createElement("input");
 optAgentResume.type = "text";
 optAgentResume.placeholder = "opencode --continue";
@@ -2596,7 +2634,8 @@ settingsBody.append(
     settingsRow("Bell", optBell),
   ]),
   settingsSection("AI", [
-    settingsRow("AI tab command", optAgent),
+    settingsRow("AI launch mode", optAgentMode),
+    settingsRow("AI agent", agentPick),
     settingsRow("AI resume command", optAgentResume),
     settingsRow("Run ACP agent pure (no plugins)", optAgentPure),
   ]),
@@ -2613,11 +2652,46 @@ settingsBody.append(
 settingsOverlay.append(settingsBox);
 document.body.append(settingsOverlay);
 
+/** Sentinel option value for a manually-typed agent command. */
+const CUSTOM_AGENT = "__custom__";
+
+/** Fill the agent select with the binaries found on PATH (plus Custom…). */
+async function populateAgentChoices(): Promise<void> {
+  const detected = await scanAgents();
+  const current = cfg.agentCommand.trim();
+  optAgent.innerHTML = "";
+  for (const name of detected) {
+    const o = document.createElement("option");
+    o.value = name;
+    o.textContent = name;
+    optAgent.append(o);
+  }
+  const custom = document.createElement("option");
+  custom.value = CUSTOM_AGENT;
+  custom.textContent = "Custom…";
+  optAgent.append(custom);
+  const known = detected.includes(current);
+  optAgent.value = known ? current : CUSTOM_AGENT;
+  optAgentCustom.value = known ? "" : current;
+  optAgentCustom.style.display = known ? "none" : "";
+}
+
+optAgent.addEventListener("change", () => {
+  const custom = optAgent.value === CUSTOM_AGENT;
+  optAgentCustom.style.display = custom ? "" : "none";
+  if (custom) {
+    optAgentCustom.focus();
+  } else {
+    optAgentCustom.value = "";
+  }
+});
+
 function openSettings(): void {
   optSessions.checked = cfg.showSessions;
   optFontSize.value = cfg.fontSize?.toString() ?? "";
   optTheme.value = cfg.theme ?? "default";
-  optAgent.value = cfg.agentCommand;
+  optAgentMode.value = cfg.agentLaunchMode;
+  void populateAgentChoices();
   optAgentResume.value = cfg.agentResumeCommand;
   optAgentPure.checked = cfg.agentPure;
   optScrollback.value = cfg.scrollback.toString();
@@ -2641,7 +2715,11 @@ async function applySettings(): Promise<void> {
     showSessions: optSessions.checked,
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
-    agentCommand: optAgent.value.trim(),
+    agentCommand:
+      optAgent.value === CUSTOM_AGENT
+        ? optAgentCustom.value.trim()
+        : optAgent.value.trim() || cfg.agentCommand,
+    agentLaunchMode: optAgentMode.value as AppConfig["agentLaunchMode"],
     agentResumeCommand: optAgentResume.value.trim(),
     agentPure: optAgentPure.checked,
     scrollback: clampScrollback(Number(optScrollback.value)),
@@ -2743,7 +2821,7 @@ function openPalette(): void {
   };
   if (ws) {
     add("new-tab", "New terminal tab", () => addShellTab(ws));
-    if (agentReady) add("new-agent", "New AI tab", () => addAgentTab(ws));
+    if (agentReady) add("new-agent", "New AI tab", () => launchAgentTab(ws));
     if (active) add("close-tab", "Close tab", () => closeTab(ws.id, active.id));
     if (ws.tabs.length > 1) {
       add("next-tab", "Next tab", () => {

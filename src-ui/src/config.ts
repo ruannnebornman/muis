@@ -7,6 +7,8 @@ export interface AppConfig {
   theme: string | null;
   /** Command the "new AI tab" action runs. Empty disables the AI option. */
   agentCommand: string;
+  /** What the AI action launches: the ACP pane or the agent's TUI in a shell. */
+  agentLaunchMode: "acp" | "tui";
   /** Command an AI tab runs when restored, so it resumes its last session. */
   agentResumeCommand: string;
   /** Launch the ACP agent with --pure (no external plugins; default off). */
@@ -57,6 +59,7 @@ export function defaultConfig(): AppConfig {
     fontSize: null,
     theme: null,
     agentCommand: "opencode",
+    agentLaunchMode: "acp",
     agentResumeCommand: "opencode --continue",
     agentPure: false,
     scrollback: 50000,
@@ -128,6 +131,7 @@ export function configFromJSON(json: string): AppConfig {
     theme: typeof r.theme === "string" ? r.theme : base.theme,
     agentCommand:
       typeof r.agentCommand === "string" ? r.agentCommand : base.agentCommand,
+    agentLaunchMode: r.agentLaunchMode === "tui" ? "tui" : "acp",
     agentResumeCommand:
       typeof r.agentResumeCommand === "string"
         ? r.agentResumeCommand
