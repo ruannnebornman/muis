@@ -16,6 +16,8 @@ export interface Tab {
   agentResume?: string;
   /** Exact agent session id reported by a hook/plugin (opencode). */
   agentSession?: string;
+  /** Directory that session belongs to, to reject cross-project ids. */
+  agentSessionDir?: string;
   /** "terminal" (pty, default) or "agent" (ACP pane). */
   kind?: "terminal" | "agent";
   /** ACP session id, persisted so an agent tab resumes its session. */

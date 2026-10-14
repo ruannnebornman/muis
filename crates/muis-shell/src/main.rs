@@ -436,6 +436,97 @@ fn command_available(command: String) -> bool {
     false
 }
 
+/// One agent session from `opencode session list --format json`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AgentSession {
+    pub id: String,
+    pub title: String,
+    pub directory: String,
+}
+
+/// Parse the JSON emitted by `opencode session list --format json`. Unknown
+/// fields are ignored; a missing title/directory defaults to empty.
+fn parse_agent_sessions(json: &str) -> Result<Vec<AgentSession>, String> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        id: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        directory: String,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    Ok(raw
+        .into_iter()
+        .map(|r| AgentSession {
+            id: r.id,
+            title: r.title,
+            directory: r.directory,
+        })
+        .collect())
+}
+
+/// List opencode sessions so a restored tab whose stored session id is
+/// missing or foreign can still find the right session by title/directory.
+/// Bounded by a timeout, so a stuck opencode can never freeze the window.
+/// Empty when opencode is missing or errors.
+#[tauri::command]
+async fn opencode_sessions() -> Vec<AgentSession> {
+    tauri::async_runtime::spawn_blocking(list_opencode_sessions)
+        .await
+        .unwrap_or_default()
+}
+
+fn list_opencode_sessions() -> Vec<AgentSession> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let mut child = match Command::new("opencode")
+        .args(["session", "list", "--format", "json", "--max-count", "200"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        return Vec::new();
+    };
+    let reader = std::thread::spawn(move || {
+        let mut buf = String::new();
+        let mut stdout = stdout;
+        let _ = stdout.read_to_string(&mut buf);
+        buf
+    });
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return Vec::new();
+                }
+                break;
+            }
+            Ok(None) => {}
+            Err(_) => {
+                let _ = child.kill();
+                return Vec::new();
+            }
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Vec::new();
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    parse_agent_sessions(&reader.join().unwrap_or_default()).unwrap_or_default()
+}
+
 /// Directory opencode loads global plugins from.
 fn opencode_plugins_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -648,6 +739,7 @@ fn main() {
             sys_info,
             system_stats_active,
             command_available,
+            opencode_sessions,
             install_opencode_plugin,
             read_text_file,
             list_subdirs,
@@ -748,6 +840,26 @@ mod tests {
         assert!(OPENCODE_PLUGIN_FILE.ends_with(".js") || OPENCODE_PLUGIN_FILE.ends_with(".ts"));
         assert_ne!(OPENCODE_PLUGIN_FILE, OPENCODE_PLUGIN_LEGACY);
         assert!(OPENCODE_PLUGIN_SRC.contains(OPENCODE_PLUGIN_MARKER));
+    }
+
+    #[test]
+    fn parses_opencode_sessions_json() {
+        let json = r#"[
+            {"id":"ses_1","title":"A","updated":1,"directory":"/p/a"},
+            {"id":"ses_2","title":"B","directory":"/p/b"}
+        ]"#;
+        let sessions = parse_agent_sessions(json).unwrap();
+        assert_eq!(sessions.len(), 2);
+        assert_eq!(
+            sessions[0],
+            AgentSession {
+                id: "ses_1".into(),
+                title: "A".into(),
+                directory: "/p/a".into(),
+            }
+        );
+        assert!(parse_agent_sessions("[]").unwrap().is_empty());
+        assert!(parse_agent_sessions("not json").is_err());
     }
 
     #[test]

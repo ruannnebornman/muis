@@ -136,19 +136,30 @@ aarch64, website, auto-update, Snor engine.
 
 A terminal AI tab restores with this precedence:
 
-`opencode -s <id>` (exact captured id) → `opencode --continue`
+`opencode -s <id>` (exact captured id, validated) → `opencode -s <id>`
+found by tab title + directory lookup → `opencode --continue`
 (`agentResume`) → configured `agentCommand`.
 
 The exact id comes from the auto-installed opencode plugin
 (`~/.config/opencode/plugins/muis.js`, marker-guarded; delete it to opt
-out) reporting via `muis-notify --agent-session`, routed by `MUIS_TAB_ID`.
-The plugin must stay a `.js`/`.ts` file: opencode only auto-loads those
-extensions, so the earlier `muis.mjs` name was silently ignored. So opening
-a **new** tab and running `opencode` (or `opencode --continue`) captures
-that tab's session id and it restores exactly next launch; `--continue` is
-only the fallback when no id was captured (e.g. the plugin was not loaded
-because opencode had not been restarted). The plugin also fires the
-completion notification on `session.idle`.
+out) reporting via `muis-notify --agent-session` (plus
+`--agent-session-dir`), routed by `MUIS_TAB_ID`. The plugin must stay a
+`.js`/`.ts` file: opencode only auto-loads those extensions, so the earlier
+`muis.mjs` name was silently ignored. So opening a **new** tab and running
+`opencode` (or `opencode --continue`) captures that tab's session id and it
+restores exactly next launch; `--continue` is only the fallback when no id
+was captured (e.g. the plugin was not loaded because opencode had not been
+restarted). The plugin also fires the completion notification on
+`session.idle`.
+
+A reported id is latched only when its directory matches the tab's cwd
+(`src-ui/src/agentSessions.ts`), so a session that leaked in from a shared
+agent process in another project cannot overwrite a tab's real session. On
+restore the stored id is validated against `opencode session list --format
+json`; when it is missing or foreign, the tab is matched by its label
+(`OC | <title>`, prefix-tolerant of truncation) within its directory before
+falling back to `--continue`. The list is fetched once per launch, only
+when a restored tab needs it.
 
 ACP (AI) panes are separate: a new AI tab starts a fresh session
 (`session/new`); restore resumes via the stored `acpSessionId`

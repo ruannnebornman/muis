@@ -28,6 +28,12 @@ import { clockText } from "./clock";
 import { shouldFocusTerminal } from "./focus";
 import { AcpConnection, AcpClient, type PermissionRequest } from "./acp";
 import { agentResumeForCommand } from "./agents";
+import {
+  dirsCompatible,
+  latchPatch,
+  restoreCommand,
+  type AgentSessionInfo,
+} from "./agentSessions";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
@@ -174,6 +180,18 @@ const agentLaunched = new Set<string>();
 
 /** Tab ids that came back from a saved session (restored on this launch). */
 const restoredTabs = new Set<string>();
+
+/**
+ * opencode's session list, fetched once per launch. Used only when a
+ * restored tab has no validated session id; cached so several restored
+ * tabs share one call. Empty when opencode is absent or errors.
+ */
+let opencodeSessionsCache: Promise<AgentSessionInfo[]> | null = null;
+function opencodeSessions(): Promise<AgentSessionInfo[]> {
+  if (!IN_TAURI) return Promise.resolve([]);
+  opencodeSessionsCache ??= invoke<AgentSessionInfo[]>("opencode_sessions").catch(() => []);
+  return opencodeSessionsCache;
+}
 
 /** Probe PATH for the configured agent; hide the AI option when absent. */
 async function refreshAgentReady(): Promise<void> {
@@ -1319,17 +1337,23 @@ function ensureView(sessionId: string, tab: Tab): TabView {
         );
         // AI tab: after the shell (and any restored scrollback) is up,
         // launch the configured agent once per launch.
-        const launchAgent = (): void => {
-          // Exact session id (reported by a plugin) beats an inferred
-          // resume command, which beats the configured default; a
-          // restored tab resumes its last session, a new tab starts fresh.
-          const command = (
-            tab.agentSession
-              ? `opencode -s ${tab.agentSession}`
-              : tab.agentResume ??
-                (restoredTabs.has(tab.id) ? cfg.agentResumeCommand : cfg.agentCommand)
-          ).trim();
-          if (!tab.agent || !command || agentLaunched.has(tab.id)) return;
+        const launchAgent = async (): Promise<void> => {
+          if (!tab.agent || agentLaunched.has(tab.id)) return;
+          const restored = restoredTabs.has(tab.id);
+          // A restored tab may need opencode's session list to validate its
+          // stored id or find the right session by title; a new tab does
+          // not, and neither does one whose stored id already checks out.
+          const needsLookup =
+            restored && !(tab.agentSession && dirsCompatible(tab.agentSessionDir, tab.cwd));
+          const sessions = needsLookup ? await opencodeSessions() : [];
+          if (agentLaunched.has(tab.id)) return;
+          const command = restoreCommand(tab, {
+            restored,
+            sessions,
+            agentCommand: cfg.agentCommand,
+            agentResumeCommand: cfg.agentResumeCommand,
+          });
+          if (!command) return;
           agentLaunched.add(tab.id);
           window.setTimeout(() => {
             trackInput(tab.id, `${command}\n`);
@@ -1340,10 +1364,10 @@ function ensureView(sessionId: string, tab: Tab): TabView {
           replaying = true;
           term.write(b64decode(replay), () => {
             replaying = false;
-            launchAgent();
+            void launchAgent();
           });
         } else {
-          launchAgent();
+          void launchAgent();
         }
         // The pty exists now. The fit that ran when the tab was created may
         // have raced the spawn and been dropped by the worker, leaving the
@@ -3007,10 +3031,14 @@ function handleNotifyRequest(req: CliNotify): void {
   const tab = ws?.tabs.find((t) => t.id === req.tab_id);
   if (!tab) return;
   // An agent hook/plugin reported its session id: remember it so the tab
-  // resumes that exact session instead of "last in this folder".
+  // resumes that exact session instead of "last in this folder". Reject an
+  // id whose directory does not match the tab, so a session that leaked in
+  // from another project (e.g. a shared agent process) never latches.
   if (req.agent_session) {
-    if (tab.agentSession !== req.agent_session) {
-      tab.agentSession = req.agent_session;
+    const patch = latchPatch(tab, req.agent_session, req.agent_session_dir);
+    if (patch) {
+      tab.agentSession = patch.agentSession;
+      if (patch.agentSessionDir) tab.agentSessionDir = patch.agentSessionDir;
       tab.agent = true;
       scheduleSave();
     }
