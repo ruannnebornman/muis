@@ -293,6 +293,18 @@ fn test_mode() -> bool {
     TEST_MODE.load(Ordering::Relaxed)
 }
 
+/// Notification socket this shell serves and injects into every pty. Test
+/// mode uses a distinct socket so it never collides with a running muis (and
+/// its terminals' `muis-notify` reaches the test window, not the real one).
+pub(crate) fn notify_socket_name() -> String {
+    let base = muis_core::notify::socket_name();
+    if test_mode() {
+        format!("{base}-testmode")
+    } else {
+        base
+    }
+}
+
 /// True when `flag` appears verbatim in the process arguments.
 fn arg_present(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
@@ -630,12 +642,7 @@ fn main() {
             // it to the originating tab. Best-effort: a failure here only
             // disables the CLI path, not the window. Test mode uses its own
             // socket so it never steals notifications from a running muis.
-            let base_socket = muis_core::notify::socket_name();
-            let socket = if test_mode() {
-                format!("{base_socket}-testmode")
-            } else {
-                base_socket
-            };
+            let socket = notify_socket_name();
             let handle = app.handle().clone();
             if let Err(e) = muis_core::notify::serve(&socket, move |req| {
                 let _ = handle.emit("muis-notify", &req);
@@ -804,5 +811,11 @@ mod tests {
         // Exact match only: an unrelated flag or a value is not test mode.
         assert!(!arg_present(&args(&["--test-mode"]), "--testmode"));
         assert!(!arg_present(&args(&["--testmode=1"]), "--testmode"));
+    }
+
+    #[test]
+    fn notify_socket_is_base_without_test_mode() {
+        assert!(!test_mode());
+        assert_eq!(notify_socket_name(), muis_core::notify::socket_name());
     }
 }
