@@ -1640,11 +1640,13 @@ if (!IN_TAURI) sessionBrowse.style.display = "none";
 const dirWrap = el("span", "dir-pick");
 dirWrap.append(sessionDir, sessionBrowse);
 const sessionQuick = el("div", "quick-picks");
+const sessionSubs = el("div", "quick-picks session-subs");
+sessionSubs.style.display = "none";
 const sessionNameRow = settingsRow("Name", sessionName);
 const sessionDirRow = settingsRow("Directory", dirWrap);
 const sessionError = el("div", "session-error");
 sessionError.style.display = "none";
-sessionBody.append(sessionNameRow, sessionDirRow, sessionQuick, sessionError);
+sessionBody.append(sessionNameRow, sessionDirRow, sessionQuick, sessionSubs, sessionError);
 
 const sessionButtons = el("div", "settings-buttons");
 const sessionCancel = el("button", "", "Cancel");
@@ -1673,6 +1675,42 @@ function applyPickedDir(dir: string): void {
     const name = sessionDirName(dir);
     if (name) sessionName.value = name;
   }
+  void renderSessionSubdirs(dir);
+}
+
+let sessionSubsToken = 0;
+
+/** List up to ten subfolders of `dir` as one-click pills (Tauri only). */
+async function renderSessionSubdirs(dir: string): Promise<void> {
+  const token = ++sessionSubsToken;
+  const clear = (): void => {
+    sessionSubs.replaceChildren();
+    sessionSubs.style.display = "none";
+  };
+  if (!IN_TAURI || !dir) {
+    clear();
+    return;
+  }
+  let names: string[] = [];
+  try {
+    names = await invoke<string[]>("list_subdirs", { path: dir, limit: 10 });
+  } catch {
+    names = [];
+  }
+  if (token !== sessionSubsToken) return; // a newer pick superseded this one
+  if (names.length === 0) {
+    clear();
+    return;
+  }
+  const parent = dir.replace(/\/+$/, "");
+  sessionSubs.replaceChildren(el("span", "quick-label", "Subfolders"));
+  for (const name of names) {
+    const b = el("button", "quick-pick", name) as HTMLButtonElement;
+    b.type = "button";
+    b.addEventListener("click", () => applyPickedDir(`${parent}/${name}`));
+    sessionSubs.append(b);
+  }
+  sessionSubs.style.display = "";
 }
 
 function renderSessionQuickPicks(): void {
@@ -1680,13 +1718,11 @@ function renderSessionQuickPicks(): void {
   const choices: [string, string][] = [];
   if (homeDir) {
     choices.push(["Home", homeDir]);
-    for (const sub of ["Desktop", "Documents", "Downloads", "Projects"]) {
-      choices.push([sub, `${homeDir}/${sub}`]);
-    }
+    choices.push(["Downloads", `${homeDir}/Downloads`]);
+    choices.push(["Projects", `${homeDir}/Projects`]);
   } else {
     choices.push(["Home", "~"]);
   }
-  choices.push(["/tmp", "/tmp"]);
   const cur = store.currentWorkspace();
   if (cur && cur.dir && !choices.some(([, v]) => v === cur.dir)) {
     choices.push(["Current session", cur.dir]);
