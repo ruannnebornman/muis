@@ -203,7 +203,7 @@ The per-tool ACP diff stays as-is.
 **Intent.** Define a task with dependencies (A designs, B implements, C
 tests, D reviews) and let muis coordinate.
 
-**Current state.** Absent (only the staggered-restore `loadQueue`).
+**Current state.** Absent.
 
 **Plan (if pursued).** A task-queue/dependency model over agent
 sessions, driven by capability events (completion, needs-input).
@@ -276,13 +276,12 @@ with no session or scrollback restore.
 
 1. Wire dead-session detection into the UI (shared with F1).
 2. "Reopen closed tab" stack (bounded) in `SessionStore`.
-3. Named workspace snapshots (copy of the session JSON + run metadata).
+3. Named workspace snapshots (workspace/tab metadata + run metadata).
 4. Scroll-position restore: xterm has `SerializeAddon`; capture cursor
-   line in the snapshot. Verify it composes with the 30 s loop.
+   line in the snapshot.
 5. Explicitly distinguish **UI restore** from **live process restore**.
 
-**Risks / concerns.** Keep the existing "one frame per snapshot" contract
-and the existing tests green.
+**Risks / concerns.** Keep the existing tests green.
 
 ---
 
@@ -322,7 +321,7 @@ global agent command. No env/startup/layout/secret handling.
 
 **Plan.** Extend the workspace record with a `profile` (env map, agent
 override, startup command, layout ref). Secrets go to the OS keyring
-(existing keyring integration), never the session JSON.
+(existing keyring integration), never the workspace metadata.
 
 **Risks / concerns.** Env injection must go through the worker spawn path
 (`muis-worker`), not the UI.
