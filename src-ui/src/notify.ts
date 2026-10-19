@@ -1,12 +1,15 @@
 /**
- * Policy for terminal notifications (OSC 9 / 777 / 99). Turns a raw
- * notification from a pty into chrome + OS actions: a tab the user is not
- * looking at is badged as done (same as a finished command), and a desktop
- * toast fires only while the muis window is unfocused. Identical
- * notifications from one tab inside a short window are dropped so a chatty
- * agent cannot re-badge the same completion repeatedly.
+ * Notification anti-corruption layer. Every source — terminal OSC 9/777/99,
+ * the `muis-notify` CLI, and muis's own command-finished event — is
+ * normalized here into one `NotifyEvent`, then routed through one policy:
+ * a tab the user is not looking at is badged as done, and a desktop toast
+ * fires only while the muis window is unfocused. Identical notifications
+ * from one tab inside a short window are dropped so a chatty agent cannot
+ * re-badge the same completion repeatedly.
  */
 import type { NotifyEvent } from "./osc";
+
+export type { NotifyEvent } from "./osc";
 
 /** Payload of a `muis-notify` request forwarded by the shell. */
 export interface CliNotify {
@@ -14,10 +17,6 @@ export interface CliNotify {
   body: string;
   tab_id?: string | null;
   urgency?: number;
-  /** Agent session id reported by an agent hook/plugin (opencode). */
-  agent_session?: string | null;
-  /** Directory that session belongs to (reject cross-project ids). */
-  agent_session_dir?: string | null;
 }
 
 /** Turn a `muis-notify` request into a notification event. */
@@ -25,6 +24,11 @@ export function notifyEventFromCli(req: CliNotify): NotifyEvent {
   const ev: NotifyEvent = { type: "notify", title: req.title ?? null, body: req.body, source: "cli" };
   if (req.urgency !== undefined) ev.urgency = req.urgency;
   return ev;
+}
+
+/** Turn a locally detected event (e.g. a long command ended) into one. */
+export function notifyEventFromCommand(title: string | null, body: string): NotifyEvent {
+  return { type: "notify", title, body, source: "command" };
 }
 
 export interface NotifyContext {

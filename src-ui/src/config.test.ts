@@ -7,10 +7,6 @@ describe("AppConfig", () => {
       showSessions: true,
       fontSize: null,
       theme: null,
-      agentCommand: "opencode",
-      agentLaunchMode: "acp",
-      agentResumeCommand: "opencode --continue",
-      agentPure: false,
       scrollback: 50000,
       keybindings: {},
       copyOnSelect: false,
@@ -85,10 +81,6 @@ describe("AppConfig", () => {
       showSessions: false,
       fontSize: 13,
       theme: "nord",
-      agentCommand: "aider",
-      agentLaunchMode: "tui",
-      agentResumeCommand: "aider --resume",
-      agentPure: true,
       scrollback: 20000,
       keybindings: { "close-tab": "ctrl+q" },
       copyOnSelect: true,
@@ -101,24 +93,6 @@ describe("AppConfig", () => {
       workspaceThemes: { dev: "nord" },
     };
     expect(configFromJSON(JSON.stringify(cfg))).toEqual(cfg);
-  });
-
-  it("reads the AI tab commands and falls back on junk", () => {
-    expect(configFromJSON('{"agentCommand":"claude"}').agentCommand).toBe("claude");
-    expect(configFromJSON("").agentCommand).toBe("opencode");
-    expect(configFromJSON('{"agentResumeCommand":"claude -c"}').agentResumeCommand).toBe(
-      "claude -c",
-    );
-    expect(configFromJSON("").agentResumeCommand).toBe("opencode --continue");
-    expect(configFromJSON('{"agentPure":true}').agentPure).toBe(true);
-    expect(configFromJSON("").agentPure).toBe(false);
-  });
-
-  it("reads the AI launch mode and defaults to ACP", () => {
-    expect(configFromJSON('{"agentLaunchMode":"tui"}').agentLaunchMode).toBe("tui");
-    expect(configFromJSON('{"agentLaunchMode":"acp"}').agentLaunchMode).toBe("acp");
-    expect(configFromJSON("").agentLaunchMode).toBe("acp");
-    expect(configFromJSON('{"agentLaunchMode":"bogus"}').agentLaunchMode).toBe("acp");
   });
 
   it("ignores corrupt values field by field, never entirely", () => {

@@ -26,14 +26,6 @@ pub struct NotifyRequest {
     /// 0 low, 1 normal, 2 critical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub urgency: Option<u8>,
-    /// Agent session id reported by an agent hook/plugin (opencode, …),
-    /// so the tab can resume that exact session.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_session: Option<String>,
-    /// Directory the reported agent session belongs to. Lets muis reject a
-    /// session id that leaked in from another project before it latches it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_session_dir: Option<String>,
 }
 
 /// Per-user socket name. Abstract namespace on Linux, named pipe on Windows.
@@ -97,8 +89,6 @@ mod tests {
             body: "b".into(),
             tab_id: Some("t1".into()),
             urgency: Some(2),
-            agent_session: Some("ses_1".into()),
-            agent_session_dir: Some("/home/me/proj".into()),
         };
         let json = serde_json::to_string(&req).unwrap();
         assert_eq!(serde_json::from_str::<NotifyRequest>(&json).unwrap(), req);
@@ -111,8 +101,6 @@ mod tests {
                 body: "hi".into(),
                 tab_id: None,
                 urgency: None,
-                agent_session: None,
-                agent_session_dir: None,
             }
         );
     }
@@ -136,8 +124,6 @@ mod tests {
             body: "hello".into(),
             tab_id: Some("tab-1".into()),
             urgency: None,
-            agent_session: None,
-            agent_session_dir: None,
         };
         send(&socket, &req).unwrap();
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), req);

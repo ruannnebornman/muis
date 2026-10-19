@@ -24,18 +24,6 @@ function fakeShell() {
   return { calls, $ };
 }
 
-test("plugin reports the session id", async () => {
-  const { calls, $ } = fakeShell();
-  const hooks = await MuisPlugin({ $ });
-  await hooks.event({
-    event: {
-      type: "session.updated",
-      properties: { info: { id: "ses_abc", title: "Fix the clock", directory: "/home/x/Projects/muis" } },
-    },
-  });
-  assert.match(calls.join("\n"), /--agent-session ses_abc/);
-});
-
 test("session.idle toast names the project and the work", async () => {
   const { calls, $ } = fakeShell();
   const hooks = await MuisPlugin({ $ });

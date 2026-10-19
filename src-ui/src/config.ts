@@ -5,14 +5,6 @@ export interface AppConfig {
   fontSize: number | null;
   /** Accent theme name; null keeps the default look. */
   theme: string | null;
-  /** Command the "new AI tab" action runs. Empty disables the AI option. */
-  agentCommand: string;
-  /** What the AI action launches: the ACP pane or the agent's TUI in a shell. */
-  agentLaunchMode: "acp" | "tui";
-  /** Command an AI tab runs when restored, so it resumes its last session. */
-  agentResumeCommand: string;
-  /** Launch the ACP agent with --pure (no external plugins; default off). */
-  agentPure: boolean;
   /** Terminal scrollback buffer, in lines (clamped 1000..500000). */
   scrollback: number;
   /** Chord overrides per action, e.g. { "close-tab": "ctrl+q" }. */
@@ -58,10 +50,6 @@ export function defaultConfig(): AppConfig {
     showSessions: true,
     fontSize: null,
     theme: null,
-    agentCommand: "opencode",
-    agentLaunchMode: "acp",
-    agentResumeCommand: "opencode --continue",
-    agentPure: false,
     scrollback: 50000,
     keybindings: {},
     copyOnSelect: false,
@@ -129,14 +117,6 @@ export function configFromJSON(json: string): AppConfig {
         ? Math.floor(r.fontSize)
         : base.fontSize,
     theme: typeof r.theme === "string" ? r.theme : base.theme,
-    agentCommand:
-      typeof r.agentCommand === "string" ? r.agentCommand : base.agentCommand,
-    agentLaunchMode: r.agentLaunchMode === "tui" ? "tui" : "acp",
-    agentResumeCommand:
-      typeof r.agentResumeCommand === "string"
-        ? r.agentResumeCommand
-        : base.agentResumeCommand,
-    agentPure: typeof r.agentPure === "boolean" ? r.agentPure : base.agentPure,
     scrollback:
       typeof r.scrollback === "number" ? clampScrollback(r.scrollback) : base.scrollback,
     keybindings: parseKeybindings(r.keybindings, base.keybindings),
