@@ -295,19 +295,28 @@ regexBtn.addEventListener("click", () => {
   regexBtn.classList.toggle("on", searchRegex);
   renderSearchResults();
 });
+function winButton(kind: "min" | "max" | "close"): HTMLDivElement {
+  const btn = document.createElement("div");
+  btn.className = kind === "close" ? "win-btn close" : "win-btn";
+  const icon = document.createElement("span");
+  icon.className = "win-btn-icon";
+  const path =
+    kind === "min"
+      ? "M4 6l4 4 4-4"
+      : kind === "max"
+        ? "M4 10l4-4 4 4"
+        : "M4.5 4.5l7 7M11.5 4.5l-7 7";
+  icon.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${path}"/></svg>`;
+  btn.append(icon);
+  return btn;
+}
 const winControls = document.createElement("div");
 winControls.className = "win-controls";
-const winMin = document.createElement("div");
-winMin.className = "win-btn";
-winMin.textContent = "─";
+const winMin = winButton("min");
 winMin.title = "Minimize";
-const winMax = document.createElement("div");
-winMax.className = "win-btn";
-winMax.textContent = "▢";
+const winMax = winButton("max");
 winMax.title = "Maximize / restore";
-const winClose = document.createElement("div");
-winClose.className = "win-btn close";
-winClose.textContent = "✕";
+const winClose = winButton("close");
 winClose.title = "Close";
 winControls.append(winMin, winMax, winClose);
 tbRight.append(searchBox, winControls);
