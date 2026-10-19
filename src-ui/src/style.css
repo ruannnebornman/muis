@@ -67,10 +67,13 @@ body{
 }
 .search input::placeholder{color:var(--dim)}
 .search-glyph{font-size:20px; line-height:1; flex:0 0 auto}
-.win-controls{display:flex; align-items:stretch; height:100%; flex-shrink:0}
-.win-btn{width:46px; display:grid; place-items:center; color:#dcdcdc; cursor:pointer; font-size:13px; border-left:1px solid transparent}
-.win-btn:hover{background:#3d4349}
-.win-btn.close:hover{background:#da4453; color:#fff}
+.win-controls{display:flex; align-items:center; height:100%; flex-shrink:0; gap:2px; padding:0 4px}
+.win-btn{width:34px; height:100%; display:grid; place-items:center; color:#dcdcdc; cursor:pointer}
+.win-btn-icon{width:26px; height:26px; display:grid; place-items:center; border-radius:4px}
+.win-btn svg{width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round}
+.win-btn:hover .win-btn-icon{background:#3d4349}
+.win-btn.close:hover{color:#fff}
+.win-btn.close:hover .win-btn-icon{background:#da4453}
 .main{flex:1; display:flex; min-height:0}
 /* sessions sidebar */
 .sidebar{
