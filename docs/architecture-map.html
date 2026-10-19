@@ -1,0 +1,1733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>muis — architecture, build &amp; delivery map</title>
+<style>
+  :root{
+    --bg:#171b1e; --bg2:#1e2428; --panel:#242b30; --panel2:#2b3339;
+    --line:#3c464d; --line2:#4b575f; --fg:#e8ecef; --dim:#a2adb5; --dim2:#7f8b93;
+    --accent:#3daee9; --accent2:#8ab4f8; --green:#7ac77a; --yellow:#e8c15a;
+    --red:#f7768e; --purple:#bb9af7;
+    --mono:ui-monospace,SFMono-Regular,"Cascadia Code","Source Code Pro",Menlo,Consolas,monospace;
+    --sans:"Inter","Noto Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+    --radius:10px; --shadow:0 10px 30px rgba(0,0,0,.28);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:radial-gradient(1200px 600px at 15% -10%,rgba(61,174,233,.12),transparent 60%),
+      radial-gradient(900px 500px at 100% 0%,rgba(187,154,247,.08),transparent 55%),var(--bg);
+    color:var(--fg); font-family:var(--sans); line-height:1.55; font-size:15px;
+  }
+  a{color:var(--accent2);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,kbd,pre{font-family:var(--mono)}
+  code{color:#cfe6f5;background:#1a2329;border:1px solid #2d3a42;border-radius:4px;padding:.08em .34em;font-size:.92em}
+  pre{margin:0;padding:16px 18px;background:#141a1e;border:1px solid var(--line);border-radius:8px;
+    overflow:auto;font-size:12.5px;line-height:1.6;color:#cbd8df}
+  pre code{background:none;border:0;padding:0;color:inherit;font-size:inherit}
+  .wrap{max-width:1220px;margin:0 auto;padding:0 24px 80px}
+  header.hero{padding:54px 0 30px;border-bottom:1px solid var(--line);margin-bottom:30px}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;color:var(--accent);font-family:var(--mono);
+    font-size:12px;letter-spacing:.13em;text-transform:uppercase}
+  .eyebrow::before{content:"";width:26px;height:1px;background:var(--accent)}
+  h1{font-size:clamp(30px,5vw,54px);line-height:1.05;margin:14px 0 12px;letter-spacing:-.035em;font-weight:700}
+  h1 span{color:var(--accent)}
+  .lede{max-width:900px;color:var(--dim);font-size:17px;margin:0 0 20px}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12px}
+  .tag{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);
+    color:var(--dim);border-radius:999px;padding:4px 10px}
+  .tag b{color:var(--fg);font-weight:600}
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(23,27,30,.9);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);margin:0 -24px 34px;padding:10px 24px;overflow-x:auto;
+    white-space:nowrap;scrollbar-width:none}
+  nav.toc::-webkit-scrollbar{display:none}
+  nav.toc a{display:inline-block;color:var(--dim);font-size:12.5px;font-family:var(--mono);
+    padding:5px 9px;border-radius:6px;margin-right:2px}
+  nav.toc a:hover{color:var(--fg);background:var(--panel);text-decoration:none}
+  section{margin:0 0 46px;scroll-margin-top:64px}
+  h2{display:flex;align-items:baseline;gap:12px;font-size:26px;letter-spacing:-.02em;margin:0 0 6px}
+  h2 .n{font-family:var(--mono);font-size:12px;color:var(--accent);border:1px solid rgba(61,174,233,.4);
+    background:rgba(61,174,233,.08);padding:2px 7px;border-radius:5px;letter-spacing:.08em}
+  .sub{color:var(--dim);margin:0 0 18px;max-width:960px}
+  h3{font-size:17px;margin:26px 0 10px;letter-spacing:-.01em}
+  h4{font-size:14px;margin:18px 0 8px;color:var(--fg)}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .card{background:linear-gradient(180deg,var(--panel),#20262b);border:1px solid var(--line);
+    border-radius:var(--radius);padding:16px 17px;box-shadow:var(--shadow)}
+  .card h4{margin:0 0 6px;font-size:14px}
+  .card p{margin:0;color:var(--dim);font-size:13.5px}
+  .card .k{font-family:var(--mono);font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.1em}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:12px 14px}
+  .stat b{display:block;font-size:24px;line-height:1.1;letter-spacing:-.03em}
+  .stat span{font-size:12px;color:var(--dim);font-family:var(--mono)}
+  figure{margin:18px 0 24px;background:linear-gradient(180deg,#1c2226,#181d21);border:1px solid var(--line);
+    border-radius:var(--radius);padding:12px 12px 8px;box-shadow:var(--shadow)}
+  figure svg{display:block;width:100%;height:auto;border-radius:6px;background:#151a1e}
+  figcaption{color:var(--dim2);font-size:12px;font-family:var(--mono);padding:8px 4px 2px}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  th,td{padding:9px 11px;text-align:left;vertical-align:top;border-bottom:1px solid #303a41}
+  th{background:#1d2428;color:var(--dim);font-size:11px;font-family:var(--mono);
+    text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+  tr:last-child td{border-bottom:0}
+  td code{white-space:nowrap}
+  .muted{color:var(--dim)}
+  .small{font-size:12.5px}
+  .pill{display:inline-block;font-family:var(--mono);font-size:11px;border:1px solid var(--line2);
+    border-radius:999px;padding:1px 8px;color:var(--dim)}
+  .pill.ok{border-color:#3f6d3f;color:var(--green);background:rgba(122,199,122,.08)}
+  .pill.warn{border-color:#6d6030;color:var(--yellow);background:rgba(232,193,90,.07)}
+  .pill.info{border-color:#2f5d73;color:var(--accent);background:rgba(61,174,233,.08)}
+  .callout{border-left:3px solid var(--accent);background:rgba(61,174,233,.06);border-radius:0 8px 8px 0;
+    padding:12px 15px;color:#c6dced;font-size:13.5px;margin:16px 0}
+  .callout.warn{border-left-color:var(--yellow);background:rgba(232,193,90,.06);color:#e7dcb9}
+  .callout b{color:var(--fg)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  ul.clean{margin:8px 0 0;padding-left:18px;color:var(--dim);font-size:13.5px}
+  ul.clean li{margin:3px 0}
+  ul.clean li b{color:var(--fg);font-weight:600}
+  .step{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:start;margin:10px 0}
+  .step .num{font-family:var(--mono);font-size:12px;color:var(--accent);width:32px;height:32px;
+    border-radius:50%;border:1px solid rgba(61,174,233,.4);display:grid;place-items:center;
+    background:rgba(61,174,233,.07)}
+  .step .body{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 13px}
+  .step .body b{display:block;font-size:13.5px}
+  .step .body span{color:var(--dim);font-size:13px}
+  footer{border-top:1px solid var(--line);padding:24px 0 0;color:var(--dim2);font-size:12px;font-family:var(--mono)}
+  @media (max-width:900px){.g4,.g3{grid-template-columns:repeat(2,minmax(0,1fr))}.cols{grid-template-columns:1fr}}
+  @media (max-width:620px){.g2,.g3,.g4{grid-template-columns:1fr}.wrap{padding:0 16px 60px}
+    nav.toc{margin:0 -16px 26px;padding:10px 16px}}
+  @media print{body{background:#fff;color:#111;font-size:11pt}nav.toc{display:none}
+    .card,figure,table,pre{box-shadow:none;background:#fff;color:#111;border-color:#bbb}
+    figure svg{background:#fff}a{color:#0645ad}section{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">architecture &amp; delivery map</div>
+  <h1>muis <span>/</span> how the whole thing fits together</h1>
+  <p class="lede">
+    A terminal emulator for Veldmuis: a Tauri&nbsp;2 native window around an
+    xterm.js frontend, a Rust shell that owns process lifecycle, and one
+    <code>muis-worker</code> process per session that owns the PTYs. This page
+    maps the runtime, the wire protocol, persistence, the UI module graph, all
+    build and packaging paths, the test layers, and both GitHub Actions
+    pipelines.
+  </p>
+  <div class="meta">
+    <span class="tag"><b>source</b> origin/main @ 2a6eb09</span>
+    <span class="tag"><b>release</b> v1.4.0</span>
+    <span class="tag"><b>generated</b> 2026-10-19</span>
+    <span class="tag"><b>stack</b> Rust · Tauri 2 · TypeScript · xterm.js</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Contents">
+  <a href="#overview">01 Overview</a>
+  <a href="#components">02 Components</a>
+  <a href="#runtime">03 Runtime</a>
+  <a href="#ipc">04 IPC</a>
+  <a href="#lifecycle">05 Lifecycle</a>
+  <a href="#ui">06 Frontend</a>
+  <a href="#data">07 State</a>
+  <a href="#build">08 Build</a>
+  <a href="#packaging">09 Packaging</a>
+  <a href="#tests">10 Tests</a>
+  <a href="#ci">11 CI</a>
+  <a href="#release">12 Release</a>
+  <a href="#github">13 GitHub</a>
+  <a href="#notes">14 Notes</a>
+</nav>
+
+<section id="overview">
+  <h2><span class="n">01</span> System in one picture</h2>
+  <p class="sub">
+    Two process types at runtime: the <b>shell</b> (one Tauri window) and one
+    <b>worker</b> per session (a UI “session” is a workspace holding tabs).
+    Each tab is a PTY inside its session's worker. The UI never owns a PTY,
+    so a worker crash only takes down that one session.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1160 640" role="img" aria-label="muis runtime topology">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#95a4ad"/>
+        </marker>
+        <marker id="a1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#3daee9"/>
+        </marker>
+        <marker id="a1g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#7ac77a"/>
+        </marker>
+        <style>
+          .box{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .box2{fill:#2d363c;stroke:#56636c;stroke-width:1.2}
+          .boxA{fill:#1d3643;stroke:#3daee9;stroke-width:1.4}
+          .boxG{fill:#23352a;stroke:#5e8a5e;stroke-width:1.2}
+          .boxY{fill:#393420;stroke:#8a7a3e;stroke-width:1.2}
+          .boxP{fill:#2f2738;stroke:#75618c;stroke-width:1.2}
+          .t{fill:#e8ecef;font:600 13px var(--mono)}
+          .t2{fill:#aab6bd;font:12px var(--mono)}
+          .t3{fill:#8e9aa2;font:11px var(--mono)}
+          .ta{fill:#8fd0ef;font:600 12px var(--mono)}
+          .tg{fill:#a9d8a9;font:600 12px var(--mono)}
+          .line{stroke:#95a4ad;stroke-width:1.35;fill:none;marker-end:url(#a1)}
+          .lineA{stroke:#3daee9;stroke-width:1.5;fill:none;marker-end:url(#a1b)}
+          .lineG{stroke:#7ac77a;stroke-width:1.5;fill:none;marker-end:url(#a1g)}
+          .dash{stroke:#5b6971;stroke-width:1;fill:none;stroke-dasharray:5 5}
+        </style>
+      </defs>
+
+      <rect x="8" y="8" width="1144" height="624" rx="14" fill="none" stroke="#3a464e" stroke-dasharray="7 7"/>
+      <text x="24" y="30" class="t3">HOST OS  ·  Linux (WebKitGTK / X11 or Wayland)  or  Windows (WebView2)</text>
+
+      <rect x="28" y="48" width="720" height="300" rx="12" class="boxA"/>
+      <text x="44" y="72" class="ta">muis shell process  ·  Tauri 2</text>
+
+      <rect x="46" y="88" width="286" height="238" rx="9" class="box2"/>
+      <text x="60" y="110" class="t">WebView  ·  src-ui</text>
+      <text x="60" y="130" class="t2">xterm.js surfaces</text>
+      <rect x="60" y="142" width="258" height="44" rx="6" class="box"/>
+      <text x="72" y="160" class="t2">SessionStore · views Map</text>
+      <text x="72" y="176" class="t3">workspace = session · tab = pty</text>
+      <rect x="60" y="194" width="258" height="44" rx="6" class="box"/>
+      <text x="72" y="212" class="t2">OscParser · CommandTracker</text>
+      <text x="72" y="228" class="t3">cwd/title · OSC 133 · notifications</text>
+      <rect x="60" y="246" width="258" height="44" rx="6" class="box"/>
+      <text x="72" y="264" class="t2">settings · search · palette</text>
+      <text x="72" y="280" class="t3">statusbar · done badges · themes</text>
+
+      <rect x="348" y="88" width="382" height="112" rx="9" class="box2"/>
+      <text x="362" y="110" class="t">Tauri IPC boundary</text>
+      <text x="362" y="132" class="t2">invoke()  →  #[tauri::command]</text>
+      <text x="362" y="150" class="t2">emit()    →  frontend listen()</text>
+      <rect x="362" y="162" width="354" height="26" rx="5" class="box"/>
+      <text x="372" y="180" class="t3">worker_spawn · worker_send · worker_stop · sessions_* · snapshot_* · config_*</text>
+
+      <rect x="348" y="214" width="382" height="112" rx="9" class="box2"/>
+      <text x="362" y="236" class="t">Shell services</text>
+      <text x="362" y="256" class="t2">WorkerPool  ·  one child per session</text>
+      <text x="362" y="274" class="t2">notify server  ·  per-user local socket</text>
+      <text x="362" y="292" class="t2">system-stats sampler  ·  file logging</text>
+      <text x="362" y="310" class="t3">persist.rs  ·  snapshot_store/read/remove</text>
+
+      <rect x="28" y="398" width="340" height="188" rx="10" class="boxG"/>
+      <text x="44" y="422" class="tg">muis-worker  ·  session “home” (w1)</text>
+      <rect x="44" y="436" width="308" height="38" rx="6" class="box"/>
+      <text x="56" y="459" class="t2">PTY t1  ·  fish / bash / agent</text>
+      <rect x="44" y="482" width="308" height="38" rx="6" class="box"/>
+      <text x="56" y="505" class="t2">PTY t2  ·  fish / bash / agent</text>
+      <text x="44" y="540" class="t3">stdin: UiToWorker JSONL</text>
+      <text x="44" y="557" class="t3">stdout: WorkerToUi JSONL</text>
+      <text x="44" y="574" class="t3">scrollback ring: 256 KiB / pty</text>
+
+      <rect x="392" y="398" width="340" height="188" rx="10" class="boxG"/>
+      <text x="408" y="422" class="tg">muis-worker  ·  session “other” (w2)</text>
+      <rect x="408" y="436" width="308" height="38" rx="6" class="box"/>
+      <text x="420" y="459" class="t2">PTY t3  ·  fish / bash / agent</text>
+      <rect x="408" y="482" width="308" height="38" rx="6" class="box"/>
+      <text x="420" y="505" class="t2">PTY t4  ·  fish / bash / agent</text>
+      <text x="408" y="540" class="t3">crash here  ⇏  other sessions die</text>
+      <text x="408" y="557" class="t3">stdin EOF  →  kill all ptys, exit</text>
+
+      <rect x="760" y="398" width="368" height="188" rx="10" class="boxY"/>
+      <text x="776" y="422" class="t" style="fill:#e8d493">Real processes inside PTYs</text>
+      <text x="776" y="446" class="t2">fish  ·  bash  ·  zsh  ·  sh</text>
+      <text x="776" y="466" class="t2">pwsh  ·  powershell  ·  cmd  (Windows)</text>
+      <text x="776" y="486" class="t2">opencode  ·  claude  ·  codex  ·  TUIs</text>
+      <text x="776" y="514" class="t3">cwd tracked via OSC 7</text>
+      <text x="776" y="531" class="t3">title via OSC 0/2</text>
+      <text x="776" y="548" class="t3">command marks via OSC 133 (fish hook)</text>
+      <text x="776" y="565" class="t3">notifications via OSC 9 / 777 / 99</text>
+
+      <rect x="760" y="250" width="368" height="116" rx="10" class="boxP"/>
+      <text x="776" y="274" class="t" style="fill:#d3c0ee">Notification clients</text>
+      <text x="776" y="296" class="t2">muis-notify  --body …  [--tab ID]</text>
+      <text x="776" y="314" class="t2">opencode plugin  →  muis-notify</text>
+      <text x="776" y="332" class="t3">MUIS_SOCKET + MUIS_TAB_ID injected into each pty</text>
+      <text x="776" y="349" class="t3">Windows single-exe: MUIS_BIN → muis.exe --muis-notify</text>
+
+      <rect x="760" y="70" width="368" height="150" rx="10" class="box2"/>
+      <text x="776" y="94" class="t">Disk / OS state</text>
+      <text x="776" y="116" class="t2">~/.config/muis/muis.json</text>
+      <text x="776" y="134" class="t2">~/.local/share/muis/sessions.json</text>
+      <text x="776" y="152" class="t2">~/.local/share/muis/sessions/tab-*.scrollback</text>
+      <text x="776" y="170" class="t3">Windows: %APPDATA%\muis  ·  logs and staged worker in %LOCALAPPDATA%\muis</text>
+      <text x="776" y="188" class="t3">Flatpak: ~/.var/app/org.veldmuislinux.muis/</text>
+      <text x="776" y="206" class="t3">XDG_CONFIG_HOME / XDG_STATE_HOME override on Linux</text>
+
+      <path class="lineA" d="M304 144 H348"/>
+      <path class="lineA" d="M348 170 H304"/>
+      <text x="309" y="136" class="t3" style="fill:#8fd0ef">invoke</text>
+      <text x="309" y="186" class="t3" style="fill:#8fd0ef">events</text>
+
+      <path class="lineG" d="M430 326 V380 H200 V398"/>
+      <path class="lineG" d="M444 326 V380 H562 V398"/>
+      <text x="245" y="372" class="t3" style="fill:#a9d8a9">spawn · JSONL stdin/stdout · stop</text>
+      <text x="570" y="372" class="t3" style="fill:#a9d8a9">spawn · JSONL stdin/stdout · stop</text>
+
+      <path class="line" d="M368 470 H760"/>
+      <path class="line" d="M732 508 H760"/>
+      <text x="584" y="462" class="t3">PTY master ↔ slave</text>
+      <text x="600" y="526" class="t3">bytes</text>
+
+      <path class="lineA" d="M760 300 H620 V326"/>
+      <text x="632" y="292" class="t3" style="fill:#8fd0ef">one JSON request / connection</text>
+
+      <path class="line" d="M730 250 H760 V160"/>
+      <text x="742" y="236" class="t3">read / write</text>
+
+      <path class="dash" d="M732 570 H744 V220 H760"/>
+      <text x="700" y="586" class="t3">30 s snapshots</text>
+    </svg>
+    <figcaption>Figure 1 — Runtime topology. The UI is a renderer only; all terminal state and PTY ownership live behind the Tauri boundary.</figcaption>
+  </figure>
+
+  <div class="grid g4">
+    <div class="stat"><b>4</b><span>Rust crates</span></div>
+    <div class="stat"><b>20</b><span>TS unit-test files</span></div>
+    <div class="stat"><b>5</b><span>CI jobs</span></div>
+    <div class="stat"><b>7</b><span>release jobs</span></div>
+  </div>
+
+  <div class="callout">
+    <b>The central invariant:</b> one <code>muis-worker</code> process per
+    session, one PTY per tab. The shell never parses terminal output; it only
+    routes JSON lines. The frontend never owns a shell process. A crash is
+    therefore contained to one session, and the rest of the window survives.
+  </div>
+</section>
+
+<section id="components">
+  <h2><span class="n">02</span> Component inventory</h2>
+  <p class="sub">Where each responsibility lives, and what depends on what.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <div class="k">muis-core</div>
+      <h4>UI-agnostic model &amp; protocol</h4>
+      <p>
+        No Tauri, no PTY, no WebView. Defines the session/tab/workspace
+        structs, the serializable IPC frames (both directions), platform paths,
+        shell probing, and the local notification socket protocol. This is the
+        crate that compiles and unit-tests anywhere, including CI without
+        WebKit.
+      </p>
+    </div>
+    <div class="card">
+      <div class="k">muis-worker</div>
+      <h4>PTY owner</h4>
+      <p>
+        One process per session. Opens PTYs with <code>portable-pty</code>,
+        spawns the shell, forwards base64 output, keeps a 256 KiB scrollback
+        ring per PTY, handles resize/kill/snapshot, and exits when stdin reaches
+        EOF so no orphan shells are left behind.
+      </p>
+    </div>
+    <div class="card">
+      <div class="k">muis-shell</div>
+      <h4>Tauri window &amp; supervisor</h4>
+      <p>
+        The <code>muis</code> binary. Hosts the WebView, exposes Tauri
+        commands, supervises <code>WorkerPool</code>, serves the notification
+        socket, samples CPU/RAM/GPU, writes diagnostics, and owns config,
+        session, and snapshot persistence. On Windows it also embeds the worker
+        and notify CLIs behind hidden flags.
+      </p>
+    </div>
+    <div class="card">
+      <div class="k">muis-notify</div>
+      <h4>Notification CLI</h4>
+      <p>
+        Sends one JSON request to the running shell over the per-user local
+        socket. Defaults <code>--socket</code> and <code>--tab</code> from
+        <code>MUIS_SOCKET</code> and <code>MUIS_TAB_ID</code>, which are
+        injected into every PTY. Exposed as a library so the Windows single-exe
+        build can re-exec it.
+      </p>
+    </div>
+  </div>
+
+  <h3>Rust dependency direction</h3>
+  <figure>
+    <svg viewBox="0 0 1100 300" role="img" aria-label="Rust crate dependency graph">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#95a4ad"/>
+        </marker>
+        <style>
+          .rb{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .rbA{fill:#1d3643;stroke:#3daee9;stroke-width:1.4}
+          .rt{fill:#e8ecef;font:600 14px var(--mono)}
+          .rs{fill:#a2adb5;font:12px var(--mono)}
+          .rl{stroke:#95a4ad;stroke-width:1.4;fill:none;marker-end:url(#a2)}
+        </style>
+      </defs>
+      <rect x="390" y="40" width="320" height="92" rx="10" class="rbA"/>
+      <text x="550" y="70" text-anchor="middle" class="rt">muis-core</text>
+      <text x="550" y="92" text-anchor="middle" class="rs">ipc · session · config · paths</text>
+      <text x="550" y="110" text-anchor="middle" class="rs">shell probe · notify socket</text>
+
+      <rect x="40" y="190" width="250" height="76" rx="10" class="rb"/>
+      <text x="165" y="220" text-anchor="middle" class="rt">muis-worker</text>
+      <text x="165" y="242" text-anchor="middle" class="rs">portable-pty · nix (unix)</text>
+
+      <rect x="425" y="190" width="250" height="76" rx="10" class="rb"/>
+      <text x="550" y="220" text-anchor="middle" class="rt">muis-notify</text>
+      <text x="550" y="242" text-anchor="middle" class="rs">CLI + reusable lib</text>
+
+      <rect x="810" y="190" width="250" height="76" rx="10" class="rb"/>
+      <text x="935" y="220" text-anchor="middle" class="rt">muis-shell</text>
+      <text x="935" y="242" text-anchor="middle" class="rs">tauri · plugins · sysinfo</text>
+
+      <path class="rl" d="M460 132 L180 190"/>
+      <path class="rl" d="M520 132 L520 190"/>
+      <path class="rl" d="M650 132 L910 190"/>
+
+      <text x="230" y="166" class="rs">depends on</text>
+      <text x="532" y="166" class="rs">depends on</text>
+      <text x="800" y="166" class="rs">depends on</text>
+
+      <text x="935" y="286" text-anchor="middle" class="rs" style="fill:#e8c15a">Windows-only: shell also links worker + notify</text>
+    </svg>
+    <figcaption>Figure 2 — Crate dependencies. <code>muis-core</code> is the bottom of the graph; nothing depends on a UI framework.</figcaption>
+  </figure>
+
+  <h3>Frontend modules</h3>
+  <table>
+    <thead><tr><th>Module</th><th>Responsibility</th><th>Notable tests</th></tr></thead>
+    <tbody>
+      <tr><td><code>main.ts</code></td><td>Orchestration hub: DOM chrome, xterm surfaces, Tauri transport, settings/palette/context menu, session commands, snapshot loop.</td><td>exercised by browser &amp; native E2E</td></tr>
+      <tr><td><code>worker.ts</code></td><td>Routes frames to per-PTY output/exit/snapshot handlers; dead-session detection.</td><td><code>worker.test.ts</code></td></tr>
+      <tr><td><code>ipc.ts</code></td><td>Wire types, base64, line encode/decode; must mirror Rust.</td><td><code>ipc.test.ts</code> + fixture</td></tr>
+      <tr><td><code>sessions.ts</code></td><td>SessionStore in the UI: workspaces, tabs, reorder, move tab across sessions, restore.</td><td><code>sessions.test.ts</code></td></tr>
+      <tr><td><code>config.ts</code></td><td>AppConfig parsing, per-field fallback, scrollback clamp, theme selection.</td><td><code>config.test.ts</code></td></tr>
+      <tr><td><code>osc.ts</code></td><td>OSC 7/0/2/9/777/99/133 parser; reassembles split chunks.</td><td><code>osc.test.ts</code></td></tr>
+      <tr><td><code>commandbar.ts</code></td><td>Last-command state machine, command label precedence, tab labels.</td><td><code>commandbar.test.ts</code></td></tr>
+      <tr><td><code>notify.ts</code></td><td>Normalizes OSC/CLI/command notifications; dedupe and badge/toast policy.</td><td><code>notify.test.ts</code></td></tr>
+      <tr><td><code>finish.ts</code>, <code>done.ts</code>, <code>activity.ts</code></td><td>Long-command toast policy, done badges, busy-tab tracking.</td><td>unit tests for each</td></tr>
+      <tr><td><code>search.ts</code>, <code>searchall.ts</code></td><td>In-terminal search controller; cross-session scrollback matching.</td><td><code>search*.test.ts</code></td></tr>
+      <tr><td><code>shortcuts.ts</code></td><td>Chord matching and action resolution (with config overrides).</td><td><code>shortcuts.test.ts</code></td></tr>
+      <tr><td><code>theme.ts</code></td><td>Six accent themes; chrome CSS variables + xterm palette; color hash per name.</td><td><code>theme.test.ts</code> (locked palette)</td></tr>
+      <tr><td><code>panels.ts</code></td><td>Reserved right-side panel registry (Snor future slot).</td><td><code>panels.test.ts</code></td></tr>
+      <tr><td><code>paths.ts</code>, <code>clock.ts</code>, <code>focus.ts</code>, <code>commands.ts</code>, <code>history.ts</code></td><td>Pure helpers: <code>~</code> expansion, fixed-width clock, selection focus policy, palette filter, search history.</td><td>unit tests for each</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="runtime">
+  <h2><span class="n">03</span> Runtime model &amp; Tauri surface</h2>
+  <p class="sub">
+    The shell process is the only bridge between the WebView and the OS. The
+    frontend calls commands; the shell emits events back. Worker traffic is
+    JSON lines, not Tauri events, until it reaches <code>WorkerPool</code>.
+  </p>
+
+  <div class="cols">
+    <div class="card">
+      <h4>Process model</h4>
+      <ul class="clean">
+        <li><b>muis shell</b> — one process, one window, one WorkerPool.</li>
+        <li><b>muis-worker</b> — one per session (workspace ID), idempotent spawn.</li>
+        <li><b>PTY</b> — one per tab; the worker holds the master, the shell is the child.</li>
+        <li><b>Real shell / agent</b> — child of the PTY; can die without killing muis.</li>
+        <li><b>muis-notify</b> — short-lived client; connects to the shell's local socket.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Why one worker per session?</h4>
+      <p>
+        Process isolation is the crash boundary. A panic, OOM, or segfault in a
+        worker affects only that session's PTYs. Stdin EOF from the shell means
+        the UI is gone, so the worker kills its children and exits; no orphan
+        shells. The shell stays responsive and other sessions keep their PTYs.
+      </p>
+    </div>
+  </div>
+
+  <h3>Tauri commands and events</h3>
+  <table>
+    <thead><tr><th>Kind</th><th>Name</th><th>Direction</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td>command</td><td><code>worker_spawn</code></td><td>UI → shell</td><td>Start the session's worker (idempotent).</td></tr>
+      <tr><td>command</td><td><code>worker_send</code></td><td>UI → shell</td><td>Forward one <code>UiToWorker</code> JSON line to the session worker.</td></tr>
+      <tr><td>command</td><td><code>worker_stop</code></td><td>UI → shell</td><td>Kill the session worker and forget it.</td></tr>
+      <tr><td>event</td><td><code>muis-worker-event</code></td><td>shell → UI</td><td><code>{ session_id, frame: WorkerToUi }</code> from any worker.</td></tr>
+      <tr><td>event</td><td><code>muis-notify</code></td><td>shell → UI</td><td>Notification request received on the local socket.</td></tr>
+      <tr><td>event</td><td><code>system-stats</code></td><td>shell → UI</td><td>CPU / RAM / optional GPU sample every 2 s.</td></tr>
+      <tr><td>commands</td><td><code>sessions_load/save</code>, <code>config_load/save</code></td><td>UI ↔ shell</td><td>Raw JSON read/write; the shell validates JSON before writing.</td></tr>
+      <tr><td>commands</td><td><code>snapshot_store/read/remove</code></td><td>UI ↔ shell</td><td>Per-tab scrollback files under the state dir.</td></tr>
+      <tr><td>commands</td><td><code>default_shell</code>, <code>default_cwd</code>, <code>git_branch</code>, <code>sys_info</code>, <code>list_subdirs</code>, <code>command_available</code></td><td>UI → shell</td><td>Host discovery for tabs, statusbar, and the session dialog.</td></tr>
+      <tr><td>commands</td><td><code>open_url</code>, <code>install_opencode_plugin</code>, <code>reset_sessions_and_restart</code>, <code>is_test_mode</code>, <code>log_path</code></td><td>UI → shell</td><td>OSC 8 links, plugin install, danger zone, test mode, diagnostics.</td></tr>
+      <tr><td>command</td><td><code>live_test_command</code></td><td>UI → shell</td><td>Debug-build-only test hook; returns <code>MUIS_TEST_COMMAND</code>.</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">Capabilities live in <code>crates/muis-shell/capabilities/main.json</code>; the window is frameless and uses explicit window commands for minimize / maximize / close / drag / resize.</p>
+</section>
+
+<section id="ipc">
+  <h2><span class="n">04</span> The UI ↔ worker wire protocol</h2>
+  <p class="sub">
+    JSON Lines over the worker's stdin/stdout. Bytes are base64 because terminal
+    input and output are not guaranteed UTF-8. The Rust and TypeScript
+    definitions are kept in lockstep by a shared fixture that both test suites
+    parse.
+  </p>
+
+  <div class="cols">
+    <div>
+      <h4>UI → worker (stdin)</h4>
+      <table>
+        <thead><tr><th>Frame</th><th>Fields</th></tr></thead>
+        <tbody>
+          <tr><td><code>spawn</code></td><td><code>pty_id</code>, <code>shell</code>, <code>cwd</code>, <code>cols</code>, <code>rows</code></td></tr>
+          <tr><td><code>write</code></td><td><code>pty_id</code>, <code>data_b64</code></td></tr>
+          <tr><td><code>resize</code></td><td><code>pty_id</code>, <code>cols</code>, <code>rows</code></td></tr>
+          <tr><td><code>snapshot</code></td><td><code>pty_id</code></td></tr>
+          <tr><td><code>kill</code></td><td><code>pty_id</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div>
+      <h4>worker → UI (stdout)</h4>
+      <table>
+        <thead><tr><th>Frame</th><th>Fields</th></tr></thead>
+        <tbody>
+          <tr><td><code>spawned</code></td><td><code>pty_id</code></td></tr>
+          <tr><td><code>output</code></td><td><code>pty_id</code>, <code>data_b64</code></td></tr>
+          <tr><td><code>exited</code></td><td><code>pty_id</code>, <code>code: number | null</code></td></tr>
+          <tr><td><code>snapshot_data</code></td><td><code>pty_id</code>, <code>data_b64</code></td></tr>
+          <tr><td><code>error</code></td><td><code>pty_id</code>, <code>message</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h3>Example frames</h3>
+  <div class="cols">
+    <pre><code>{"type":"spawn","pty_id":"t1","shell":"/usr/bin/fish",
+ "cwd":"/home/user","cols":80,"rows":24}
+
+{"type":"write","pty_id":"t1","data_b64":"bHMgLWxhCg=="}
+</code></pre>
+    <pre><code>{"type":"spawned","pty_id":"t1"}
+
+{"type":"output","pty_id":"t1","data_b64":"aGVsbG8tbXVpcwo="}
+
+{"type":"exited","pty_id":"t1","code":0}
+</code></pre>
+  </div>
+
+  <div class="callout">
+    <b>Contract lock:</b> <code>tests/fixtures/ipc-frames.jsonl</code> contains
+    all ten frames. <code>muis-core</code> decodes/re-encodes every line, and
+    the TypeScript <code>ipc.test.ts</code> parses the same file. If either side
+    renames a tag or field, both test suites fail.
+  </div>
+
+  <div class="callout warn">
+    <b>Worker death signal:</b> the pool emits
+    <code>{ "type":"error", "pty_id":"", "message":"worker process ended" }</code>
+    when a worker's stdout reaches EOF. The UI treats that as “every tab in this
+    session lost its PTY”. The current <code>WorkerClient</code> has
+    <code>onWorkerDead</code>/<code>isSessionDead</code>; the reconnect UX is
+    still a future hook rather than a visible flow.
+  </div>
+</section>
+
+<section id="lifecycle">
+  <h2><span class="n">05</span> Startup, input, output, restore</h2>
+  <p class="sub">
+    The first few hundred milliseconds decide whether the window shows real
+    terminals or a blank frame. The sequence below is the production path on a
+    normal Tauri launch.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1160 860" role="img" aria-label="Startup and terminal I/O sequence">
+      <defs>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#95a4ad"/>
+        </marker>
+        <style>
+          .life{fill:#e8ecef;font:600 13px var(--mono)}
+          .lif2{fill:#a2adb5;font:11.5px var(--mono)}
+          .msg{fill:#c5d3db;font:11.5px var(--mono)}
+          .msgA{fill:#8fd0ef;font:11.5px var(--mono)}
+          .msgG{fill:#a9d8a9;font:11.5px var(--mono)}
+          .arr{stroke:#95a4ad;stroke-width:1.25;fill:none;marker-end:url(#a3)}
+          .arrA{stroke:#3daee9;stroke-width:1.35;fill:none;marker-end:url(#a3)}
+          .arrG{stroke:#7ac77a;stroke-width:1.35;fill:none;marker-end:url(#a3)}
+          .lifebox{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .lifeboxA{fill:#1d3643;stroke:#3daee9;stroke-width:1.3}
+          .lifeboxG{fill:#23352a;stroke:#5e8a5e;stroke-width:1.3}
+          .lifeline{stroke:#46525a;stroke-width:1;stroke-dasharray:4 6}
+          .note{fill:#7f8b93;font:10.5px var(--mono)}
+        </style>
+      </defs>
+
+      <rect x="40" y="24" width="210" height="46" rx="8" class="lifeboxA"/>
+      <text x="145" y="44" text-anchor="middle" class="life">src-ui/main.ts</text>
+      <text x="145" y="60" text-anchor="middle" class="lif2">frontend</text>
+
+      <rect x="290" y="24" width="210" height="46" rx="8" class="lifebox"/>
+      <text x="395" y="44" text-anchor="middle" class="life">muis shell</text>
+      <text x="395" y="60" text-anchor="middle" class="lif2">Tauri + WorkerPool</text>
+
+      <rect x="540" y="24" width="210" height="46" rx="8" class="lifeboxG"/>
+      <text x="645" y="44" text-anchor="middle" class="life">muis-worker</text>
+      <text x="645" y="60" text-anchor="middle" class="lif2">one per session</text>
+
+      <rect x="790" y="24" width="150" height="46" rx="8" class="lifebox"/>
+      <text x="865" y="44" text-anchor="middle" class="life">PTY + shell</text>
+      <text x="865" y="60" text-anchor="middle" class="lif2">fish / bash</text>
+
+      <rect x="980" y="24" width="140" height="46" rx="8" class="lifebox"/>
+      <text x="1050" y="44" text-anchor="middle" class="life">disk</text>
+      <text x="1050" y="60" text-anchor="middle" class="lif2">XDG / APPDATA</text>
+
+      <line x1="145" y1="70" x2="145" y2="830" class="lifeline"/>
+      <line x1="395" y1="70" x2="395" y2="830" class="lifeline"/>
+      <line x1="645" y1="70" x2="645" y2="830" class="lifeline"/>
+      <line x1="865" y1="70" x2="865" y2="830" class="lifeline"/>
+      <line x1="1050" y1="70" x2="1050" y2="830" class="lifeline"/>
+
+      <path class="arrA" d="M145 100 H395"/>
+      <text x="158" y="94" class="msgA">init(): is_test_mode · default_cwd · sys_info</text>
+      <text x="158" y="114" class="note">all best-effort; defaults on failure</text>
+
+      <path class="arr" d="M145 142 H395"/>
+      <text x="158" y="136" class="msg">sessions_load() · config_load()</text>
+      <path class="arr" d="M395 164 H1050"/>
+      <text x="408" y="158" class="msg">read sessions.json + muis.json</text>
+      <path class="arr" d="M1050 190 H395"/>
+      <text x="820" y="184" class="msg">raw JSON</text>
+      <path class="arr" d="M395 212 H145"/>
+      <text x="158" y="206" class="msg">SessionStore.fromJSON / configFromJSON</text>
+
+      <path class="arrA" d="M145 252 H395"/>
+      <text x="158" y="246" class="msgA">renderAll() → spawnTab() → worker_spawn(session)</text>
+      <text x="158" y="270" class="note">first render creates the current workspace's visible xterm</text>
+      <path class="arrG" d="M395 292 H645"/>
+      <text x="408" y="286" class="msgG">spawn muis-worker child</text>
+      <text x="408" y="306" class="note">env MUIS_SOCKET; stdin/stdout pipes; stderr captured</text>
+
+      <path class="arrA" d="M145 344 H395"/>
+      <text x="158" y="338" class="msgA">worker_send({type:"spawn", pty_id, shell, cwd, 80, 24})</text>
+      <path class="arr" d="M395 366 H645"/>
+      <text x="408" y="360" class="msg">JSONL line → worker stdin</text>
+
+      <path class="arrG" d="M645 400 H865"/>
+      <text x="658" y="394" class="msgG">openpty() + spawn shell</text>
+      <text x="658" y="414" class="note">ECHO cleared; TERM/LANG/TERM_PROGRAM/MUIS_TAB_ID set</text>
+      <text x="658" y="430" class="note">Flatpak → flatpak-spawn --host; AppImage → sanitize env</text>
+
+      <path class="arrG" d="M645 458 H395"/>
+      <text x="408" y="452" class="msgG">{"type":"spawned","pty_id":…}</text>
+      <path class="arrA" d="M395 480 H145"/>
+      <text x="158" y="474" class="msgA">muis-worker-event</text>
+
+      <path class="arrG" d="M865 516 H645"/>
+      <text x="455" y="510" class="msgG">pty output bytes</text>
+      <path class="arr" d="M645 538 H395"/>
+      <text x="408" y="532" class="msg">{"type":"output","data_b64":…}</text>
+      <text x="408" y="552" class="note">reader thread also appends to the 256 KiB scrollback ring</text>
+      <path class="arrA" d="M395 574 H145"/>
+      <text x="158" y="568" class="msgA">muis-worker-event(frame=output)</text>
+      <text x="158" y="592" class="note">term.write(bytes) → OscParser → cwd/title/notify/command state</text>
+
+      <path class="arrA" d="M145 632 H395"/>
+      <text x="158" y="626" class="msgA">keystrokes: term.onData → worker_send({type:"write"})</text>
+      <path class="arr" d="M395 654 H645"/>
+      <text x="408" y="648" class="msg">write base64</text>
+      <path class="arrG" d="M645 676 H865"/>
+      <text x="658" y="670" class="msgG">writer.write_all(bytes)</text>
+
+      <path class="arrA" d="M145 712 H395"/>
+      <text x="158" y="706" class="msgA">resize(cols, rows) from FitAddon / ResizeObserver</text>
+      <path class="arr" d="M395 734 H645"/>
+      <text x="408" y="728" class="msg">{"type":"resize"}</text>
+      <path class="arrG" d="M645 756 H865"/>
+      <text x="658" y="750" class="msgG">master.resize(PtySize)</text>
+
+      <path class="arrA" d="M145 792 H395"/>
+      <text x="158" y="786" class="msgA">every 30 s: snapshot per live tab</text>
+      <path class="arr" d="M395 810 H645"/>
+      <text x="408" y="804" class="msg">{"type":"snapshot"}</text>
+      <path class="arrG" d="M645 828 H395"/>
+      <text x="460" y="822" class="msgG">snapshot_data</text>
+      <path class="arr" d="M395 842 H1050"/>
+      <text x="408" y="856" class="note">snapshot_store → sessions/tab-&lt;id&gt;.scrollback</text>
+    </svg>
+    <figcaption>Figure 3 — Production startup and steady-state I/O. Restored tabs replay their snapshot before live output is trusted.</figcaption>
+  </figure>
+
+  <h3>Lifecycle rules</h3>
+  <table>
+    <thead><tr><th>Event</th><th>What happens</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>New tab</td><td><code>store.newTab()</code> mints a tab id; <code>ensureView()</code> creates an xterm; <code>spawnTab()</code> ensures the session worker exists and sends <code>spawn</code>.</td><td><code>main.ts</code>, <code>worker.ts</code></td></tr>
+      <tr><td>Restore</td><td>Sessions load from disk. Each tab reads its snapshot once per launch (<code>replayedTabs</code>), spawns a new PTY in the saved cwd, then replays. Input emitted by xterm during replay is dropped.</td><td><code>main.ts</code>, <code>persist.rs</code></td></tr>
+      <tr><td>Output</td><td>Worker reader thread appends to the ring and emits base64. UI writes to xterm, updates activity, feeds the OSC parser, and arms the idle fallback.</td><td><code>muis-worker/src/lib.rs</code>, <code>main.ts</code></td></tr>
+      <tr><td>Resize</td><td>FitAddon proposes dimensions; UI resizes xterm and sends <code>resize</code>. A per-surface <code>ResizeObserver</code> refits after layout changes (hidden → shown, sidebar, window).</td><td><code>main.ts</code></td></tr>
+      <tr><td>Command finished</td><td>OSC 133;D sets exit + duration. Without OSC 133, 500 ms of quiet output is the fallback. The tab label becomes the last command unless the user pinned a title.</td><td><code>commandbar.ts</code>, <code>main.ts</code></td></tr>
+      <tr><td>Process exits</td><td>Worker reports <code>exited</code>; UI prints <code>[process exited (code)]</code>. If it was the session's only tab, the session is removed immediately.</td><td><code>main.ts</code> <code>dropSessionIfLastTab</code></td></tr>
+      <tr><td>Close tab</td><td>Busy check (output in the last 60 s, or tab younger than 60 s) asks first. UI kills the PTY, removes the snapshot, disposes xterm, closes the tab. Closing the last tab keeps the session open with zero tabs.</td><td><code>activity.ts</code>, <code>main.ts</code></td></tr>
+      <tr><td>Close session</td><td>Busy check, kill every tab's PTY, remove snapshots, stop the session worker, remove the workspace.</td><td><code>main.ts</code>, <code>bridge.rs</code></td></tr>
+      <tr><td>Quit</td><td><code>beforeunload</code> asks if any tab is busy. On shell exit, workers receive stdin EOF and kill their children.</td><td><code>main.ts</code>, <code>muis-worker</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="ui">
+  <h2><span class="n">06</span> Frontend structure</h2>
+  <p class="sub">
+    <code>main.ts</code> is deliberately a hub; everything interesting is a
+    pure, unit-testable module beside it. The DOM is built imperatively to
+    match the Breeze target, not through a framework.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1160 660" role="img" aria-label="Frontend module graph">
+      <defs>
+        <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#5f6d76"/>
+        </marker>
+        <style>
+          .hub{fill:#1d3643;stroke:#3daee9;stroke-width:1.6}
+          .grp{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .mod{fill:#2d363c;stroke:#4b575f;stroke-width:1}
+          .t{fill:#e8ecef;font:600 14px var(--mono)}
+          .t2{fill:#a2adb5;font:11.5px var(--mono)}
+          .t3{fill:#8e9aa2;font:10.5px var(--mono)}
+          .ln{stroke:#5f6d76;stroke-width:1.1;fill:none;marker-end:url(#a4)}
+        </style>
+      </defs>
+
+      <rect x="435" y="265" width="290" height="120" rx="12" class="hub"/>
+      <text x="580" y="296" text-anchor="middle" class="t">main.ts</text>
+      <text x="580" y="318" text-anchor="middle" class="t2">orchestration hub</text>
+      <text x="580" y="338" text-anchor="middle" class="t3">DOM chrome · xterm surfaces</text>
+      <text x="580" y="354" text-anchor="middle" class="t3">Tauri transport · commands</text>
+      <text x="580" y="370" text-anchor="middle" class="t3">settings · palette · context menu</text>
+
+      <rect x="30" y="40" width="330" height="178" rx="10" class="grp"/>
+      <text x="46" y="64" class="t">State &amp; transport</text>
+      <rect x="46" y="78" width="298" height="28" rx="5" class="mod"/><text x="58" y="97" class="t2">sessions.ts  — workspace/tab store</text>
+      <rect x="46" y="112" width="298" height="28" rx="5" class="mod"/><text x="58" y="131" class="t2">config.ts  — AppConfig + fallbacks</text>
+      <rect x="46" y="146" width="298" height="28" rx="5" class="mod"/><text x="58" y="165" class="t2">ipc.ts  — wire types + base64</text>
+      <rect x="46" y="180" width="298" height="28" rx="5" class="mod"/><text x="58" y="199" class="t2">worker.ts  — frame routing</text>
+
+      <rect x="30" y="420" width="330" height="214" rx="10" class="grp"/>
+      <text x="46" y="444" class="t">Terminal intelligence</text>
+      <rect x="46" y="458" width="298" height="28" rx="5" class="mod"/><text x="58" y="477" class="t2">osc.ts  — OSC 7/0/2/9/777/99/133</text>
+      <rect x="46" y="492" width="298" height="28" rx="5" class="mod"/><text x="58" y="511" class="t2">commandbar.ts  — last command</text>
+      <rect x="46" y="526" width="298" height="28" rx="5" class="mod"/><text x="58" y="545" class="t2">activity.ts  — busy-tab policy</text>
+      <rect x="46" y="560" width="298" height="28" rx="5" class="mod"/><text x="58" y="579" class="t2">done.ts  — unread completion badges</text>
+      <rect x="46" y="594" width="298" height="28" rx="5" class="mod"/><text x="58" y="613" class="t2">finish.ts · notify.ts  — toast policy</text>
+
+      <rect x="800" y="40" width="330" height="214" rx="10" class="grp"/>
+      <text x="816" y="64" class="t">Chrome &amp; presentation</text>
+      <rect x="816" y="78" width="298" height="28" rx="5" class="mod"/><text x="828" y="97" class="t2">theme.ts  — 6 accents + xterm palette</text>
+      <rect x="816" y="112" width="298" height="28" rx="5" class="mod"/><text x="828" y="131" class="t2">style.css  — Breeze tokens/layout</text>
+      <rect x="816" y="146" width="298" height="28" rx="5" class="mod"/><text x="828" y="165" class="t2">panels.ts  — reserved side panel</text>
+      <rect x="816" y="180" width="298" height="28" rx="5" class="mod"/><text x="828" y="199" class="t2">paths.ts · clock.ts  — display helpers</text>
+      <rect x="816" y="214" width="298" height="28" rx="5" class="mod"/><text x="828" y="233" class="t2">assets/muis.png</text>
+
+      <rect x="800" y="420" width="330" height="214" rx="10" class="grp"/>
+      <text x="816" y="444" class="t">Interaction &amp; search</text>
+      <rect x="816" y="458" width="298" height="28" rx="5" class="mod"/><text x="828" y="477" class="t2">shortcuts.ts  — chord resolution</text>
+      <rect x="816" y="492" width="298" height="28" rx="5" class="mod"/><text x="828" y="511" class="t2">commands.ts  — palette filtering</text>
+      <rect x="816" y="526" width="298" height="28" rx="5" class="mod"/><text x="828" y="545" class="t2">search.ts  — in-terminal find</text>
+      <rect x="816" y="560" width="298" height="28" rx="5" class="mod"/><text x="828" y="579" class="t2">searchall.ts  — cross-session scrollback</text>
+      <rect x="816" y="594" width="298" height="28" rx="5" class="mod"/><text x="828" y="613" class="t2">history.ts · focus.ts</text>
+
+      <path class="ln" d="M435 300 L360 190"/>
+      <path class="ln" d="M435 380 L360 480"/>
+      <path class="ln" d="M725 300 L800 190"/>
+      <path class="ln" d="M725 380 L800 480"/>
+
+      <text x="366" y="238" class="t3">imports</text>
+      <text x="368" y="440" class="t3">imports</text>
+      <text x="735" y="238" class="t3">imports</text>
+      <text x="735" y="440" class="t3">imports</text>
+    </svg>
+    <figcaption>Figure 4 — Frontend module graph. Pure modules own policy; <code>main.ts</code> owns wiring and DOM.</figcaption>
+  </figure>
+
+  <h3>Window regions</h3>
+  <div class="grid g3">
+    <div class="card"><h4>Titlebar</h4><p>Frameless drag region, app icon/title, search box (cross-session search, regex/case, history), window controls, test-mode badge.</p></div>
+    <div class="card"><h4>Sessions sidebar</h4><p>One tile per workspace with color/glyph, tab count, cwd, done badge, reorder drag, context menu, new-session dialog with folder picker and subfolder quick picks.</p></div>
+    <div class="card"><h4>Tabbar</h4><p>One tab per PTY, active state, done state, last-command label, close/middle-click, reorder, drag into another session, new-tab and settings buttons.</p></div>
+    <div class="card"><h4>Terminal column</h4><p>One xterm surface per tab, a last-command head, WebGL with canvas fallback, FitAddon, SearchAddon, OSC 8 links, bell modes, clipboard modes.</p></div>
+    <div class="card"><h4>Statusbar</h4><p>cwd, git branch, session·tab, user@host, CPU/RAM/GPU, shell, version, clock. Every segment is individually toggleable.</p></div>
+    <div class="card"><h4>Overlays / slots</h4><p>Settings dialog, command palette, session dialog, context menu, search results, and a reserved right-side panel slot (no panel registered yet).</p></div>
+  </div>
+
+  <h3>Terminal intelligence pipelines</h3>
+  <figure>
+    <svg viewBox="0 0 1160 470" role="img" aria-label="OSC, command bar, and notification pipelines">
+      <defs>
+        <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#95a4ad"/>
+        </marker>
+        <style>
+          .nb{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .nbA{fill:#1d3643;stroke:#3daee9;stroke-width:1.3}
+          .nbG{fill:#23352a;stroke:#5e8a5e;stroke-width:1.3}
+          .nbY{fill:#393420;stroke:#8a7a3e;stroke-width:1.2}
+          .nbP{fill:#2f2738;stroke:#75618c;stroke-width:1.2}
+          .nt{fill:#e8ecef;font:600 12.5px var(--mono)}
+          .ns{fill:#a2adb5;font:11px var(--mono)}
+          .na{stroke:#95a4ad;stroke-width:1.3;fill:none;marker-end:url(#a5)}
+          .naA{stroke:#3daee9;stroke-width:1.45;fill:none;marker-end:url(#a5)}
+          .naG{stroke:#7ac77a;stroke-width:1.45;fill:none;marker-end:url(#a5)}
+        </style>
+      </defs>
+
+      <text x="24" y="30" class="nt" style="fill:#8fd0ef">Command bar lane</text>
+      <rect x="24" y="46" width="190" height="70" rx="8" class="nb"/>
+      <text x="38" y="68" class="nt">PTY output</text>
+      <text x="38" y="88" class="ns">xterm + raw bytes</text>
+      <text x="38" y="104" class="ns">OSC 133;C / 133;D</text>
+
+      <rect x="254" y="46" width="190" height="70" rx="8" class="nbA"/>
+      <text x="268" y="68" class="nt">OscParser</text>
+      <text x="268" y="88" class="ns">split-chunk reassembly</text>
+      <text x="268" y="104" class="ns">cmdline_url decoded</text>
+
+      <rect x="484" y="46" width="200" height="70" rx="8" class="nbG"/>
+      <text x="498" y="68" class="nt">CommandTracker</text>
+      <text x="498" y="88" class="ns">running · exit · duration</text>
+      <text x="498" y="104" class="ns">keystrokes → fallback</text>
+
+      <rect x="724" y="46" width="190" height="70" rx="8" class="nb"/>
+      <text x="738" y="68" class="nt">Pane head</text>
+      <text x="738" y="88" class="ns">✓/✗ · exit · ms</text>
+      <text x="738" y="104" class="ns">tab label = last cmd</text>
+
+      <rect x="954" y="46" width="180" height="70" rx="8" class="nbY"/>
+      <text x="968" y="68" class="nt">Finish policy</text>
+      <text x="968" y="88" class="ns">≥10 s · OSC seen</text>
+      <text x="968" y="104" class="ns">window unfocused</text>
+
+      <path class="na" d="M214 81 H254"/>
+      <path class="naA" d="M444 81 H484"/>
+      <path class="na" d="M684 81 H724"/>
+      <path class="na" d="M914 81 H954"/>
+
+      <text x="24" y="196" class="nt" style="fill:#a9d8a9">Notification lane</text>
+      <rect x="24" y="212" width="190" height="86" rx="8" class="nb"/>
+      <text x="38" y="234" class="nt">Sources</text>
+      <text x="38" y="254" class="ns">OSC 9 / 777 / 99</text>
+      <text x="38" y="270" class="ns">muis-notify CLI</text>
+      <text x="38" y="286" class="ns">long-command finish</text>
+
+      <rect x="254" y="212" width="190" height="86" rx="8" class="nbA"/>
+      <text x="268" y="234" class="nt">NotifyEvent</text>
+      <text x="268" y="254" class="ns">title · body · source</text>
+      <text x="268" y="270" class="ns">urgency</text>
+      <text x="268" y="286" class="ns">normalized in notify.ts</text>
+
+      <rect x="484" y="212" width="200" height="86" rx="8" class="nbG"/>
+      <text x="498" y="234" class="nt">NotifyRouter</text>
+      <text x="498" y="254" class="ns">dedupe 1500 ms</text>
+      <text x="498" y="270" class="ns">visible? focused?</text>
+      <text x="498" y="286" class="ns">agent already notified?</text>
+
+      <rect x="724" y="212" width="190" height="86" rx="8" class="nbY"/>
+      <text x="738" y="234" class="nt">DoneTracker</text>
+      <text x="738" y="254" class="ns">tab badge ✓ done</text>
+      <text x="738" y="270" class="ns">sidebar badge</text>
+      <text x="738" y="286" class="ns">window title count</text>
+
+      <rect x="954" y="212" width="180" height="86" rx="8" class="nbP"/>
+      <text x="968" y="234" class="nt">Desktop toast</text>
+      <text x="968" y="254" class="ns">Tauri notification</text>
+      <text x="968" y="270" class="ns">only if unfocused</text>
+      <text x="968" y="286" class="ns">best-effort permission</text>
+
+      <path class="na" d="M214 255 H254"/>
+      <path class="naA" d="M444 255 H484"/>
+      <path class="naG" d="M684 255 H724"/>
+      <path class="na" d="M914 255 H954"/>
+
+      <rect x="24" y="352" width="360" height="82" rx="8" class="nbP"/>
+      <text x="38" y="374" class="nt">muis-notify / opencode plugin</text>
+      <text x="38" y="394" class="ns">one JSON request per connection</text>
+      <text x="38" y="410" class="ns">MUIS_SOCKET + MUIS_TAB_ID from the pty</text>
+      <text x="38" y="426" class="ns">Flatpak: CLI not shipped</text>
+
+      <rect x="424" y="352" width="300" height="82" rx="8" class="nbA"/>
+      <text x="438" y="374" class="nt">muis_core::notify::serve</text>
+      <text x="438" y="394" class="ns">per-user local socket</text>
+      <text x="438" y="410" class="ns">abstract namespace / named pipe</text>
+      <text x="438" y="426" class="ns">emits Tauri event “muis-notify”</text>
+
+      <rect x="764" y="352" width="370" height="82" rx="8" class="nbG"/>
+      <text x="778" y="374" class="nt">handleNotifyRequest</text>
+      <text x="778" y="394" class="ns">find tab by tab_id</text>
+      <text x="778" y="410" class="ns">applyNotification → router</text>
+      <text x="778" y="426" class="ns">badge + toast, with dedupe</text>
+
+      <path class="naA" d="M384 393 H424"/>
+      <path class="na" d="M724 393 H764"/>
+    </svg>
+    <figcaption>Figure 5 — Two independent intelligence lanes. The command bar describes what ran; the notification lane decides what needs attention.</figcaption>
+  </figure>
+
+  <div class="callout">
+    <b>Title precedence:</b> a manually pinned tab title always wins. Otherwise
+    muis shows a meaningful shell title (e.g. opencode naming its session) and
+    falls back to the last command. Fish's abbreviated cwd and auto
+    “Terminal N” placeholders are not shown as titles.
+  </div>
+</section>
+
+<section id="data">
+  <h2><span class="n">07</span> State, persistence &amp; restore</h2>
+  <p class="sub">
+    The shell owns every file. The frontend sends raw JSON; the shell validates
+    it before writing so a UI bug cannot corrupt the session store.
+  </p>
+
+  <h3>State locations</h3>
+  <table>
+    <thead><tr><th>Platform</th><th>Config</th><th>State / snapshots</th><th>Logs</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Linux</td>
+        <td><code>$XDG_CONFIG_HOME/muis/muis.json</code> (default <code>~/.config/muis</code>)</td>
+        <td><code>$XDG_STATE_HOME/muis/</code> (default <code>~/.local/share/muis</code>): <code>sessions.json</code>, <code>sessions/tab-*.scrollback</code></td>
+        <td><code>&lt;state&gt;/logs/muis.log</code></td>
+      </tr>
+      <tr>
+        <td>Windows</td>
+        <td><code>%APPDATA%\muis\muis.json</code></td>
+        <td><code>%APPDATA%\muis\</code>: sessions + snapshots</td>
+        <td><code>%LOCALAPPDATA%\muis\logs\muis.log</code>; staged worker copy under <code>%LOCALAPPDATA%\muis\bin</code></td>
+      </tr>
+      <tr>
+        <td>Flatpak</td>
+        <td><code>~/.var/app/org.veldmuislinux.muis/config/muis/</code></td>
+        <td>inside the app's XDG dirs under <code>~/.var/app/…</code></td>
+        <td>inside the app's state dir</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Session JSON</h3>
+  <div class="cols">
+    <pre><code>{
+  "workspaces": [
+    {
+      "id": "w1",
+      "name": "home",
+      "dir": "/home/user",
+      "active": 0,
+      "tabs": [
+        { "id": "t1", "title": "Terminal 1",
+          "cwd": "/home/user", "manual": false }
+      ]
+    }
+  ],
+  "current": 0,
+  "next_id": 2
+}</code></pre>
+    <div class="card">
+      <h4>Rules</h4>
+      <ul class="clean">
+        <li><b>IDs are never reused.</b> <code>next_id</code> survives restore and is clamped past every ID found in the file.</li>
+        <li><b>Closing the last tab keeps the session.</b> The workspace survives with zero tabs and shows only the <code>+</code> button.</li>
+        <li><b>Process exit removes the session</b> when it was the last tab's PTY; manual close does not.</li>
+        <li><b>Restored tabs replay once</b> from their own scrollback file; the tab id is the join key.</li>
+        <li><b>Snapshots are periodic</b> every 30 s for every tab with a live view, plus removal on close.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Config JSON (frontend-owned shape)</h3>
+  <pre><code>{
+  "showSessions": true,
+  "fontSize": null,
+  "theme": null,
+  "scrollback": 50000,
+  "keybindings": {},
+  "copyOnSelect": false,
+  "middleClickPaste": false,
+  "fontFamily": null,
+  "cursorStyle": "block",
+  "cursorBlink": true,
+  "bell": "none",
+  "statusbar": {},
+  "workspaceThemes": {}
+}</code></pre>
+
+  <div class="callout warn">
+    <b>Two config models exist.</b> The live config is the TypeScript
+    <code>AppConfig</code> above, saved as raw JSON through
+    <code>config_save</code>. <code>muis-core/src/config.rs</code> has a smaller
+    Rust <code>AppConfig</code> (four fields) that is unit-tested but not used by
+    the running shell. Treat the TS shape as the real schema.
+  </div>
+
+  <h3>Diagnostics</h3>
+  <table>
+    <thead><tr><th>Feature</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td><code>MUIS_LOG</code></td><td><code>off|error|warn|info|debug|trace</code>; default debug in dev, info in release.</td></tr>
+      <tr><td>Log file</td><td>File logger plus panic hook; release Windows has no console, so the file is the only trace.</td></tr>
+      <tr><td><code>debug_report</code></td><td>Frontend stages and errors are logged from the UI (which has no devtools in release).</td></tr>
+      <tr><td><code>muis --testmode</code></td><td>Fresh session, distinct notification socket, never writes sessions/config/snapshots. Shows a “test mode” badge.</td></tr>
+      <tr><td><code>muis --reset-sessions</code></td><td>Deletes saved sessions and snapshots, exits without opening a window.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="build">
+  <h2><span class="n">08</span> Build pipeline</h2>
+  <p class="sub">
+    Two independent builds meet at the Tauri shell: the Vite frontend becomes
+    <code>src-ui/dist</code>, the Rust workspace becomes binaries, and
+    <code>muis-shell</code> embeds the dist at compile time.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1160 560" role="img" aria-label="Build pipeline">
+      <defs>
+        <marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#95a4ad"/>
+        </marker>
+        <style>
+          .bb{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .bbA{fill:#1d3643;stroke:#3daee9;stroke-width:1.35}
+          .bbG{fill:#23352a;stroke:#5e8a5e;stroke-width:1.25}
+          .bbY{fill:#393420;stroke:#8a7a3e;stroke-width:1.2}
+          .bt{fill:#e8ecef;font:600 12.5px var(--mono)}
+          .bs{fill:#a2adb5;font:11px var(--mono)}
+          .ba{stroke:#95a4ad;stroke-width:1.25;fill:none;marker-end:url(#a6)}
+          .baA{stroke:#3daee9;stroke-width:1.4;fill:none;marker-end:url(#a6)}
+          .baG{stroke:#7ac77a;stroke-width:1.4;fill:none;marker-end:url(#a6)}
+        </style>
+      </defs>
+
+      <rect x="24" y="30" width="220" height="76" rx="8" class="bbA"/>
+      <text x="38" y="54" class="bt">src-ui/</text>
+      <text x="38" y="74" class="bs">TypeScript + xterm.js</text>
+      <text x="38" y="90" class="bs">package.json / lock</text>
+
+      <rect x="24" y="300" width="220" height="76" rx="8" class="bbG"/>
+      <text x="38" y="324" class="bt">crates/</text>
+      <text x="38" y="344" class="bs">Rust workspace</text>
+      <text x="38" y="360" class="bs">Cargo.toml / Cargo.lock</text>
+
+      <rect x="300" y="30" width="190" height="76" rx="8" class="bb"/>
+      <text x="314" y="54" class="bt">npm ci</text>
+      <text x="314" y="74" class="bs">install locked deps</text>
+      <text x="314" y="90" class="bs">src-ui/node_modules</text>
+
+      <rect x="546" y="30" width="190" height="76" rx="8" class="bb"/>
+      <text x="560" y="54" class="bt">npm test</text>
+      <text x="560" y="74" class="bs">vitest run</text>
+      <text x="560" y="90" class="bs">20 test files</text>
+
+      <rect x="792" y="30" width="190" height="76" rx="8" class="bbA"/>
+      <text x="806" y="54" class="bt">npm run build</text>
+      <text x="806" y="74" class="bs">tsc --noEmit</text>
+      <text x="806" y="90" class="bs">vite build</text>
+
+      <rect x="1038" y="30" width="96" height="76" rx="8" class="bbA"/>
+      <text x="1052" y="58" class="bt">dist/</text>
+      <text x="1052" y="78" class="bs">embedded</text>
+
+      <path class="ba" d="M244 68 H300"/>
+      <path class="ba" d="M490 68 H546"/>
+      <path class="baA" d="M736 68 H792"/>
+      <path class="ba" d="M982 68 H1038"/>
+
+      <rect x="300" y="300" width="190" height="76" rx="8" class="bb"/>
+      <text x="314" y="324" class="bt">cargo test</text>
+      <text x="314" y="344" class="bs">--workspace --locked</text>
+      <text x="314" y="360" class="bs">58 Rust tests</text>
+
+      <rect x="546" y="300" width="190" height="76" rx="8" class="bbG"/>
+      <text x="560" y="324" class="bt">cargo build</text>
+      <text x="560" y="344" class="bs">--release</text>
+      <text x="560" y="360" class="bs">-p shell -p worker -p notify</text>
+
+      <rect x="792" y="300" width="190" height="76" rx="8" class="bbG"/>
+      <text x="806" y="324" class="bt">target/release</text>
+      <text x="806" y="344" class="bs">muis</text>
+      <text x="806" y="360" class="bs">muis-worker · muis-notify</text>
+
+      <path class="ba" d="M244 338 H300"/>
+      <path class="ba" d="M490 338 H546"/>
+      <path class="baG" d="M736 338 H792"/>
+
+      <rect x="546" y="430" width="300" height="86" rx="10" class="bbA"/>
+      <text x="696" y="454" text-anchor="middle" class="bt">Tauri shell build</text>
+      <text x="696" y="476" text-anchor="middle" class="bs">muis-shell/build.rs + generate_context!</text>
+      <text x="696" y="494" text-anchor="middle" class="bs">frontendDist = ../../src-ui/dist</text>
+
+      <path class="baA" d="M1086 106 V420 H846"/>
+      <path class="baG" d="M887 376 V430 H846"/>
+      <text x="900" y="414" class="bs">binaries + dist</text>
+
+      <rect x="24" y="430" width="470" height="86" rx="8" class="bbY"/>
+      <text x="38" y="454" class="bt">Release / package artifacts</text>
+      <text x="38" y="476" class="bs">Linux tarball · AppImage · Flatpak · Windows zip · AUR source build</text>
+      <text x="38" y="494" class="bs">Windows: shell links worker+notify → one muis.exe</text>
+
+      <path class="ba" d="M546 472 H494"/>
+
+      <rect x="24" y="190" width="1050" height="62" rx="8" class="bb"/>
+      <text x="38" y="214" class="bt">Development path</text>
+      <text x="38" y="234" class="bs">vite dev server on :1420  +  cargo run -p muis-shell  →  tauri devUrl http://localhost:1420  ·  no packaging, no embedded dist</text>
+    </svg>
+    <figcaption>Figure 6 — Build graph. The frontend is built once and embedded; packaging only rearranges the same binaries.</figcaption>
+  </figure>
+
+  <h3>Local commands</h3>
+  <div class="cols">
+    <pre><code># Rust workspace
+cargo build
+cargo test --workspace --locked
+
+# Frontend
+cd src-ui
+npm ci
+npm test          # vitest
+npm run build     # tsc --noEmit && vite build
+
+# Dev window (needs system WebKit)
+cargo run -p muis-shell</code></pre>
+    <pre><code># Native PTY smoke
+npm ci --prefix src-ui
+npm run build --prefix src-ui
+cargo build --locked \
+  -p muis-shell -p muis-worker -p muis-notify
+npm ci --prefix tests/e2e
+npm run test:live:x11 --prefix tests/e2e
+
+# AppImage (manual)
+(cd crates/muis-shell && \
+  ../../src-ui/node_modules/.bin/tauri build --bundles appimage)</code></pre>
+  </div>
+
+  <div class="callout">
+    <b>Why the Tauri shell is the merge point:</b> <code>tauri.conf.json</code>
+    points <code>frontendDist</code> at <code>../../src-ui/dist</code> and
+    <code>tauri-build</code> generates the context that embeds it. If the UI
+    was not built first, the shell build embeds an old or missing dist.
+  </div>
+</section>
+
+<section id="packaging">
+  <h2><span class="n">09</span> Packaging matrix</h2>
+  <p class="sub">
+    One codebase, different process layouts. The important difference is
+    whether the worker and notify CLI are siblings, embedded, or deliberately
+    absent.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Artifact</th><th>Built by</th><th>Contains</th><th>Runtime notes</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Arch / AUR</b><br><span class="pill info">source build</span></td>
+        <td><code>aur/PKGBUILD</code> (user machine)</td>
+        <td><code>muis</code>, <code>muis-worker</code>, <code>muis-notify</code>, desktop entry, hicolor icons</td>
+        <td>XDG paths; <code>fish</code> optional for the OSC 133 command bar. <code>pkgver</code> is currently <b>1.0.0</b> and is stale relative to <code>tauri.conf.json</code> 1.4.0.</td>
+      </tr>
+      <tr>
+        <td><b>Linux tarball</b><br><span class="pill info">release job</span></td>
+        <td><code>linux-tarball</code></td>
+        <td><code>muis</code>, <code>muis-worker</code>, <code>muis-notify</code>, desktop file, 512 px icon, <code>.sha256</code></td>
+        <td>Worker resolved as a sibling of the shell. XDG paths. Built on <code>ubuntu-latest</code>.</td>
+      </tr>
+      <tr>
+        <td><b>AppImage</b><br><span class="pill info">release job</span></td>
+        <td><code>appimage</code> on <code>ubuntu-22.04</code></td>
+        <td><code>muis</code> plus <code>muis-worker</code> and <code>muis-notify</code> placed in <code>usr/bin</code> via <code>bundle.linux.appimage.files</code>; WebKitGTK et al. bundled</td>
+        <td>Low glibc floor. Worker strips AppImage-injected env (<code>APPIMAGE</code>, <code>APPDIR</code>, <code>LD_PRELOAD</code>, <code>PYTHON*</code>, GTK/GIO paths, <code>/.mount_*</code> entries) before spawning the user's shell.</td>
+      </tr>
+      <tr>
+        <td><b>Flatpak</b><br><span class="pill info">release job</span></td>
+        <td><code>flatpak</code> in the GNOME 49 container</td>
+        <td><code>muis</code> + <code>muis-worker</code>; frontend <code>dist</code> supplied by the <code>frontend</code> job; <b>no muis-notify</b></td>
+        <td>Worker detects <code>/.flatpak-info</code> and runs the shell on the host via <code>flatpak-spawn --host</code> with explicit <code>--env</code> forwarding. State under <code>~/.var/app/…</code>. CLI notifications unavailable by design.</td>
+      </tr>
+      <tr>
+        <td><b>Windows portable</b><br><span class="pill ok">single exe</span></td>
+        <td><code>windows-single-exe</code> / <code>windows</code></td>
+        <td>only <code>muis.exe</code> in a zip</td>
+        <td>Shell links worker + notify on Windows (<code>cfg(windows)</code> dependencies) and re-execs itself as <code>--muis-worker</code> or <code>--muis-notify</code> in hidden consoleless modes. On first run it stages a copy of itself to <code>%LOCALAPPDATA%\muis\bin</code> to drop Mark-of-the-Web, then starts the worker from that copy. Sets <code>MUIS_BIN</code> for hooks.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Platform-specific shell spawning</h3>
+  <div class="grid g3">
+    <div class="card">
+      <h4>Linux native</h4>
+      <p><code>$SHELL</code> if executable, else fish → bash → sh. Fish gets <code>-C</code> init snippets: silence the greeting and emit OSC 133 C/D markers. <code>TERM=xterm-256color</code>, <code>LANG=C.UTF-8</code>, <code>TERM_PROGRAM=muis</code>, <code>MUIS_TAB_ID</code>.</p>
+    </div>
+    <div class="card">
+      <h4>Windows</h4>
+      <p>Probe <code>pwsh.exe</code> → <code>powershell.exe</code> → <code>cmd.exe</code>, then <code>%SystemRoot%\System32\cmd.exe</code>. The worker runs inside the same exe via re-exec. <code>CREATE_NO_WINDOW</code> prevents console flashes.</p>
+    </div>
+    <div class="card">
+      <h4>Flatpak</h4>
+      <p><code>flatpak-spawn --host --directory=&lt;cwd&gt; --env=KEY=VALUE … shell</code>. Only explicitly forwarded variables cross the sandbox boundary; the user gets their real host shell and tools.</p>
+    </div>
+  </div>
+
+  <h3>Release signing key</h3>
+  <p class="small muted">
+    Public material lives in <code>packaging/keys/</code>:
+    <code>muis-release.gpg</code> (binary keyring for <code>gpgv</code>),
+    <code>muis-release.asc</code> (armored public key),
+    <code>muis-trusted</code> (pinned primary fingerprint), and a README covering
+    verification and rotation. The private material never lives in the repo; the
+    signing subkey and passphrase are provided to the protected
+    <code>release</code> GitHub Environment as secrets.
+  </p>
+</section>
+
+<section id="tests">
+  <h2><span class="n">10</span> Test layers</h2>
+  <p class="sub">
+    Five layers, each answering a different question. The lower layers are fast
+    and run everywhere; the native layer proves the real Tauri + WebKit + PTY
+    path without a desktop.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1160 470" role="img" aria-label="Test layers">
+      <defs>
+        <style>
+          .tb{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .tbA{fill:#1d3643;stroke:#3daee9;stroke-width:1.35}
+          .tbG{fill:#23352a;stroke:#5e8a5e;stroke-width:1.25}
+          .tbY{fill:#393420;stroke:#8a7a3e;stroke-width:1.2}
+          .tbP{fill:#2f2738;stroke:#75618c;stroke-width:1.2}
+          .tt{fill:#e8ecef;font:600 13px var(--mono)}
+          .ts{fill:#a2adb5;font:11.5px var(--mono)}
+          .th{fill:#8e9aa2;font:600 11px var(--mono)}
+        </style>
+      </defs>
+
+      <text x="24" y="28" class="th">LAYER</text>
+      <text x="300" y="28" class="th">WHAT IT PROVES</text>
+      <text x="760" y="28" class="th">WHERE / ARTIFACTS</text>
+
+      <rect x="24" y="44" width="1096" height="58" rx="8" class="tbG"/>
+      <text x="38" y="66" class="tt">Rust unit + integration</text>
+      <text x="38" y="86" class="ts">58 #[test] · core, shell, notify, worker roundtrip</text>
+      <text x="300" y="70" class="ts">session/config/shell/IPC rules; shared fixture; real pty echo, snapshot, exit 42; bridge isolation</text>
+      <text x="760" y="70" class="ts">cargo test --workspace --locked · ubuntu-latest</text>
+
+      <rect x="24" y="116" width="1096" height="58" rx="8" class="tbA"/>
+      <text x="38" y="138" class="tt">Frontend unit</text>
+      <text x="38" y="158" class="ts">vitest · 20 files · ~138 it/test cases</text>
+      <text x="300" y="142" class="ts">pure policy: session store, config fallback, OSC split chunks, notifications, search, shortcuts, theme lock, IPC fixture</text>
+      <text x="760" y="142" class="ts">npm test --prefix src-ui · node environment</text>
+
+      <rect x="24" y="188" width="1096" height="58" rx="8" class="tb"/>
+      <text x="38" y="210" class="tt">Browser interaction</text>
+      <text x="38" y="230" class="ts">Selenium + headless Chrome</text>
+      <text x="300" y="214" class="ts">real clicks/keys/screenshots against the production build in EchoTransport mode: chrome, tabs, sessions, search, settings, drag/selection, one visible terminal</text>
+      <text x="760" y="214" class="ts">served on :4173 · artifacts/browser screenshots</text>
+
+      <rect x="24" y="260" width="1096" height="76" rx="8" class="tbY"/>
+      <text x="38" y="282" class="tt">Native Tauri + PTY smoke</text>
+      <text x="38" y="302" class="ts">Xvfb + WebKitGTK + real worker</text>
+      <text x="300" y="286" class="ts">stages muis + worker like a package; launches the real window; a debug hook sends a marker through UI → Tauri → worker → real PTY; verifies scrollback, OSC 9/777/99, CLI notify badge, no echoed terminal replies</text>
+      <text x="760" y="286" class="ts">tests/e2e/live-x11.sh · screenshot + run logs</text>
+      <text x="300" y="320" class="ts" style="fill:#e8d493">condition: main push or PR touching crates/src-ui/tests/workflows</text>
+
+      <rect x="24" y="350" width="1096" height="76" rx="8" class="tbP"/>
+      <text x="38" y="372" class="tt">Manual / plugin</text>
+      <text x="38" y="392" class="ts">node --test + live KDE</text>
+      <text x="300" y="376" class="ts">opencode plugin notification payload (fake shell); optional real-desktop live.mjs types into a KDE Wayland window via ydotool and checks snapshots</text>
+      <text x="760" y="376" class="ts">tests/e2e/muis-plugin.test.mjs · live.mjs</text>
+
+      <rect x="24" y="442" width="1096" height="18" rx="4" fill="#1a2024" stroke="#303a41"/>
+      <text x="38" y="455" class="ts">Higher layers are fewer and slower; lower layers run on every change and catch contract breaks first.</text>
+    </svg>
+    <figcaption>Figure 7 — Test layers. The shared IPC fixture is the seam that keeps the Rust and TypeScript models honest.</figcaption>
+  </figure>
+
+  <h3>Commands</h3>
+  <table>
+    <thead><tr><th>Layer</th><th>Command</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Rust</td><td><code>cargo test --workspace --locked</code></td><td>No display required. The worker roundtrip spawns the real binary and drives real PTYs.</td></tr>
+      <tr><td>UI</td><td><code>npm test --prefix src-ui</code></td><td>Vitest, Node environment; no DOM.</td></tr>
+      <tr><td>UI build</td><td><code>npm run build --prefix src-ui</code></td><td><code>tsc --noEmit</code> then Vite.</td></tr>
+      <tr><td>Browser E2E</td><td><code>MUIS_URL=http://127.0.0.1:4173 npm test --prefix tests/e2e</code></td><td>Serve <code>src-ui/dist</code> first; includes Selenium + plugin tests.</td></tr>
+      <tr><td>Native smoke</td><td><code>npm run test:live:x11 --prefix tests/e2e</code></td><td>Requires Xvfb, xauth, ImageMagick; builds debug binaries first.</td></tr>
+      <tr><td>Manual desktop</td><td><code>npm run test:live --prefix tests/e2e</code></td><td>KDE Wayland, qdbus6, ydotool, spectacle.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <b>Regression anchor:</b> “exactly one terminal surface is visible” is
+    asserted while switching sessions and tabs. This catches the classic xterm
+    bug where a hidden workspace's surface stays displayed behind the active
+    one.
+  </div>
+</section>
+
+<section id="ci">
+  <h2><span class="n">11</span> GitHub Actions — CI</h2>
+  <p class="sub">
+    <code>.github/workflows/ci.yml</code>. Runs on pushes to <code>main</code>
+    and on every pull request, but ignores Markdown and <code>docs/**</code>
+    changes. Superseded runs on the same ref are cancelled.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1160 660" role="img" aria-label="CI workflow graph">
+      <defs>
+        <marker id="a7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#95a4ad"/>
+        </marker>
+        <style>
+          .cb{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .cbA{fill:#1d3643;stroke:#3daee9;stroke-width:1.35}
+          .cbG{fill:#23352a;stroke:#5e8a5e;stroke-width:1.25}
+          .cbY{fill:#393420;stroke:#8a7a3e;stroke-width:1.2}
+          .ct{fill:#e8ecef;font:600 12.5px var(--mono)}
+          .cs{fill:#a2adb5;font:11px var(--mono)}
+          .ca{stroke:#95a4ad;stroke-width:1.25;fill:none;marker-end:url(#a7)}
+          .caA{stroke:#3daee9;stroke-width:1.4;fill:none;marker-end:url(#a7)}
+          .caG{stroke:#7ac77a;stroke-width:1.4;fill:none;marker-end:url(#a7)}
+        </style>
+      </defs>
+
+      <rect x="24" y="34" width="230" height="70" rx="8" class="cbA"/>
+      <text x="38" y="58" class="ct">push → main</text>
+      <text x="38" y="78" class="cs">paths-ignore: **/*.md · docs/**</text>
+      <text x="38" y="94" class="cs">always full suite</text>
+
+      <rect x="24" y="122" width="230" height="70" rx="8" class="cbA"/>
+      <text x="38" y="146" class="ct">pull_request</text>
+      <text x="38" y="166" class="cs">paths-ignore: **/*.md · docs/**</text>
+      <text x="38" y="182" class="cs">conditional heavy jobs</text>
+
+      <rect x="310" y="70" width="210" height="86" rx="8" class="cb"/>
+      <text x="324" y="94" class="ct">changes</text>
+      <text x="324" y="114" class="cs">dorny/paths-filter</text>
+      <text x="324" y="130" class="cs">native: crates/src-ui/tests/…</text>
+      <text x="324" y="146" class="cs">windows: crates/aur/packaging/…</text>
+
+      <path class="caA" d="M254 69 H310"/>
+      <path class="caA" d="M254 157 H310"/>
+
+      <rect x="576" y="58" width="230" height="110" rx="8" class="cbG"/>
+      <text x="590" y="82" class="ct">build-ui</text>
+      <text x="590" y="102" class="cs">npm ci --prefix src-ui</text>
+      <text x="590" y="118" class="cs">npm test</text>
+      <text x="590" y="134" class="cs">npm run build</text>
+      <text x="590" y="150" class="cs">↑ artifact: ui-dist</text>
+
+      <path class="caA" d="M520 113 H576"/>
+
+      <rect x="862" y="38" width="272" height="160" rx="8" class="cb"/>
+      <text x="876" y="62" class="ct">rust</text>
+      <text x="876" y="82" class="cs">needs: build-ui, changes</text>
+      <text x="876" y="98" class="cs">download ui-dist</text>
+      <text x="876" y="114" class="cs">rust-cache · WebKit/GTK deps</text>
+      <text x="876" y="130" class="cs">cargo test --workspace --locked</text>
+      <text x="876" y="146" class="cs">if push or native:</text>
+      <text x="876" y="162" class="cs">  build shell/worker/notify</text>
+      <text x="876" y="178" class="cs">  live-x11.sh under Xvfb</text>
+      <text x="876" y="194" class="cs">↑ artifact: muis-native-xvfb (always)</text>
+
+      <path class="caG" d="M806 102 H862"/>
+
+      <rect x="862" y="218" width="272" height="132" rx="8" class="cb"/>
+      <text x="876" y="242" class="ct">browser-e2e</text>
+      <text x="876" y="262" class="cs">needs: build-ui</text>
+      <text x="876" y="278" class="cs">setup-chrome + chromedriver</text>
+      <text x="876" y="294" class="cs">download ui-dist</text>
+      <text x="876" y="310" class="cs">npm ci --prefix tests/e2e</text>
+      <text x="876" y="326" class="cs">http.server :4173 → npm test</text>
+      <text x="876" y="342" class="cs">↑ artifact: muis-browser-e2e (always)</text>
+
+      <path class="caG" d="M806 145 V284 H862"/>
+
+      <rect x="862" y="370" width="272" height="140" rx="8" class="cbY"/>
+      <text x="876" y="394" class="ct">windows-single-exe</text>
+      <text x="876" y="414" class="cs">needs: build-ui, changes</text>
+      <text x="876" y="430" class="cs">if push or windows == true</text>
+      <text x="876" y="446" class="cs">windows-latest · rust-cache</text>
+      <text x="876" y="462" class="cs">cargo build --release -p muis-shell</text>
+      <text x="876" y="478" class="cs">Compress-Archive muis.exe</text>
+      <text x="876" y="494" class="cs">↑ artifact: muis-windows</text>
+
+      <path class="caA" d="M806 168 V440 H862"/>
+
+      <rect x="24" y="250" width="760" height="128" rx="8" class="cb"/>
+      <text x="38" y="274" class="ct">Why this shape</text>
+      <text x="38" y="296" class="cs">• build-ui runs once; every heavier job downloads the same dist instead of reinstalling npm.</text>
+      <text x="38" y="314" class="cs">• rust tests always run; the expensive Xvfb smoke is skipped for UI-only PRs unless native paths changed.</text>
+      <text x="38" y="332" class="cs">• windows packaging is skipped for UI-only PRs; on main it always runs.</text>
+      <text x="38" y="350" class="cs">• concurrency: cancel-in-progress on the same ref; artifacts are uploaded even on failure.</text>
+
+      <rect x="24" y="410" width="760" height="100" rx="8" class="cbA"/>
+      <text x="38" y="434" class="ct">PR gate summary</text>
+      <text x="38" y="456" class="cs">Every non-doc PR: build-ui + rust + browser-e2e (+ windows if Rust/packaging changed).</text>
+      <text x="38" y="474" class="cs">Docs-only PR: the workflow does not run (paths-ignore).</text>
+      <text x="38" y="492" class="cs">All jobs pin Node 22 and use lockfiles via npm ci.</text>
+
+      <rect x="24" y="538" width="1110" height="92" rx="8" class="cbG"/>
+      <text x="38" y="562" class="ct">What the native smoke actually checks</text>
+      <text x="38" y="584" class="cs">1. Stage muis + muis-worker + muis-notify as a package would.  2. Seed two workspaces so a background tab exists.</text>
+      <text x="38" y="602" class="cs">3. Launch real Tauri/WebKit under Xvfb.  4. Send a unique marker through UI → worker → PTY.</text>
+      <text x="38" y="620" class="cs">5. Assert the marker reached real scrollback; OSC 9/777/99 reached the frontend; CLI notify badged the background tab.</text>
+    </svg>
+    <figcaption>Figure 8 — CI job graph. The build-once / fan-out pattern keeps the heavy native and browser jobs fast.</figcaption>
+  </figure>
+
+  <h3>Job table</h3>
+  <table>
+    <thead><tr><th>Job</th><th>Depends on</th><th>Runs when</th><th>Produces</th></tr></thead>
+    <tbody>
+      <tr><td><code>changes</code></td><td>—</td><td>always</td><td><code>native</code>, <code>windows</code> booleans from path filters</td></tr>
+      <tr><td><code>build-ui</code></td><td>—</td><td>always</td><td><code>ui-dist</code> artifact after <code>npm test</code> + <code>npm run build</code></td></tr>
+      <tr><td><code>rust</code></td><td><code>build-ui</code>, <code>changes</code></td><td>always</td><td>Rust test result; Xvfb artifacts when native</td></tr>
+      <tr><td><code>browser-e2e</code></td><td><code>build-ui</code></td><td>always</td><td>Selenium screenshot artifact</td></tr>
+      <tr><td><code>windows-single-exe</code></td><td><code>build-ui</code>, <code>changes</code></td><td>main push or Windows paths</td><td><code>muis-windows.zip</code></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="release">
+  <h2><span class="n">12</span> GitHub Actions — release</h2>
+  <p class="sub">
+    <code>.github/workflows/release.yml</code>. Triggered by a <code>v*</code>
+    tag (or manual dispatch). The version is read from
+    <code>crates/muis-shell/tauri.conf.json</code>; on a tag push, the tag must
+    equal <code>v&lt;version&gt;</code> or the whole run fails immediately.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1160 700" role="img" aria-label="Release workflow graph">
+      <defs>
+        <marker id="a8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#95a4ad"/>
+        </marker>
+        <style>
+          .rb{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .rbA{fill:#1d3643;stroke:#3daee9;stroke-width:1.35}
+          .rbG{fill:#23352a;stroke:#5e8a5e;stroke-width:1.25}
+          .rbY{fill:#393420;stroke:#8a7a3e;stroke-width:1.2}
+          .rbP{fill:#2f2738;stroke:#75618c;stroke-width:1.2}
+          .rt{fill:#e8ecef;font:600 12.5px var(--mono)}
+          .rs{fill:#a2adb5;font:11px var(--mono)}
+          .ra{stroke:#95a4ad;stroke-width:1.25;fill:none;marker-end:url(#a8)}
+          .raA{stroke:#3daee9;stroke-width:1.4;fill:none;marker-end:url(#a8)}
+          .raG{stroke:#7ac77a;stroke-width:1.4;fill:none;marker-end:url(#a8)}
+          .raP{stroke:#bb9af7;stroke-width:1.4;fill:none;marker-end:url(#a8)}
+        </style>
+      </defs>
+
+      <rect x="24" y="30" width="260" height="78" rx="8" class="rbP"/>
+      <text x="38" y="54" class="rt">push tag v*</text>
+      <text x="38" y="74" class="rs">or workflow_dispatch</text>
+      <text x="38" y="90" class="rs">permissions: contents: read</text>
+
+      <rect x="354" y="30" width="280" height="78" rx="8" class="rbA"/>
+      <text x="368" y="54" class="rt">version</text>
+      <text x="368" y="74" class="rs">read tauri.conf.json version</text>
+      <text x="368" y="90" class="rs">tag must be v&lt;version&gt;</text>
+
+      <path class="raP" d="M284 69 H354"/>
+
+      <rect x="720" y="30" width="190" height="82" rx="8" class="rbG"/>
+      <text x="734" y="54" class="rt">linux-tarball</text>
+      <text x="734" y="74" class="rs">3 binaries + desktop</text>
+      <text x="734" y="90" class="rs">+ icon + .sha256</text>
+
+      <rect x="720" y="132" width="190" height="82" rx="8" class="rbG"/>
+      <text x="734" y="156" class="rt">appimage</text>
+      <text x="734" y="176" class="rs">ubuntu-22.04 baseline</text>
+      <text x="734" y="192" class="rs">tauri build --bundles appimage</text>
+
+      <rect x="720" y="234" width="190" height="82" rx="8" class="rbG"/>
+      <text x="734" y="258" class="rt">windows</text>
+      <text x="734" y="278" class="rs">build -p muis-shell</text>
+      <text x="734" y="294" class="rs">zip one muis.exe</text>
+
+      <rect x="720" y="336" width="190" height="82" rx="8" class="rbG"/>
+      <text x="734" y="360" class="rt">frontend</text>
+      <text x="734" y="380" class="rs">npm ci + build</text>
+      <text x="734" y="396" class="rs">ui-dist.tgz artifact</text>
+
+      <path class="raA" d="M634 69 H720"/>
+
+      <rect x="720" y="470" width="190" height="82" rx="8" class="rbY"/>
+      <text x="734" y="494" class="rt">flatpak</text>
+      <text x="734" y="514" class="rs">needs: version + frontend</text>
+      <text x="734" y="530" class="rs">GNOME 49 container</text>
+      <text x="734" y="546" class="rs">no notify; host shell</text>
+
+      <path class="ra" d="M815 418 V470"/>
+
+      <rect x="960" y="30" width="176" height="450" rx="8" class="rb"/>
+      <text x="974" y="54" class="rt">Release artifacts</text>
+      <text x="974" y="78" class="rs">linux tarball + sha256</text>
+      <text x="974" y="98" class="rs">AppImage + SHA256SUMS</text>
+      <text x="974" y="118" class="rs">Windows zip</text>
+      <text x="974" y="138" class="rs">Flatpak + SHA256SUMS</text>
+      <text x="974" y="166" class="rs" style="fill:#e8d493">Then the aggregator:</text>
+      <text x="974" y="188" class="rs">download all artifacts</text>
+      <text x="974" y="208" class="rs">write aggregate SHA256SUMS</text>
+      <text x="974" y="228" class="rs">detached-sign every file</text>
+      <text x="974" y="248" class="rs">gpgv verify signatures</text>
+      <text x="974" y="268" class="rs">gh release create --generate-notes</text>
+      <text x="974" y="296" class="rs" style="fill:#e8d493">Release assets:</text>
+      <text x="974" y="318" class="rs">*.AppImage + .asc</text>
+      <text x="974" y="338" class="rs">*.tar.gz + .asc</text>
+      <text x="974" y="358" class="rs">*.zip + .asc</text>
+      <text x="974" y="378" class="rs">*.flatpak + .asc</text>
+      <text x="974" y="398" class="rs">SHA256SUMS + .asc</text>
+      <text x="974" y="418" class="rs">muis-release.asc (public key)</text>
+
+      <path class="ra" d="M960 80 H910"/>
+      <path class="ra" d="M960 170 H910"/>
+      <path class="ra" d="M960 270 H910"/>
+      <path class="ra" d="M960 370 H910"/>
+      <path class="ra" d="M960 510 H910"/>
+
+      <rect x="24" y="250" width="600" height="300" rx="8" class="rbA"/>
+      <text x="38" y="274" class="rt">release job details</text>
+      <text x="38" y="298" class="rs">needs: version, linux-tarball, appimage, flatpak, windows</text>
+      <text x="38" y="318" class="rs">runs only for tag pushes: startsWith(github.ref, 'refs/tags/v')</text>
+      <text x="38" y="338" class="rs">environment: release  ·  permissions: contents: write</text>
+      <text x="38" y="358" class="rs">secrets: MUIS_GPG_PRIVATE_KEY · MUIS_GPG_PASSPHRASE · MUIS_GPG_FPR</text>
+      <text x="38" y="386" class="rs">Step 1 — checkout with fetch-depth: 0; download artifacts merged into dist/.</text>
+      <text x="38" y="406" class="rs">Step 2 — find *.AppImage, *.tar.gz, *.zip, *.flatpak; write sorted SHA256SUMS.</text>
+      <text x="38" y="426" class="rs">Step 3 — import the signing subkey; detached-sign each artifact and SHA256SUMS.</text>
+      <text x="38" y="446" class="rs">Step 4 — verify every signature with gpgv using packaging/keys/muis-release.gpg.</text>
+      <text x="38" y="466" class="rs">Step 5 — gh release create with assets, checksums, signatures, public key.</text>
+      <text x="38" y="494" class="rs" style="fill:#e8d493">Signing happens after assembly, so the published SHA256SUMS is itself signed.</text>
+      <text x="38" y="518" class="rs">The job cannot publish unless every artifact and signature verifies.</text>
+
+      <rect x="24" y="580" width="1110" height="94" rx="8" class="rbG"/>
+      <text x="38" y="604" class="rt">Version authority &amp; release hygiene</text>
+      <text x="38" y="626" class="rs">crates/muis-shell/tauri.conf.json is the single version source (currently 1.4.0). Crate versions (0.1.0) and src-ui/package.json (1.0.0) are not release versions.</text>
+      <text x="38" y="644" class="rs">Tag push must match exactly: v1.4.0. A mismatch fails the version job before anything is built or published.</text>
+      <text x="38" y="662" class="rs">aur/PKGBUILD pkgver is stale at 1.0.0; the documented release checklist says to bump it separately when mirroring to the AUR.</text>
+    </svg>
+    <figcaption>Figure 9 — Release graph. Every platform build is independent; the aggregate release job is the only writer to GitHub Releases.</figcaption>
+  </figure>
+
+  <h3>Release jobs</h3>
+  <table>
+    <thead><tr><th>Job</th><th>Runner</th><th>Key steps</th><th>Artifact</th></tr></thead>
+    <tbody>
+      <tr><td><code>version</code></td><td>ubuntu-latest</td><td>Read <code>tauri.conf.json</code> version; reject a mismatched tag.</td><td>output: <code>version</code></td></tr>
+      <tr><td><code>linux-tarball</code></td><td>ubuntu-latest</td><td>npm build → cargo release → stage 3 binaries + desktop + icon → tar + sha256.</td><td><code>linux-tarball</code></td></tr>
+      <tr><td><code>appimage</code></td><td>ubuntu-22.04</td><td>build worker + notify → <code>tauri build --bundles appimage</code> → checksum.</td><td><code>appimage</code></td></tr>
+      <tr><td><code>windows</code></td><td>windows-latest</td><td>build <code>muis-shell</code> → zip the single exe.</td><td><code>windows</code></td></tr>
+      <tr><td><code>frontend</code></td><td>ubuntu-latest</td><td>npm build → <code>ui-dist.tgz</code> (not <code>.tar.gz</code>, so the release glob ignores it).</td><td><code>ui-dist</code></td></tr>
+      <tr><td><code>flatpak</code></td><td>GNOME 49 container</td><td>unpack ui-dist → flatpak-builder → versioned bundle + checksum.</td><td><code>flatpak</code></td></tr>
+      <tr><td><code>release</code></td><td>ubuntu-latest</td><td>download all → aggregate checksums → sign → verify → <code>gh release create</code>.</td><td>GitHub Release</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="github">
+  <h2><span class="n">13</span> GitHub flow end to end</h2>
+  <p class="sub">
+    How a change travels from a local branch to a signed release, and which
+    automation sees it at each step.
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1160 330" role="img" aria-label="GitHub development and release flow">
+      <defs>
+        <marker id="a9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#95a4ad"/>
+        </marker>
+        <style>
+          .gb{fill:#252d32;stroke:#47535b;stroke-width:1.2}
+          .gbA{fill:#1d3643;stroke:#3daee9;stroke-width:1.35}
+          .gbG{fill:#23352a;stroke:#5e8a5e;stroke-width:1.25}
+          .gbY{fill:#393420;stroke:#8a7a3e;stroke-width:1.2}
+          .gbP{fill:#2f2738;stroke:#75618c;stroke-width:1.2}
+          .gt{fill:#e8ecef;font:600 12.5px var(--mono)}
+          .gs{fill:#a2adb5;font:11px var(--mono)}
+          .ga{stroke:#95a4ad;stroke-width:1.3;fill:none;marker-end:url(#a9)}
+          .gaA{stroke:#3daee9;stroke-width:1.4;fill:none;marker-end:url(#a9)}
+          .gaY{stroke:#8a7a3e;stroke-width:1.4;fill:none;marker-end:url(#a9)}
+          .gaP{stroke:#bb9af7;stroke-width:1.4;fill:none;marker-end:url(#a9)}
+        </style>
+      </defs>
+
+      <rect x="20" y="76" width="170" height="88" rx="8" class="gb"/>
+      <text x="34" y="100" class="gt">feature branch</text>
+      <text x="34" y="120" class="gs">worktree</text>
+      <text x="34" y="136" class="gs">neutral branch name</text>
+      <text x="34" y="152" class="gs">feature/… fix/… chore/…</text>
+
+      <rect x="226" y="76" width="150" height="88" rx="8" class="gbA"/>
+      <text x="240" y="100" class="gt">commit + push</text>
+      <text x="240" y="120" class="gs">review diff first</text>
+      <text x="240" y="136" class="gs">stage intended files</text>
+
+      <rect x="412" y="76" width="170" height="88" rx="8" class="gbA"/>
+      <text x="426" y="100" class="gt">pull request</text>
+      <text x="426" y="120" class="gs">base: main</text>
+      <text x="426" y="136" class="gs">CI: ci.yml</text>
+
+      <rect x="618" y="30" width="190" height="58" rx="8" class="gbG"/>
+      <text x="632" y="54" class="gt">ci.yml passes</text>
+      <text x="632" y="74" class="gs">build-ui · rust · e2e · windows</text>
+
+      <rect x="618" y="112" width="190" height="58" rx="8" class="gb"/>
+      <text x="632" y="136" class="gt">maintainer review</text>
+      <text x="632" y="156" class="gs">review + merge to main</text>
+
+      <rect x="844" y="76" width="138" height="88" rx="8" class="gbY"/>
+      <text x="858" y="100" class="gt">tag vX.Y.Z</text>
+      <text x="858" y="120" class="gs">on main</text>
+      <text x="858" y="136" class="gs">release.yml</text>
+
+      <rect x="1018" y="62" width="126" height="116" rx="8" class="gbP"/>
+      <text x="1032" y="86" class="gt">GitHub</text>
+      <text x="1032" y="106" class="gs">Release</text>
+      <text x="1032" y="126" class="gs">signed assets</text>
+      <text x="1032" y="146" class="gs">SHA256SUMS</text>
+      <text x="1032" y="166" class="gs">public key</text>
+
+      <path class="ga" d="M190 120 H226"/>
+      <path class="gaA" d="M376 120 H412"/>
+      <path class="gaA" d="M582 106 L618 68"/>
+      <path class="ga" d="M582 132 L618 140"/>
+      <path class="ga" d="M808 68 H844 V106"/>
+      <path class="gaY" d="M808 140 H844"/>
+      <path class="gaP" d="M982 120 H1018"/>
+
+      <text x="20" y="222" class="gs">Docs-only changes (Markdown, docs/**) are ignored by the CI trigger. A docs-only PR therefore has no workflow run.</text>
+      <text x="20" y="242" class="gs">A push to main runs the same CI again. The tag is the release switch; there is no separate “build release” button.</text>
+      <text x="20" y="262" class="gs">The release workflow is the only job with contents: write, and it only runs for a tag push (workflow_dispatch builds but does not publish).</text>
+      <text x="20" y="282" class="gs">Downstream: AUR PKGBUILD points at the GitHub tag tarball; Veldmuis packages repackage the signed upstream release.</text>
+    </svg>
+    <figcaption>Figure 10 — GitHub flow. CI validates the PR; a version tag on main drives the release pipeline.</figcaption>
+  </figure>
+
+  <div class="cols">
+    <div class="card">
+      <h4>Review checklist implied by the repo</h4>
+      <ul class="clean">
+        <li>Branch from <code>main</code> in an isolated worktree; keep <code>main</code> read-only.</li>
+        <li>Run <code>cargo test --workspace --locked</code> and the UI tests/build.</li>
+        <li>For terminal/session changes, run the native Xvfb smoke.</li>
+        <li>Verify there is exactly one visible terminal across session/tab switches.</li>
+        <li>Check docs and version authorities when the change affects packaging.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>What the maintainer must do for a release</h4>
+      <ul class="clean">
+        <li>Bump <code>crates/muis-shell/tauri.conf.json</code>.</li>
+        <li>Tag <code>v&lt;version&gt;</code> on <code>main</code> and push the tag.</li>
+        <li>Let <code>release.yml</code> build, sign, verify, and publish.</li>
+        <li>Bump <code>aur/PKGBUILD</code> and refresh <code>.SRCINFO</code> separately.</li>
+        <li>Optionally update the Veldmuis package that repackages the release.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="notes">
+  <h2><span class="n">14</span> Notable implementation details &amp; drift</h2>
+  <p class="sub">Things worth knowing before changing the code or trusting the docs.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h4>Invariants worth preserving</h4>
+      <ul class="clean">
+        <li><b>Session ID = workspace ID.</b> <code>WorkerPool</code> is keyed by it; tabs are <code>pty_id</code>s inside that worker.</li>
+        <li><b>Worker spawn is idempotent.</b> Selecting a tab again does not start a second worker.</li>
+        <li><b>Snapshot ids are sanitized.</b> A crafted tab id cannot escape the sessions directory.</li>
+        <li><b>Config/session writes validate JSON</b> before touching disk.</li>
+        <li><b>Test mode never writes</b> real sessions, config, or snapshots.</li>
+        <li><b>Windows never spawns the downloaded exe directly</b> as the worker; it stages a MOTW-free copy first.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Known drift / stale docs</h4>
+      <ul class="clean">
+        <li><b>Version sources disagree:</b> <code>tauri.conf.json</code> is 1.4.0; crates and <code>src-ui/package.json</code> are 0.1.0/1.0.0; <code>aur/PKGBUILD</code> is 1.0.0.</li>
+        <li><b>README still describes a three-exe Windows zip</b>; the current code and release build a single <code>muis.exe</code>.</li>
+        <li><b>Planning docs mention ACP/agent code that is not in this tree.</b> <code>crates/muis-shell/src/</code> contains only <code>bridge</code>, <code>logging</code>, <code>main</code>, and <code>persist</code>.</li>
+        <li><b><code>muis-core</code> session/config structs are not wired into the live shell</b>; the TS store is authoritative for the running app, while the Rust types are exercised by unit tests.</li>
+        <li><b>Worker reconnect is a hook, not a UX.</b> <code>onWorkerDead</code> exists but no caller surfaces it yet.</li>
+        <li><b>Cross-session search scans open tabs' xterm buffers</b>; there is no historical index once a tab is closed.</li>
+        <li><b>Flatpak deliberately omits <code>muis-notify</code></b>, because the sandbox socket cannot be reached from the host shell.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Quick file map</h3>
+  <table>
+    <thead><tr><th>Path</th><th>Why you would open it</th></tr></thead>
+    <tbody>
+      <tr><td><code>crates/muis-core/src/ipc.rs</code></td><td>The wire contract. Change this and the TS types + fixture together.</td></tr>
+      <tr><td><code>crates/muis-worker/src/lib.rs</code></td><td>PTY spawn, scrollback ring, shell argv, Flatpak/AppImage handling, worker loop.</td></tr>
+      <tr><td><code>crates/muis-shell/src/bridge.rs</code></td><td>One-worker-per-session supervision, stdout pump, stderr capture, death event.</td></tr>
+      <tr><td><code>crates/muis-shell/src/main.rs</code></td><td>Tauri commands, notification server, stats sampler, logging, Windows embedded modes.</td></tr>
+      <tr><td><code>crates/muis-shell/src/persist.rs</code></td><td>Session/config writes and scrollback snapshot files.</td></tr>
+      <tr><td><code>crates/muis-shell/opencode-plugin/muis.js</code></td><td>Auto-installed opencode completion notifier.</td></tr>
+      <tr><td><code>src-ui/src/main.ts</code></td><td>Everything the user sees and every UI-side lifecycle path.</td></tr>
+      <tr><td><code>src-ui/src/worker.ts</code></td><td>Frame routing and per-PTY callback maps.</td></tr>
+      <tr><td><code>src-ui/src/sessions.ts</code></td><td>Session/tab model, reorder, move, restore, id minting.</td></tr>
+      <tr><td><code>src-ui/src/osc.ts</code></td><td>All terminal escape-sequence interpretation and notification extraction.</td></tr>
+      <tr><td><code>tests/fixtures/ipc-frames.jsonl</code></td><td>Cross-language contract fixture.</td></tr>
+      <tr><td><code>tests/e2e/live-x11.sh</code></td><td>Real Tauri + WebKit + PTY smoke under Xvfb.</td></tr>
+      <tr><td><code>.github/workflows/ci.yml</code></td><td>PR/main validation and conditional native smoke.</td></tr>
+      <tr><td><code>.github/workflows/release.yml</code></td><td>Tag → platform builds → sign → verify → publish.</td></tr>
+      <tr><td><code>crates/muis-shell/tauri.conf.json</code></td><td>Window, bundle, sidecar layout, and the release version authority.</td></tr>
+      <tr><td><code>packaging/flatpak/org.veldmuislinux.muis.yml</code></td><td>Flatpak runtime, permissions, host-shell integration.</td></tr>
+      <tr><td><code>aur/PKGBUILD</code></td><td>Arch source package; installs the three Linux binaries.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <b>Bottom line:</b> muis is a small Rust supervisor around a large xterm.js
+    frontend, with a deliberately narrow JSON-lines boundary. The system is easy
+    to reason about because the process model, the protocol, and the persistence
+    format are all explicit and independently tested. The risk areas are the
+    platform-specific packaging shims (Flatpak host spawn, AppImage env
+    sanitization, Windows MOTW staging) and documentation drift between the
+    code, planning docs, and version files.
+  </div>
+</section>
+
+<footer>
+  Generated from origin/main @ 2a6eb09 (v1.4.0). File map, workflow steps, and
+  test counts reflect the tree at that commit. Update this page when the process
+  model, IPC, build, or release workflows change.
+</footer>
+
+</div>
+</body>
+</html>
