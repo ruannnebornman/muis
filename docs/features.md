@@ -85,8 +85,6 @@ Each with tests:
 - **Per-workspace accent themes** (`workspaceThemes`).
 - **OSC 8 hyperlinks** (`open_url` opens http(s) in the browser).
 - **Dropped the dead `tabsOnTop`** field (no behavior to wire).
-- **Reset saved sessions**: `muis --reset-sessions` CLI flag, and a
-  Danger-zone **Reset sessions & restart** Settings button (confirmed).
 
 ### Still wanted
 
@@ -111,8 +109,8 @@ aarch64, website, auto-update, Snor engine.
   release. The Veldmuis `veldmuis-muis` package repackages the signed
   upstream release tarball, so a release is required before that package
   can pick the new version up.
-- Clear local test state before switching builds: `muis --reset-sessions`,
-  Settings → *Reset sessions & restart*, or `rm -rf ~/.local/share/muis`.
+- Clear local test state before switching builds: remove the config file
+  (`~/.config/muis/muis.json`).
 - Close superseded PRs #48/#49; review #51.
 
 ### PR map
@@ -197,8 +195,7 @@ capture the need first.
   sampler (`sysinfo`) to read it, extending the system-monitor command
   above.
 - **Open:** per-tab vs per-session only, refresh cadence, whether to show
-  anything with a single session, and how to handle restored or exited
-  pty processes.
+  anything with a single session, and how to handle exited pty processes.
 
 Related: "System monitor in the status bar (CPU / RAM / GPU)" above.
 
@@ -329,7 +326,7 @@ Two cases to distinguish:
   exited and prints `[process exited]` (`src-ui/src/main.ts:482-483`); the
   dead tab — and therefore a session whose only tab died — stays open.
   Desired: if the last tab in a session exits, tear down that session
-  (dispose views, remove snapshot, switch to a neighbouring session).
+  (dispose views, switch to a neighbouring session).
 
 Decided (2026-10-06): remove the session immediately when its last tab's
 process exits — no grace state. Applies the same whether the session is
@@ -342,7 +339,7 @@ sessions offer only "Rename session" (`main.ts:1417`), tabs offer
 "Rename tab" / "Freeze title" (`main.ts:1423-1429`). Add:
 
 - **Close session** to the session menu — dispose every tab view, kill
-  each worker, remove snapshots, then `store.removeWorkspace`. Confirm
+  each worker, then `store.removeWorkspace`. Confirm
   when any tab is busy (reuse the `isTabBusy` rule from `closeTab`,
   `main.ts:573-599`).
 - **Close tab** to the tab menu — the existing `closeTab(ws.id, tab.id)`
@@ -367,8 +364,6 @@ tab into a new window, spawn a split, or move a tab between sessions.
   drop, not during drag.
 - Distinguish a drag from the existing click/select and from double-click
   rename; suppress the context menu on a drag.
-- Persistence: the reordered array is what `scheduleSave` already writes,
-  and restore should keep the new order.
 - Tests: pure reorder helpers (index moves incl. same-index and
   last-to-first) unit-tested on both the TS store and, if mirrored, the
   Rust session model.
@@ -428,8 +423,7 @@ the tab is active. Seen with two opencode tabs open.
   sized before the WebKit layout settles, or a background tab is not
   re-fit when it becomes active, so opencode receives stale rows/cols and
   does not repaint until the next resize. Check the fit addon and the
-  resize frame sent to `muis-worker` on tab create/session restore/tab
-  switch.
+  resize frame sent to `muis-worker` on tab create/tab switch.
 - Reproduce: open opencode in a tab, open a second opencode tab, switch
   between them, observe whether the pane fills.
 
@@ -502,7 +496,7 @@ Ideas worth considering, roughly grouped. None are committed.
 
 ## Already beyond the design mock
 
-Real PTY per session, OSC 7/0/2 cwd+title tracking, scrollback
-snapshots, git branch in the statusbar, settings dialog, busy/quit
-confirmations, and the side-panel slot. Full list in
+Real PTY per session, OSC 7/0/2 cwd+title tracking, git branch in the
+statusbar, settings dialog, busy/quit confirmations, and the side-panel
+slot. Full list in
 `docs/archive/missing-features.md` → "muis has beyond the mock".

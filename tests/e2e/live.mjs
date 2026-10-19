@@ -1,9 +1,8 @@
 /**
  * Live smoke test for the REAL Tauri/WebKit window, not browser preview.
  * It launches muis with isolated XDG state, activates the window through
- * KDE/KWin, focuses xterm via its keyboard shortcut, types a marker via
- * ydotool, waits for the worker scrollback
- * snapshot, asserts the marker reached the real shell, and saves a desktop
+ * KDE/KWin, focuses xterm via its keyboard shortcut, types a command via
+ * ydotool, waits for the shell to write a marker file, and saves a desktop
  * screenshot for visual inspection.
  *
  *   node tests/e2e/live.mjs
@@ -90,28 +89,17 @@ for (const w of list) {
   }
 }
 
-function readSnapshots(sessionsDir) {
-  if (!fs.existsSync(sessionsDir)) return Buffer.alloc(0);
-  const chunks = [];
-  for (const name of fs.readdirSync(sessionsDir)) {
-    if (!name.endsWith(".scrollback")) continue;
-    try {
-      chunks.push(fs.readFileSync(path.join(sessionsDir, name)));
-    } catch {
-      // A concurrent atomic-ish snapshot write may be in progress.
-    }
-  }
-  return Buffer.concat(chunks);
-}
-
-async function waitForMarker(sessionsDir, marker, timeoutMs) {
+async function waitForMarker(markerFile, marker, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const contents = readSnapshots(sessionsDir);
-    if (contents.includes(Buffer.from(marker))) return contents;
-    await sleep(500);
+    try {
+      if (fs.readFileSync(markerFile, "utf8").includes(marker)) return true;
+    } catch {
+      // Not written yet.
+    }
+    await sleep(250);
   }
-  return null;
+  return false;
 }
 
 const opts = args();
@@ -120,6 +108,7 @@ const workerPath = path.join(path.dirname(opts.binary), process.platform === "wi
 if (!fs.existsSync(workerPath)) throw new Error(`worker binary missing: ${workerPath}`);
 
 const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "muis-live-e2e-"));
+const markerFile = path.join(runDir, "marker");
 const xdgConfig = path.join(runDir, "config");
 const xdgState = path.join(runDir, "state");
 fs.mkdirSync(xdgConfig);
@@ -133,22 +122,11 @@ const child = spawn(opts.binary, [], {
 });
 fs.closeSync(logFd);
 
-const sessionsDir = path.join(xdgState, "muis", "sessions");
 let success = false;
 try {
-  // Wait until the UI has initialized and persisted its initial session.
-  const readyDeadline = Date.now() + 25000;
-  while (Date.now() < readyDeadline && !fs.existsSync(path.join(xdgState, "muis", "sessions.json"))) {
-    if (child.exitCode !== null) throw new Error(`muis exited early; see ${logPath}`);
-    await sleep(250);
-  }
-  if (!fs.existsSync(path.join(xdgState, "muis", "sessions.json"))) {
-    throw new Error(`muis did not initialize; see ${logPath}`);
-  }
-
-  // Session metadata is written before the worker shell finishes startup.
-  // Give xterm time to attach the PTY and receive fish's initial prompt.
+  // Give the window time to start and the shell time to emit its prompt.
   await sleep(5000);
+  if (child.exitCode !== null) throw new Error(`muis exited early; see ${logPath}`);
   await focusWindow(opts.title);
   // Activate the native window, then focus xterm without any pointer
   // coordinate; this is independent of which monitor/workspace it uses.
@@ -156,22 +134,15 @@ try {
   fs.mkdirSync(path.dirname(opts.shot), { recursive: true });
   await execFile("ydotool", ["key", "ctrl+shift+F12"]);
   await sleep(250);
-  await execFile("ydotool", ["type", "--", opts.command]);
+  const typed = `${opts.command}; printf %s '${opts.marker}' > '${markerFile}'`;
+  await execFile("ydotool", ["type", "--", typed]);
   await execFile("ydotool", ["key", "Return"]);
-  console.log(`typed into live terminal: ${opts.command}`);
+  console.log(`typed into live terminal: ${typed}`);
 
-  // Snapshots are deliberately periodic (30s); observing the marker in
-  // one proves input reached the shell and shell output reached the pty.
-  const data = await waitForMarker(sessionsDir, opts.marker, opts.timeout);
-  if (!data) {
-    throw new Error(`marker "${opts.marker}" never reached a scrollback snapshot; see ${logPath}`);
-  }
-
-  // Old pre-fix terminal-query garbage must never recur in a fresh pty.
-  for (const bad of ["rgb:1d1d/2020", "?1;2c"]) {
-    if (data.includes(Buffer.from(bad))) {
-      throw new Error(`fresh pty snapshot contains echoed terminal reply "${bad}"`);
-    }
+  // The shell writing the marker proves keyboard input reached the real
+  // PTY and the command ran.
+  if (!(await waitForMarker(markerFile, opts.marker, opts.timeout))) {
+    throw new Error(`marker "${opts.marker}" never reached the shell; see ${logPath}`);
   }
 
   await execFile("spectacle", ["-b", "-f", "-n", "-o", opts.shot]);

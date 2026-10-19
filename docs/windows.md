@@ -61,7 +61,7 @@ Only the shell target is built: on Windows it links `muis-worker` and
 ## Shells and state
 
 Probe order: `pwsh` → `powershell` → `cmd`. State lives in
-`%APPDATA%\muis` (sessions, snapshots). Diagnostics live in
+`%APPDATA%\muis` (config). Diagnostics live in
 `%LOCALAPPDATA%\muis\logs` and the staged worker copy in
 `%LOCALAPPDATA%\muis\bin`. Deleting those folders resets muis to first-run
 with no uninstall step needed; the worker copy is re-staged on next launch.

@@ -37,7 +37,6 @@ alternative.
 Follows XDG, same as the packaged build:
 
 - config: `~/.config/muis/muis.json`
-- state: `~/.local/share/muis/` (`sessions.json`, `sessions/`)
 
 ## Build
 

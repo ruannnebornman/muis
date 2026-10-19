@@ -1,6 +1,6 @@
 //! End-to-end through the real binary: spawn the worker as a child
-//! process, drive it over stdio, and assert shell output, snapshots,
-//! and exit codes come back. This is the closest thing to opening the
+//! process, drive it over stdio, and assert shell output and exit codes
+//! come back. This is the closest thing to opening the
 //! terminal without needing a display.
 
 use muis_core::ipc::{
@@ -116,7 +116,7 @@ fn spawn_msg(pty_id: &str, shell: &str) -> UiToWorker {
 }
 
 #[test]
-fn shell_echo_roundtrip_and_snapshot() {
+fn shell_echo_roundtrip() {
     let mut d = Driver::spawn();
     d.send(&spawn_msg("t1", "/bin/sh"));
     assert_eq!(
@@ -131,19 +131,6 @@ fn shell_echo_roundtrip_and_snapshot() {
         data_b64: b64_encode(b"echo hello-muis\n"),
     });
     d.output_until("t1", b"hello-muis");
-
-    d.send(&UiToWorker::Snapshot {
-        pty_id: "t1".into(),
-    });
-    // Snapshot arrives alongside/after output; skip stale outputs.
-    let snap = loop {
-        match d.next() {
-            WorkerToUi::SnapshotData { data_b64, .. } => break b64_decode(&data_b64).unwrap(),
-            WorkerToUi::Output { .. } => continue,
-            other => panic!("unexpected frame: {other:?}"),
-        }
-    };
-    assert!(snap.windows(b"hello-muis".len()).any(|w| w == b"hello-muis"));
 
     d.send(&UiToWorker::Kill {
         pty_id: "t1".into(),

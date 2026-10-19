@@ -73,19 +73,4 @@ describe("WorkerClient", () => {
     expect(c.isSessionDead("s1")).toBe(false);
   });
 
-  it("requests snapshots and routes them one-shot", async () => {
-    const t = fakeTransport();
-    const c = new WorkerClient(t);
-    const snaps: Uint8Array[] = [];
-    const noop = () => {};
-    await c.spawnTab("s1", "t1", "/bin/sh", "/tmp", 80, 24, noop, noop);
-    await c.snapshot("s1", "t1", (d) => snaps.push(d));
-    expect(t.sent.at(-1)).toEqual({ type: "snapshot", pty_id: "t1" });
-    t.cb("s1", { type: "snapshot_data", pty_id: "t1", data_b64: "aGk=" });
-    expect(snaps.length).toBe(1);
-    expect(Array.from(snaps[0])).toEqual([0x68, 0x69]);
-    // Second snapshot_data without a request goes nowhere.
-    t.cb("s1", { type: "snapshot_data", pty_id: "t1", data_b64: "aGk=" });
-    expect(snaps.length).toBe(1);
-  });
 });

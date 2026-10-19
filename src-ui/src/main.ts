@@ -27,7 +27,6 @@ import { clockText } from "./clock";
 import { shouldFocusTerminal } from "./focus";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
-import { b64encode, b64decode } from "./ipc";
 import "./style.css";
 
 /**
@@ -562,12 +561,6 @@ function ensureView(sessionId: string, tab: Tab): TabView {
     /* canvas renderer stays active */
   }
 
-  // While replaying saved scrollback, xterm re-parses the shell's captured
-  // terminal queries (OSC 11, CPR, DA) and would answer them into the live
-  // pty — the shell then echoes the answers as garbage on the prompt line.
-  // Drop everything xterm emits during replay.
-  let replaying = false;
-
   if (IN_TAURI) {
     activity.spawnedAt.set(tab.id, Date.now());
     void (async () => {
@@ -575,18 +568,6 @@ function ensureView(sessionId: string, tab: Tab): TabView {
         const shell = await defaultShell();
         renderCommandHead(tab.id);
         const testCommand = await liveTestCommand();
-        // Restored tabs replay on-disk scrollback first: read before the
-        // pty exists, write after handlers are registered, so live output
-        // can never overtake the replay.
-        let replay = "";
-        if (!replayedTabs.has(tab.id)) {
-          replayedTabs.add(tab.id);
-          try {
-            replay = await invoke<string>("snapshot_read", { tabId: tab.id });
-          } catch {
-            /* no snapshot yet */
-          }
-        }
         await client.spawnTab(
           sessionId,
           tab.id,
@@ -616,7 +597,6 @@ function ensureView(sessionId: string, tab: Tab): TabView {
             term.writeln(`\r\n[process exited${code === null ? "" : ` (${code})`}]`);
             if (!isTabVisible(tab.id)) {
               doneTabs.mark(tab.id);
-              scheduleSave();
             }
             renderTabs();
             renderSessions();
@@ -625,12 +605,6 @@ function ensureView(sessionId: string, tab: Tab): TabView {
             window.setTimeout(() => dropSessionIfLastTab(sessionId, tab.id), 0);
           },
         );
-        if (replay) {
-          replaying = true;
-          term.write(b64decode(replay), () => {
-            replaying = false;
-          });
-        }
         // The pty exists now. The fit that ran when the tab was created may
         // have raced the spawn and been dropped by the worker, leaving the
         // pty at the default size; size it to the real surface here too.
@@ -643,14 +617,12 @@ function ensureView(sessionId: string, tab: Tab): TabView {
       }
     })();
     term.onData((data) => {
-      if (replaying) return; // never feed replayed-query answers to the pty
       trackInput(tab.id, data);
       void client.write(sessionId, tab.id, enc.encode(data));
     });
   } else {
     term.writeln("browser preview — local echo only; run in the Tauri window for real ptys.");
     term.onData((data) => {
-      if (replaying) return;
       trackInput(tab.id, data);
       term.write(data);
     });
@@ -720,12 +692,8 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
     renderSessions();
     renderStatusbar();
     updateWindowTitle();
-    scheduleSave();
   }
 }
-
-/** Tabs already replayed from disk this launch (once per tab id). */
-const replayedTabs = new Set<string>();
 
 /** Drop a tab's saved scrollback lines (CSI 3 J; keeps the live screen). */
 function clearScrollback(tabId: string): void {
@@ -743,7 +711,6 @@ function closeTab(sessionId: string, tabId: string): void {
   if (view) {
     if (IN_TAURI) {
       void client.kill(sessionId, tabId).catch(() => {});
-      void invoke("snapshot_remove", { tabId }).catch(() => {});
     }
     view.ro?.disconnect(); view.term.dispose();
     view.box.remove();
@@ -768,7 +735,6 @@ function closeSession(w: Workspace): void {
     // Background sessions have no view yet; still tear down their pty.
     if (IN_TAURI) {
       void client.kill(w.id, t.id).catch(() => {});
-      void invoke("snapshot_remove", { tabId: t.id }).catch(() => {});
     }
     const view = views.get(t.id);
     if (view) {
@@ -798,7 +764,6 @@ function dropSessionIfLastTab(sessionId: string, tabId: string): void {
   const isLast = ws.tabs.length === 1 && ws.tabs[0]?.id === tabId;
   if (!isLast) return;
   if (IN_TAURI) {
-    void invoke("snapshot_remove", { tabId }).catch(() => {});
     void client.stopSession(sessionId).catch(() => {});
   }
   const view = views.get(tabId);
@@ -851,7 +816,6 @@ function renderAll(): void {
   renderTerms(ws);
   renderStatusbar();
   renderPanelSlot();
-  scheduleSave();
 }
 
 function renderSessions(): void {
@@ -1303,7 +1267,6 @@ function toggleFreezeTitle(ws: Workspace, tab: Tab): void {
     tab.title = `Terminal ${i + 1}`;
   }
   renderTabs();
-  scheduleSave();
 }
 
 /** Tab label: the last command run, unless the user pinned a name. */
@@ -1462,35 +1425,6 @@ function renderPanelSlot(): void {
   const body = el("div", "");
   body.setAttribute("data-panel-body", "");
   panelSlot.append(head, body);
-}
-
-/* ---------------- persistence ---------------- */
-
-/** Persist sessions debounced: every chrome mutation funnels through renderAll(). */
-let saveTimer: number | undefined;
-function scheduleSave(): void {
-  if (!IN_TAURI) return;
-  window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => {
-    void invoke("sessions_save", { json: store.toJSON() }).catch(() => {});
-  }, 500);
-}
-
-/** Every 30s each live tab's scrollback is snapshotted to disk. */
-function startSnapshotLoop(): void {
-  if (!IN_TAURI) return;
-  window.setInterval(() => {
-    for (const ws of store.workspaces) {
-      for (const t of ws.tabs) {
-        if (!views.has(t.id)) continue;
-        void client
-          .snapshot(ws.id, t.id, (data) => {
-            void invoke("snapshot_store", { tabId: t.id, dataB64: b64encode(data) }).catch(() => {});
-          })
-          .catch(() => {});
-      }
-    }
-  }, 30000);
 }
 
 /* ---------------- quit guard + shortcuts ---------------- */
@@ -1697,20 +1631,6 @@ for (const [id, label] of SEGMENTS) {
   segBox.append(wrap);
 }
 
-const resetSessionsBtn = document.createElement("button");
-resetSessionsBtn.className = "btn danger";
-resetSessionsBtn.textContent = "Reset sessions & restart";
-resetSessionsBtn.addEventListener("click", () => {
-  if (
-    !window.confirm(
-      "Reset all sessions and restart muis? This permanently deletes the saved sessions and cannot be undone.",
-    )
-  ) {
-    return;
-  }
-  if (IN_TAURI) void invoke("reset_sessions_and_restart").catch(() => {});
-});
-
 const settingsButtons = document.createElement("div");
 settingsButtons.className = "settings-buttons";
 const settingsSave = document.createElement("button");
@@ -1735,9 +1655,6 @@ settingsBody.append(
   ]),
   settingsSection("Statusbar", [
     settingsBlock("Visible segments", segBox),
-  ]),
-  settingsSection("Danger zone", [
-    settingsBlock("Reset sessions & restart", resetSessionsBtn),
   ]),
 );
 settingsOverlay.append(settingsBox);
@@ -1964,7 +1881,7 @@ function installDebugHook(): void {
       views: [...views.entries()].map(([id, v]) => ({ id, cols: v.term.cols, rows: v.term.rows })),
       boxes,
       tabs,
-      store: JSON.parse(store.toJSON()),
+      store: { workspaces: store.workspaces, current: store.current },
       termRect: { w: termRect.width, h: termRect.height },
       fonts: document.fonts?.status ?? "unknown",
     };
@@ -2067,8 +1984,7 @@ function finishCommand(tabId: string, exit: number | null): void {
     doneTabs.mark(tabId);
     renderSessions();
     updateWindowTitle();
-    scheduleSave();
-  }
+    }
 }
 
 /**
@@ -2146,8 +2062,7 @@ function handleNotifyRequest(req: CliNotify): void {
     renderSessions();
     renderStatusbar();
     updateWindowTitle();
-    scheduleSave();
-  }
+    }
 }
 
 /* ---------------- cross-session search ---------------- */
@@ -2341,7 +2256,6 @@ function updateWindowTitle(): void {
 async function init(): Promise<void> {
   reportDebugStage("init-start");
   let home = "~";
-  let resumed = false;
   if (IN_TAURI) {
     try {
       testModeActive = await invoke<boolean>("is_test_mode");
@@ -2363,17 +2277,6 @@ async function init(): Promise<void> {
     } catch {
       /* plugin install is best-effort */
     }
-    // Resume where we left off; corrupt files start fresh (never broken).
-    try {
-      const saved = await invoke<string>("sessions_load");
-      if (saved) {
-        store = SessionStore.fromJSON(saved);
-        resumed = true;
-      }
-      reportDebugStage("sessions-loaded", Boolean(saved));
-    } catch {
-      reportDebugStage("sessions-load-failed");
-    }
     try {
       const raw = await invoke<string>("config_load");
       if (raw) cfg = configFromJSON(raw);
@@ -2383,14 +2286,11 @@ async function init(): Promise<void> {
     }
   }
   homeDir = home.startsWith("/") ? home : "";
-  // Only mint a default session on a fresh start. A resumed empty store
-  // means the user closed every session and quit that way on purpose.
-  if (store.workspaces.length === 0 && !resumed) store.ensureDefault("home", home);
+  if (store.workspaces.length === 0) store.ensureDefault("home", home);
   applyTheme(cfg.theme);
   renderAll();
   reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });
   installDebugHook();
-  startSnapshotLoop();
   tickClock();
 }
 

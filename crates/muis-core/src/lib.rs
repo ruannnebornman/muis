@@ -7,5 +7,4 @@ pub mod config;
 pub mod ipc;
 pub mod notify;
 pub mod paths;
-pub mod session;
 pub mod shell;

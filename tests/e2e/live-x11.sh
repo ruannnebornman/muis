@@ -14,6 +14,7 @@ STATE_HOME="$RUN_DIR/state"
 CONFIG_HOME="$RUN_DIR/config"
 mkdir -p "$STATE_HOME" "$CONFIG_HOME"
 MARKER="MUIS_XVFB_${RANDOM}_${RANDOM}_$(date +%s)"
+MARKER_FILE="$RUN_DIR/marker"
 SCREENSHOT="$RUN_DIR/screenshot.png"
 LOG="$RUN_DIR/muis.log"
 
@@ -27,21 +28,15 @@ cp "$ROOT/target/debug/muis" "$INSTALL_DIR/muis"
 cp "$ROOT/target/debug/muis-worker" "$INSTALL_DIR/muis-worker"
 cp "$ROOT/target/debug/muis-notify" "$INSTALL_DIR/muis-notify"
 
-# Seed two workspaces so a background tab (t2) exists to notify: the CLI
-# request targets it and must badge it (markDone) since it is not visible.
-mkdir -p "$STATE_HOME/muis"
-cat > "$STATE_HOME/muis/sessions.json" <<JSON
-{"workspaces":[{"id":"w1","name":"home","dir":"$HOME","active":0,"tabs":[{"id":"t1","title":"Terminal 1","cwd":"$HOME"}]},{"id":"w2","name":"other","dir":"$HOME","active":0,"tabs":[{"id":"t2","title":"Terminal 1","cwd":"$HOME"}]}],"current":0,"next_id":3}
-JSON
-
-export ROOT STATE_HOME CONFIG_HOME MARKER SCREENSHOT LOG RUN_DIR INSTALL_DIR
+export ROOT STATE_HOME CONFIG_HOME MARKER MARKER_FILE SCREENSHOT LOG RUN_DIR INSTALL_DIR
 # Use a distinct per-run socket so the smoke never fights a real muis for the
 # per-user socket (CI has none, but a developer's session does).
 export MUIS_SOCKET_NAME="muis-notify-live-${RANDOM}${RANDOM}"
-# After the marker, emit each notification protocol so the frontend's OSC
-# observer exercises the real notify path (OSC 9, OSC 777, OSC 99), then
-# drive the real `muis-notify` CLI against the background tab t2.
-export MUIS_TEST_COMMAND="echo $MARKER; printf '\033]9;muis-osc9\007\033]777;notify;muis-osc777;body777\007\033]99;i=1:d=1;muis-osc99\007'; $INSTALL_DIR/muis-notify --tab t2 --title muis-live --body cli-notify"
+# Write the marker to a file (proves the command reached the real shell),
+# then emit each notification protocol so the frontend's OSC observer
+# exercises the real notify path (OSC 9, OSC 777, OSC 99), then drive the
+# real `muis-notify` CLI against the visible tab.
+export MUIS_TEST_COMMAND="printf %s $MARKER > $MARKER_FILE; printf '\033]9;muis-osc9\007\033]777;notify;muis-osc777;body777\007\033]99;i=1:d=1;muis-osc99\007'; $INSTALL_DIR/muis-notify --tab t1 --title muis-live --body cli-notify"
 export GDK_BACKEND=x11
 export LIBGL_ALWAYS_SOFTWARE=1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
@@ -85,23 +80,10 @@ xvfb-run -a -s "-screen 0 1280x800x24" bash -Eeuo pipefail -c '
     exit 1
   fi
 
-  sessions_dir="$STATE_HOME/muis/sessions"
   deadline=$((SECONDS + 50))
   found=0
   while (( SECONDS < deadline )); do
-    if python3 - "$sessions_dir" "$MARKER" <<"PY"
-import pathlib, sys
-root, marker = pathlib.Path(sys.argv[1]), sys.argv[2].encode()
-if root.exists():
-    for path in root.glob("*.scrollback"):
-        try:
-            if marker in path.read_bytes():
-                raise SystemExit(0)
-        except OSError:
-            pass
-raise SystemExit(1)
-PY
-    then
+    if grep -Fq "$MARKER" "$MARKER_FILE" 2>/dev/null; then
       found=1
       break
     fi
@@ -110,7 +92,7 @@ PY
 
   import -window root "$SCREENSHOT"
   if (( ! found )); then
-    echo "test command marker never appeared in real PTY scrollback: $MARKER" >&2
+    echo "test command marker never reached the real PTY: $MARKER" >&2
     echo "test artifacts: $RUN_DIR" >&2
     exit 1
   fi
@@ -134,11 +116,10 @@ PY
     fi
   done
 
-  # The real `muis-notify` CLI must reach the frontend, and a request for a
-  # non-visible tab must badge it (applyNotification logs markDone).
+  # The real `muis-notify` CLI must reach the frontend.
   cli_deadline=$((SECONDS + 20))
   while (( SECONDS < cli_deadline )); do
-    if grep -Fq "\"source\":\"cli\"" "$LOG" && grep -Fq "\"markDone\":true" "$LOG"; then
+    if grep -Fq "\"source\":\"cli\"" "$LOG"; then
       break
     fi
     sleep 0.3
@@ -148,28 +129,7 @@ PY
     echo "test artifacts: $RUN_DIR" >&2
     exit 1
   fi
-  if ! grep -Fq "\"markDone\":true" "$LOG"; then
-    echo "notification for a background tab did not badge it" >&2
-    echo "test artifacts: $RUN_DIR" >&2
-    exit 1
-  fi
 
-  if python3 - "$sessions_dir" <<"PY"
-import pathlib, sys
-root = pathlib.Path(sys.argv[1])
-bad = (b"rgb:1d1d/2020", b"?1;2c")
-for path in (root.glob("*.scrollback") if root.exists() else []):
-    data = path.read_bytes()
-    for token in bad:
-        if token in data:
-            print(f"echoed terminal reply {token!r} in {path}", file=sys.stderr)
-            raise SystemExit(1)
-PY
-  then
-    :
-  else
-    exit 1
-  fi
 
   echo "PASS: native Tauri UI -> worker -> PTY smoke ($MARKER)"
   echo "Screenshot: $SCREENSHOT"

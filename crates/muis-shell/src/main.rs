@@ -227,24 +227,6 @@ fn log_path() -> String {
 }
 
 #[tauri::command]
-fn sessions_load() -> Result<String, String> {
-    // Test mode starts fresh: never restore the real session.
-    if test_mode() {
-        return Ok(String::new());
-    }
-    persist::read_text(&muis_core::paths::sessions_file())
-}
-
-#[tauri::command]
-fn sessions_save(json: String) -> Result<(), String> {
-    // Test mode never writes: the real session file is left untouched.
-    if test_mode() {
-        return Ok(());
-    }
-    persist::write_json(&muis_core::paths::sessions_file(), &json)
-}
-
-#[tauri::command]
 fn config_load() -> Result<String, String> {
     persist::read_text(&muis_core::paths::config_file())
 }
@@ -257,30 +239,6 @@ fn config_save(json: String) -> Result<(), String> {
         return Ok(());
     }
     persist::write_json(&muis_core::paths::config_file(), &json)
-}
-
-#[tauri::command]
-fn snapshot_store(tab_id: String, data_b64: String) -> Result<(), String> {
-    if test_mode() {
-        return Ok(());
-    }
-    persist::snapshot_store(&tab_id, &data_b64)
-}
-
-#[tauri::command]
-fn snapshot_read(tab_id: String) -> Result<String, String> {
-    if test_mode() {
-        return Ok(String::new());
-    }
-    persist::snapshot_read(&tab_id)
-}
-
-#[tauri::command]
-fn snapshot_remove(tab_id: String) {
-    if test_mode() {
-        return;
-    }
-    persist::snapshot_remove(&tab_id);
 }
 
 /// Current git branch for a cwd; empty string when not a repo (or git
@@ -303,7 +261,7 @@ fn git_branch(cwd: String) -> String {
 }
 
 /// `muis --testmode`: start from a fresh session and never persist anything.
-/// Real session/config files and scrollback snapshots are left untouched.
+/// The real config file is left untouched.
 static TEST_MODE: AtomicBool = AtomicBool::new(false);
 
 fn test_mode() -> bool {
@@ -392,34 +350,6 @@ fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Delete saved sessions (manifest + per-session snapshots).
-fn reset_sessions_state() -> Result<(), String> {
-    let file = muis_core::paths::sessions_file();
-    let dir = muis_core::paths::sessions_dir();
-    if file.exists() {
-        std::fs::remove_file(&file).map_err(|e| e.to_string())?;
-    }
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-/// Wipe saved sessions and relaunch the app in place.
-#[tauri::command]
-fn reset_sessions_and_restart(app: tauri::AppHandle) -> Result<(), String> {
-    // Never delete the real sessions from a test-mode window.
-    if test_mode() {
-        return Err("session reset is disabled in test mode".into());
-    }
-    reset_sessions_state()?;
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).spawn();
-    }
-    app.exit(0);
-    Ok(())
-}
-
 /// Names of up to `limit` non-hidden subdirectories of `path`, sorted. Used
 /// by the new-session dialog's subfolder quick picks. Best effort: a missing
 /// or unreadable path yields an empty list.
@@ -497,19 +427,6 @@ fn main() {
     let test = arg_present(&args, "--testmode");
     TEST_MODE.store(test, Ordering::Relaxed);
 
-    // `muis --reset-sessions`: clear saved sessions and exit (no window).
-    // Ignored in test mode so it can never touch the real sessions.
-    if !test && arg_present(&args, "--reset-sessions") {
-        match reset_sessions_state() {
-            Ok(()) => log::info!("cleared saved sessions"),
-            Err(e) => {
-                log::error!("could not clear sessions: {e}");
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
@@ -522,18 +439,12 @@ fn main() {
             live_test_command,
             debug_report,
             log_path,
-            sessions_load,
-            sessions_save,
             config_load,
             config_save,
-            snapshot_store,
-            snapshot_read,
-            snapshot_remove,
             git_branch,
             install_opencode_plugin,
             list_subdirs,
             open_url,
-            reset_sessions_and_restart,
             worker_spawn,
             worker_send,
             worker_stop
@@ -700,7 +611,7 @@ mod tests {
         };
         assert!(!arg_present(&args(&[]), "--testmode"));
         assert!(arg_present(&args(&["--testmode"]), "--testmode"));
-        assert!(arg_present(&args(&["--testmode", "--reset-sessions"]), "--testmode"));
+        assert!(arg_present(&args(&["--testmode", "--verbose"]), "--testmode"));
         // Exact match only: an unrelated flag or a value is not test mode.
         assert!(!arg_present(&args(&["--test-mode"]), "--testmode"));
         assert!(!arg_present(&args(&["--testmode=1"]), "--testmode"));
