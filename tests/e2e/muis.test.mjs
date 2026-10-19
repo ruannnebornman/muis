@@ -143,6 +143,21 @@ describe("muis chrome", () => {
     await shot("02-two-tabs");
   });
 
+  it("focuses a new tab so typing works without clicking", async () => {
+    const active = await driver.switchTo().activeElement();
+    assert.ok((await active.getAttribute("class")).includes("xterm-helper-textarea"));
+    await active.sendKeys("echo new-tab-focus");
+    await active.sendKeys(Key.ENTER);
+    await driver.wait(
+      async () =>
+        (await driver.findElement(By.css(".tabbox.active .xterm")).getText()).includes(
+          "echo new-tab-focus",
+        ),
+      5000,
+    );
+    await shot("02b-new-tab-focused");
+  });
+
   it("switches tabs on click with a visible indicator", async () => {
     await (await tabs())[0].click();
     await driver.wait(async () => (await activeTabIndex()) === 0, 5000);
@@ -378,5 +393,14 @@ describe("muis chrome", () => {
     assert.equal(await driver.executeScript(() => window.__muisPrompted), false);
     assert.equal((await driver.findElements(By.css(".session"))).length, 2);
     await shot("19-no-prompt");
+  });
+
+  it("opens a tab with ctrl+t and focuses it", async () => {
+    const before = (await tabs()).length;
+    await press({ key: "t", code: "KeyT", ctrlKey: true });
+    await driver.wait(async () => (await tabs()).length === before + 1, 5000);
+    const active = await driver.switchTo().activeElement();
+    assert.ok((await active.getAttribute("class")).includes("xterm-helper-textarea"));
+    await shot("20-ctrl-t-focused");
   });
 });

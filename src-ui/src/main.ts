@@ -1256,6 +1256,7 @@ function renderTabs(): void {
 function addShellTab(ws: Workspace): void {
   store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
   renderAll();
+  focusActiveTerminal();
 }
 
 function renameTab(ws: Workspace, tab: Tab): void {
@@ -1469,8 +1470,7 @@ const onShortcut = (e: KeyboardEvent): void => {
   switch (action.type) {
     case "new-tab":
       e.preventDefault();
-      store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
-      renderAll();
+      addShellTab(ws);
       break;
     case "close-tab": {
       e.preventDefault();
