@@ -6,7 +6,6 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getVersion } from "@tauri-apps/api/app";
 import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
 import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
 import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, segmentVisible, themeForWorkspace, type AppConfig } from "./config";
@@ -1384,45 +1383,19 @@ function renderTerms(ws: Workspace | undefined): void {
 
 /* ---------------- statusbar ---------------- */
 
-const stSessionTab = el("span", "pill");
 const stCwd = el("span", "", "");
 const stGit = el("span", "pill", "");
-const stUser = el("span", "pill", "");
-const stCpu = el("span", "pill", "");
-const stRam = el("span", "pill", "");
-const stGpu = el("span", "pill", "");
-const stVersion = el("span", "pill", "");
 const stClock = el("span", "clock", "");
-const stShell = el("span", "pill", "");
-// Left group order is deliberate: cwd, git, session·tab, user.
-// Right group order: CPU/RAM/GPU, shell, version, clock (far right).
-statusbar.append(
-  stCwd,
-  stGit,
-  stSessionTab,
-  stUser,
-  el("span", ""),
-  stCpu,
-  stRam,
-  stGpu,
-  stShell,
-  stVersion,
-  stClock,
-);
-(statusbar.children[4] as HTMLElement).style.marginLeft = "auto";
+// Context on the left, clock on the far right.
+statusbar.append(stCwd, stGit, el("span", ""), stClock);
+(statusbar.children[2] as HTMLElement).style.marginLeft = "auto";
 
 const gitCache = new Map<string, string>();
 
 function renderStatusbar(): void {
   const ws = store.currentWorkspace();
   const tab = ws?.tabs[ws.active];
-  stSessionTab.innerHTML = "";
-  if (ws && tab) {
-    stSessionTab.append(el("b", "", ws.name), document.createTextNode(` · ${tab.title}`));
-  }
   stCwd.textContent = tab ? shortPath(tab.cwd) : "";
-  stUser.textContent = sysInfo ? `${sysInfo.user}@${sysInfo.host}` : "";
-  stShell.textContent = `UTF-8 · ${shellBaseName() || "…"}`;
   if (tab) {
     const cwd = tab.cwd;
     const cached = gitCache.get(cwd);
@@ -1446,20 +1419,13 @@ function renderStatusbar(): void {
 /** Show/hide each statusbar segment per config. */
 function applyStatusbarVisibility(): void {
   const segs: [string, HTMLElement][] = [
-    ["session", stSessionTab],
     ["cwd", stCwd],
     ["git", stGit],
-    ["user", stUser],
-    ["cpu", stCpu],
-    ["ram", stRam],
-    ["version", stVersion],
     ["clock", stClock],
-    ["shell", stShell],
   ];
   for (const [id, node] of segs) {
     node.style.display = segmentVisible(cfg.statusbar, id) ? "" : "none";
   }
-  if (!segmentVisible(cfg.statusbar, "gpu")) stGpu.style.display = "none";
 }
 
 function tickClock(): void {
@@ -1469,33 +1435,6 @@ function tickClock(): void {
   };
   f();
   setInterval(f, 1000);
-}
-
-interface SysInfo {
-  user: string;
-  host: string;
-}
-let sysInfo: SysInfo | null = null;
-
-interface SystemStats {
-  cpu: number;
-  mem_used: number;
-  mem_total: number;
-  gpu: number | null;
-}
-
-/** Render a stats push; the GPU pill is hidden entirely when unavailable. */
-function renderSystemStats(s: SystemStats): void {
-  stCpu.textContent = `CPU ${s.cpu}%`;
-  const pct = s.mem_total > 0 ? Math.round((s.mem_used / s.mem_total) * 100) : 0;
-  stRam.textContent = `RAM ${pct}%`;
-  stRam.title = `${(s.mem_used / 1e9).toFixed(1)} / ${(s.mem_total / 1e9).toFixed(1)} GB`;
-  if (s.gpu === null || !segmentVisible(cfg.statusbar, "gpu")) {
-    stGpu.style.display = "none";
-  } else {
-    stGpu.style.display = "";
-    stGpu.textContent = `GPU ${s.gpu}%`;
-  }
 }
 
 /* ---------------- side panel slot ---------------- */
@@ -1741,16 +1680,9 @@ for (const s of ["none", "visual", "audible", "both"]) {
   optBell.append(o);
 }
 const SEGMENTS: [string, string][] = [
-  ["session", "session"],
   ["cwd", "cwd"],
   ["git", "git"],
-  ["user", "user"],
-  ["cpu", "CPU"],
-  ["ram", "RAM"],
-  ["gpu", "GPU"],
-  ["version", "version"],
   ["clock", "clock"],
-  ["shell", "shell"],
 ];
 const segBox = document.createElement("div");
 segBox.className = "seg-opts";
@@ -2423,26 +2355,6 @@ async function init(): Promise<void> {
       reportDebugStage("default-cwd-loaded");
     } catch {
       reportDebugStage("default-cwd-failed");
-    }
-    try {
-      const info = await invoke<SysInfo>("sys_info");
-      sysInfo = info;
-      reportDebugStage("system-info-loaded");
-    } catch {
-      reportDebugStage("system-info-failed");
-    }
-    try {
-      stVersion.textContent = `v${await getVersion()}`;
-    } catch {
-      /* version is best-effort */
-    }
-    try {
-      await listen<SystemStats>("system-stats", (e) => renderSystemStats(e.payload));
-      document.addEventListener("visibilitychange", () => {
-        void invoke("system_stats_active", { active: !document.hidden }).catch(() => {});
-      });
-    } catch {
-      /* system monitor is best-effort */
     }
     // Install the opencode notification plugin (idempotent; only written
     // when missing or still ours).

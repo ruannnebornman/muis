@@ -33,7 +33,7 @@ describe("AppConfig", () => {
     expect(cfg.statusbar).toEqual({ clock: false, git: true });
     expect(segmentVisible(cfg.statusbar, "clock")).toBe(false);
     expect(segmentVisible(cfg.statusbar, "git")).toBe(true);
-    expect(segmentVisible(cfg.statusbar, "cpu")).toBe(true);
+    expect(segmentVisible(cfg.statusbar, "cwd")).toBe(true);
   });
 
   it("reads cursor/font/bell settings and rejects junk", () => {
