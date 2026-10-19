@@ -1027,6 +1027,7 @@ function submitSessionDialog(): void {
     sessionError.style.display = "";
     return;
   }
+  let created = false;
   if (sessionRenameTarget) {
     sessionRenameTarget.name = name;
   } else {
@@ -1041,9 +1042,11 @@ function submitSessionDialog(): void {
     store.switch(idx);
     // A new session opens a terminal; an emptied session later stays empty.
     store.newTab("Terminal 1", dir);
+    created = true;
   }
   closeSessionDialog();
   renderAll();
+  if (created) window.setTimeout(focusActiveTerminal, 0);
 }
 
 sessionClose.addEventListener("click", closeSessionDialog);
@@ -1256,7 +1259,9 @@ function renderTabs(): void {
 function addShellTab(ws: Workspace): void {
   store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
   renderAll();
-  focusActiveTerminal();
+  // Deferred: the click that opened the tab would otherwise move focus back
+  // to the (now replaced) button after this handler returns.
+  window.setTimeout(focusActiveTerminal, 0);
 }
 
 function renameTab(ws: Workspace, tab: Tab): void {
@@ -1519,6 +1524,7 @@ const onShortcut = (e: KeyboardEvent): void => {
       if (n > 0) {
         store.switch((store.current + action.delta + n) % n);
         renderAll();
+        focusActiveTerminal();
       }
       break;
     }
@@ -1807,10 +1813,12 @@ function openPalette(): void {
       add("next-session", "Next session", () => {
         store.switch((store.current + 1) % store.workspaces.length);
         renderAll();
+        window.setTimeout(focusActiveTerminal, 0);
       });
       add("prev-session", "Previous session", () => {
         store.switch((store.current - 1 + store.workspaces.length) % store.workspaces.length);
         renderAll();
+        window.setTimeout(focusActiveTerminal, 0);
       });
     }
     if (active) {
