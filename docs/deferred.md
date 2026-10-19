@@ -8,7 +8,7 @@ solid and the project is otherwise quiet.
 - **Snor engine.** The side-panel slot API is already in place
   (`SidePanelRegistry`: register/toggle/single-visible/unregister, see
   `docs/archive/build-progress.md` Step 6). No panel code exists yet.
-  Revisit once the terminal is done.
+  Plan: `docs/snor-plan.md`. Revisit once the terminal is done.
 - **neofetch/fastfetch branding.** Add a fastfetch preset/logo for
   muis/Veldmuis. muis already exports `TERM_PROGRAM=muis` for spawned
   shells (`crates/muis-worker/src/main.rs`).
