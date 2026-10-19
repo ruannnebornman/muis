@@ -302,41 +302,6 @@ fn git_branch(cwd: String) -> String {
         .unwrap_or_default()
 }
 
-#[derive(serde::Serialize)]
-struct SysInfo {
-    user: String,
-    host: String,
-}
-
-/// User@host for the statusbar. Best effort, never fails.
-#[tauri::command]
-fn sys_info() -> SysInfo {
-    let user = std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "user".to_string());
-    let host = std::env::var("HOSTNAME")
-        .or_else(|_| std::env::var("COMPUTERNAME"))
-        .or_else(|_| {
-            std::fs::read_to_string("/etc/hostname").map(|s| s.trim().to_string())
-        })
-        .unwrap_or_else(|_| "host".to_string());
-    SysInfo { user, host }
-}
-
-/// Live system-monitor snapshot pushed to the frontend every 2 s.
-#[derive(serde::Serialize, Clone)]
-struct SystemStats {
-    /// Whole-percent total CPU (not per-core).
-    cpu: u8,
-    mem_used: u64,
-    mem_total: u64,
-    /// Whole-percent GPU, or None when no reading is available.
-    gpu: Option<u8>,
-}
-
-/// Sampler pauses while the window is hidden (set by the frontend).
-static STATS_ACTIVE: AtomicBool = AtomicBool::new(true);
-
 /// `muis --testmode`: start from a fresh session and never persist anything.
 /// Real session/config files and scrollback snapshots are left untouched.
 static TEST_MODE: AtomicBool = AtomicBool::new(false);
@@ -365,39 +330,6 @@ pub(crate) fn notify_socket_name() -> String {
 /// True when `flag` appears verbatim in the process arguments.
 fn arg_present(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
-}
-
-/// Whole-percent GPU utilisation, best effort. NVIDIA first, then the
-/// AMD/Intel DRM counter. None when nothing can be read.
-fn gpu_usage() -> Option<u8> {
-    if let Ok(out) = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"])
-        .output()
-    {
-        if out.status.success() {
-            if let Ok(text) = String::from_utf8(out.stdout) {
-                if let Some(v) = text.lines().find_map(|l| l.trim().parse::<u8>().ok()) {
-                    return Some(v);
-                }
-            }
-        }
-    }
-    if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
-        for entry in entries.flatten() {
-            let path = entry.path().join("device/gpu_busy_percent");
-            if let Ok(text) = std::fs::read_to_string(path) {
-                if let Ok(v) = text.trim().parse::<u8>() {
-                    return Some(v);
-                }
-            }
-        }
-    }
-    None
-}
-
-#[tauri::command]
-fn system_stats_active(active: bool) {
-    STATS_ACTIVE.store(active, Ordering::Relaxed);
 }
 
 /// Directory opencode loads global plugins from.
@@ -598,8 +530,6 @@ fn main() {
             snapshot_read,
             snapshot_remove,
             git_branch,
-            sys_info,
-            system_stats_active,
             install_opencode_plugin,
             list_subdirs,
             open_url,
@@ -656,28 +586,6 @@ fn main() {
                 log::warn!("notification endpoint unavailable ({socket}): {e}");
             }
 
-            // System monitor: one sampler for the window, pushing stats
-            // events. The frontend pauses it while the window is hidden.
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                let mut sys = sysinfo::System::new();
-                sys.refresh_cpu_usage();
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                loop {
-                    if STATS_ACTIVE.load(Ordering::Relaxed) {
-                        sys.refresh_cpu_usage();
-                        sys.refresh_memory();
-                        let stats = SystemStats {
-                            cpu: sys.global_cpu_usage().round().clamp(0.0, 100.0) as u8,
-                            mem_used: sys.used_memory(),
-                            mem_total: sys.total_memory(),
-                            gpu: gpu_usage(),
-                        };
-                        let _ = handle.emit("system-stats", &stats);
-                    }
-                    std::thread::sleep(std::time::Duration::from_secs(2));
-                }
-            });
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -749,13 +657,6 @@ mod tests {
     }
 
     #[test]
-    fn sys_info_never_blank() {
-        let info = sys_info();
-        assert!(!info.user.is_empty());
-        assert!(!info.host.is_empty());
-    }
-
-    #[test]
     fn list_subdirs_sorts_filters_and_caps() {
         let dir = std::env::temp_dir().join(format!("muis-subdirs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -770,12 +671,6 @@ mod tests {
         assert_eq!(list_subdirs(path, 1), vec!["alpha"]);
         assert!(list_subdirs("/no/such/path-9f3a".to_string(), 10).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn gpu_usage_never_panics() {
-        // Best effort: Some(percent) or None; just must not panic.
-        let _ = gpu_usage();
     }
 
     #[test]
