@@ -71,45 +71,9 @@ describe("SessionStore", () => {
     expect(s.activeTab()).toBeUndefined();
   });
 
-  it("roundtrips a session with no tabs", () => {
-    const s = store();
-    s.closeTab(0, 0);
-    const back = SessionStore.fromJSON(s.toJSON());
-    expect(back.workspaces.length).toBe(1);
-    expect(back.workspaces[0].tabs.length).toBe(0);
-    expect(back.current).toBe(0);
-    expect(back.activeTab()).toBeUndefined();
-  });
 
-  it("serializes to the same shape as the Rust store", () => {
-    const s = store();
-    const back = JSON.parse(s.toJSON()) as { workspaces: Workspace[] };
-    expect(back.workspaces[0].name).toBe("home");
-    expect(back.workspaces[0].tabs[0].cwd).toBe("/home/user");
-  });
 
-  it("roundtrips through toJSON/fromJSON without reusing ids", () => {
-    const s = store();
-    s.newTab("Terminal 2", "/tmp");
-    const back = SessionStore.fromJSON(s.toJSON());
-    expect(back.workspaces.length).toBe(1);
-    expect(back.activeTab()?.title).toBe("Terminal 2");
-    // Counter continues past restored ids.
-    const id = back.newTab("Terminal 3", "/tmp");
-    expect(id).not.toBe("t1");
-    expect(id).not.toBe("t2");
-  });
-  it("rejects corrupt session files instead of starting broken", () => {
-    expect(() => SessionStore.fromJSON("not json")).toThrow();
-    expect(() => SessionStore.fromJSON('{"nope":1}')).toThrow();
-  });
 
-  it("loads an empty workspace list as the sessionless state", () => {
-    const s = SessionStore.fromJSON('{"workspaces":[],"current":0,"next_id":1}');
-    expect(s.workspaces.length).toBe(0);
-    expect(s.activeTab()).toBeUndefined();
-    expect(s.currentWorkspace()).toBeUndefined();
-  });
 
   it("knows placeholder titles from user names", () => {
     expect(isDefaultTitle("Terminal 1")).toBe(true);
@@ -124,8 +88,7 @@ describe("SessionStore", () => {
     expect(s.activeTab()?.manual).toBe(false);
     const t = s.activeTab();
     if (t) t.manual = true;
-    const back = SessionStore.fromJSON(s.toJSON());
-    expect(back.activeTab()?.manual).toBe(true);
+    expect(s.activeTab()?.manual).toBe(true);
   });
 
   it("new tabs follow the active tab's live cwd", () => {

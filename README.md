@@ -49,14 +49,13 @@ cargo run -p muis-shell
 
 - Ctrl+T new tab, × button closes (confirms when a process is busy),
   Ctrl+Shift+F12 focuses the terminal, Ctrl+Shift+F search, Ctrl+, settings.
-- Sessions persist across restarts with scrollback snapshots
-  (`~/.local/share/muis`, `%APPDATA%\muis` on Windows).
+- Sessions and tabs are in-memory: quitting closes them. Settings persist in
+  `~/.config/muis/muis.json` (`%APPDATA%\muis` on Windows).
 - Tabs track `cd` via OSC 7; fish on Veldmuis needs no setup.
 - Quitting with busy tabs asks first.
 - `muis --testmode` opens a throwaway window: it starts from a fresh
-  session and never persists, so real sessions, scrollback snapshots, and
-  settings are left untouched. A `test mode` badge marks the window.
-  (`muis --reset-sessions` clears the saved sessions and exits.)
+  session and never writes settings, so the real config is left untouched.
+  A `test mode` badge marks the window.
 - Task notifications: terminal agents (Codex, Claude Code) are detected
   from their OSC 9/777/99 escapes; anything with a hook command can call
   `muis-notify --body "done"` (targets the current tab via `MUIS_TAB_ID`).
@@ -65,10 +64,9 @@ cargo run -p muis-shell
 
 ## Tests
 
-- `cargo test --workspace`: session switching/restore roundtrips,
-  config load/save, shell probe, IPC roundtrips + shared fixture,
-  and a live `muis-worker` stdio roundtrip (real pty, echo, snapshot,
-  exit code 42).
+- `cargo test --workspace`: config load/save, shell probe, IPC roundtrips
+  + shared fixture, and a live `muis-worker` stdio roundtrip (real pty,
+  echo, exit code 42).
 - `npm test` in `src-ui`: theme values locked to the target HTML, session
   store behavior, same IPC fixture from the TS side.
 - Selenium preview interaction tests (headless Chrome): build the UI,
@@ -86,8 +84,9 @@ cargo run -p muis-shell
   ```
 
   A debug-only test hook sends a unique command through the UI/worker
-  bridge. The test checks its real PTY snapshot and writes a screenshot
-  artifact under `tests/e2e/artifacts/live-x11/`.
+  bridge; the shell writes a marker file proving it reached the real PTY,
+  and the test writes a screenshot artifact under
+  `tests/e2e/artifacts/live-x11/`.
 - CI runs all three layers: Rust/PTY, Selenium browser interactions,
   and native Tauri PTY smoke under Xvfb. The Xvfb test uses the same
   terminal-focus shortcut, not monitor coordinates.

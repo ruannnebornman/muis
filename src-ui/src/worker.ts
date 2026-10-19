@@ -21,7 +21,6 @@ export class WorkerClient {
   private transport: Transport;
   private outputHandlers = new Map<string, (data: Uint8Array) => void>();
   private exitHandlers = new Map<string, (code: number | null) => void>();
-  private snapshotHandlers = new Map<string, (data: Uint8Array) => void>();
   private spawned = new Set<string>();
   private deadSessions = new Set<string>();
   private deadHandlers = new Set<(sessionId: string) => void>();
@@ -62,18 +61,7 @@ export class WorkerClient {
     this.spawned.delete(ptyId);
     this.outputHandlers.delete(ptyId);
     this.exitHandlers.delete(ptyId);
-    this.snapshotHandlers.delete(ptyId);
     await this.transport.send(sessionId, { type: "kill", pty_id: ptyId });
-  }
-
-  /** Ask the worker for the tab's retained scrollback (one-shot). */
-  async snapshot(
-    sessionId: string,
-    ptyId: string,
-    onSnapshot: (data: Uint8Array) => void,
-  ): Promise<void> {
-    this.snapshotHandlers.set(ptyId, onSnapshot);
-    await this.transport.send(sessionId, { type: "snapshot", pty_id: ptyId });
   }
 
   async stopSession(sessionId: string): Promise<void> {
@@ -100,16 +88,6 @@ export class WorkerClient {
         const h = this.exitHandlers.get(frame.pty_id);
         this.spawned.delete(frame.pty_id);
         h?.(frame.code);
-        break;
-      }
-      case "snapshot_data": {
-        const h = this.snapshotHandlers.get(frame.pty_id);
-        this.snapshotHandlers.delete(frame.pty_id);
-        if (!h) break;
-        const bin = atob(frame.data_b64);
-        const out = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-        h(out);
         break;
       }
       case "error": {

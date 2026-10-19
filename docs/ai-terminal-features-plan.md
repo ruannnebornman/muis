@@ -33,11 +33,9 @@ Grounding for every feature below. Do not re-plan what is done.
 - **Data model:** `Workspace` (called "session" in the UI) contains
   `Tab`s; each `Tab` = a pty (`pty_id`). `WorkerPool` is keyed by
   workspace id. There is no separate `Session` or `Process` entity.
-  (`src-ui/src/sessions.ts`, `crates/muis-core/src/session.rs`,
-  `crates/muis-shell/src/bridge.rs`.)
-- **Persistence:** `sessions.json` + per-tab scrollback snapshots every
-  30 s, replayed on restore. (`crates/muis-shell/src/persist.rs`,
-  `main.ts` `startSnapshotLoop`.)
+  (`src-ui/src/sessions.ts`, `crates/muis-shell/src/bridge.rs`.)
+- **Persistence:** none; workspaces and tabs are in-memory. Only the
+  config file is written. (`crates/muis-shell/src/persist.rs`.)
 - **ACP:** one shared `opencode acp` process (`AgentPool`,
   `crates/muis-shell/src/agent.rs`), `AcpClient` with
   initialize/new/load/prompt/cancel/close/setConfigOption + permission
@@ -271,9 +269,8 @@ fuzzy match. Store secrets separately (see F16).
 sessions; record last agent state and pending input; reopen a closed tab;
 named snapshots (`before-refactor`).
 
-**Current state.** Partial: sessions.json + scrollback replay + agent
-resume + dead-session detection (unused). No named snapshots, no
-scroll-position restore, no reopen-closed-tab.
+**Current state.** Not implemented: workspaces and tabs are in-memory,
+with no session or scrollback restore.
 
 **Plan.**
 
@@ -421,7 +418,7 @@ folder, tabs, layout, prefs), a session (conversation identity + history
 the UI and keys the worker; `Tab` is a pty; agent ids live on tabs.
 
 **Plan (if pursued).** Introduce `Session` and `Process` as first-class
-records; migrate `sessions.json` with a versioned loader. This touches
+records; introduce a versioned on-disk store. This touches
 the Rust model, the TS mirror, and the worker keying.
 
 **Risks / concerns.** High churn, migration risk, and it collides with

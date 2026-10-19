@@ -54,11 +54,6 @@ pub fn state_dir() -> PathBuf {
     }
 }
 
-/// Per-session worker snapshots + manifests live here.
-pub fn sessions_dir() -> PathBuf {
-    state_dir().join("sessions")
-}
-
 /// Diagnostic log files live here. Windows uses %LOCALAPPDATA% (logs are
 /// machine-local, not roaming); other platforms follow the state dir.
 pub fn log_dir() -> PathBuf {
@@ -92,10 +87,6 @@ pub fn config_file() -> PathBuf {
     config_dir().join("muis.json")
 }
 
-pub fn sessions_file() -> PathBuf {
-    state_dir().join("sessions.json")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,8 +96,6 @@ mod tests {
         assert!(config_dir().ends_with("muis"));
         assert!(log_dir().ends_with("logs"));
         assert!(bin_dir().ends_with("bin"));
-        assert_eq!(sessions_dir(), state_dir().join("sessions"));
         assert_eq!(config_file(), config_dir().join("muis.json"));
-        assert_eq!(sessions_file(), state_dir().join("sessions.json"));
     }
 }

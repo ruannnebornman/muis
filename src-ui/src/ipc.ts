@@ -7,14 +7,12 @@ export type UiToWorker =
   | { type: "spawn"; pty_id: string; shell: string; cwd: string; cols: number; rows: number }
   | { type: "write"; pty_id: string; data_b64: string }
   | { type: "resize"; pty_id: string; cols: number; rows: number }
-  | { type: "snapshot"; pty_id: string }
   | { type: "kill"; pty_id: string };
 
 export type WorkerToUi =
   | { type: "spawned"; pty_id: string }
   | { type: "output"; pty_id: string; data_b64: string }
   | { type: "exited"; pty_id: string; code: number | null }
-  | { type: "snapshot_data"; pty_id: string; data_b64: string }
   | { type: "error"; pty_id: string; message: string };
 
 export function encodeLine(msg: UiToWorker): string {

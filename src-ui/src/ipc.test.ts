@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import * as path from "node:path";
 import { b64decode, b64encode, decodeWorker, encodeLine, type UiToWorker } from "./ipc";
 
-const UI_TAGS = new Set(["spawn", "write", "resize", "snapshot", "kill"]);
-const WORKER_TAGS = new Set(["spawned", "output", "exited", "snapshot_data", "error"]);
+const UI_TAGS = new Set(["spawn", "write", "resize", "kill"]);
+const WORKER_TAGS = new Set(["spawned", "output", "exited", "error"]);
 
 describe("ipc", () => {
   it("encodes newline-delimited frames", () => {
@@ -48,7 +48,7 @@ describe("ipc", () => {
         throw new Error(`bad dir in fixture: ${dir}`);
       }
     }
-    expect(lines).toBeGreaterThanOrEqual(10);
+    expect(lines).toBeGreaterThanOrEqual(8);
     expect(seenUi).toEqual(UI_TAGS);
     expect(seenWorker).toEqual(WORKER_TAGS);
   });

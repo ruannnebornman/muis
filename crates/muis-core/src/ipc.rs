@@ -17,7 +17,6 @@ pub enum UiToWorker {
     /// Terminal input bytes, base64 (stdin pastes are not always UTF-8).
     Write { pty_id: String, data_b64: String },
     Resize { pty_id: String, cols: u16, rows: u16 },
-    Snapshot { pty_id: String },
     Kill { pty_id: String },
 }
 
@@ -32,7 +31,6 @@ pub enum WorkerToUi {
         pty_id: String,
         code: Option<i32>,
     },
-    SnapshotData { pty_id: String, data_b64: String },
     Error { pty_id: String, message: String },
 }
 
@@ -83,7 +81,6 @@ mod tests {
                 cols: 120,
                 rows: 32,
             },
-            UiToWorker::Snapshot { pty_id: "p1".into() },
             UiToWorker::Kill { pty_id: "p1".into() },
         ];
         for m in ui {
@@ -100,10 +97,6 @@ mod tests {
             WorkerToUi::Exited {
                 pty_id: "p1".into(),
                 code: Some(0),
-            },
-            WorkerToUi::SnapshotData {
-                pty_id: "p1".into(),
-                data_b64: b64_encode(b"hi"),
             },
             WorkerToUi::Error {
                 pty_id: "p1".into(),
@@ -159,11 +152,11 @@ mod tests {
                 d => panic!("bad dir in fixture: {d}"),
             }
         }
-        assert!(lines >= 10, "fixture shrank unexpectedly");
-        for t in ["spawn", "write", "resize", "snapshot", "kill"] {
+        assert!(lines >= 8, "fixture shrank unexpectedly");
+        for t in ["spawn", "write", "resize", "kill"] {
             assert!(ui_tags.contains(t), "fixture missing ui frame {t}");
         }
-        for t in ["spawned", "output", "exited", "snapshot_data", "error"] {
+        for t in ["spawned", "output", "exited", "error"] {
             assert!(worker_tags.contains(t), "fixture missing worker frame {t}");
         }
     }

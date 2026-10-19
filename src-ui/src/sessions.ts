@@ -1,7 +1,6 @@
 /**
- * Session store. Mirrors crates/muis-core/src/session.rs: same shapes,
- * same rules (visible-tab clamping, current-workspace clamping).
- * The Rust side is authoritative for persistence; this copy drives the UI.
+ * Session store. In-memory workspaces and tabs, with visible-tab and
+ * current-workspace clamping.
  */
 
 export interface Tab {
@@ -166,43 +165,5 @@ export class SessionStore {  workspaces: Workspace[] = [];
   activeTab(): Tab | undefined {
     const ws = this.currentWorkspace();
     return ws?.tabs[ws.active];
-  }
-
-  /** Canonical persistence form. Tab/workspace ids AND the id counter
-   *  survive, so restored tabs replay their own snapshot files and no
-   *  id is ever reused after resume (matches the Rust store). */
-  toJSON(): string {
-    return JSON.stringify({
-      workspaces: this.workspaces,
-      current: this.current,
-      next_id: this.nextId,
-    });
-  }
-
-  static fromJSON(json: string): SessionStore {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(json);
-    } catch {
-      throw new Error("session file is not JSON");
-    }
-    if (typeof raw !== "object" || raw === null) throw new Error("session file has no object");
-    const r = raw as { workspaces?: unknown; current?: unknown; next_id?: unknown };
-    if (!Array.isArray(r.workspaces)) throw new Error("session file has no workspaces");
-    const s = new SessionStore();
-    s.workspaces = r.workspaces as Workspace[];
-    s.current = typeof r.current === "number" ? r.current : 0;
-    if (s.current >= s.workspaces.length) s.current = 0;
-    s.nextId = typeof r.next_id === "number" && r.next_id > 0 ? Math.floor(r.next_id) : 1;
-    // Clamp the counter past every id in the file so resume never reuses one.
-    for (const w of s.workspaces) {
-      for (const t of [w.id, ...w.tabs.map((t) => t.id)]) {
-        const m = /^([a-z]+)(\d+)$/.exec(t ?? "");
-        if (m) s.nextId = Math.max(s.nextId, parseInt(m[2], 10) + 1);
-      }
-    }
-    // An empty workspace list is a valid sessionless state (every session
-    // was closed), so it loads rather than counting as a corrupt file.
-    return s;
   }
 }

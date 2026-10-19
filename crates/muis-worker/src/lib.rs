@@ -12,12 +12,9 @@ use muis_core::ipc::{
     b64_decode, b64_encode, decode_ui, encode_line, UiToWorker, WorkerToUi,
 };
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::{Arc, Mutex};
-
-/// Bytes of recent output kept per pty for Snapshot / crash restore.
-const SCROLLBACK_CAP: usize = 256 * 1024;
 
 /// Fish startup snippet: emit OSC 133 command markers (C on start, D with
 /// exit status on finish) using fish's preexec/postexec events.
@@ -138,23 +135,6 @@ fn shell_argv(
 }
 
 
-#[derive(Debug, Default)]
-struct Scrollback {
-    buf: VecDeque<u8>,
-}
-
-impl Scrollback {
-    fn push(&mut self, data: &[u8]) {
-        self.buf.extend(data);
-        let excess = self.buf.len().saturating_sub(SCROLLBACK_CAP);
-        self.buf.drain(..excess);
-    }
-
-    fn bytes(&self) -> Vec<u8> {
-        self.buf.iter().copied().collect()
-    }
-}
-
 /// Serializes stdout lines across the main loop and reader threads.
 #[derive(Debug, Default, Clone)]
 struct Emitter {
@@ -175,7 +155,6 @@ impl Emitter {
 struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
-    scrollback: Arc<Mutex<Scrollback>>,
     child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
 }
 
@@ -286,14 +265,12 @@ fn spawn_session(
         }
     };
 
-    let scrollback = Arc::new(Mutex::new(Scrollback::default()));
     let child = Arc::new(Mutex::new(child));
     sessions.insert(
         id.clone(),
         Session {
             master: pair.master,
             writer,
-            scrollback: Arc::clone(&scrollback),
             child: Arc::clone(&child),
         },
     );
@@ -313,7 +290,6 @@ fn spawn_session(
                 Err(_) => break,
                 Ok(n) => {
                     let chunk = &buf[..n];
-                    scrollback.lock().unwrap().push(chunk);
                     thread_emitter.emit(&WorkerToUi::Output {
                         pty_id: id.clone(),
                         data_b64: b64_encode(chunk),
@@ -442,19 +418,6 @@ pub fn run() -> i32 {
                             message: "pty resize failed".to_string(),
                         });
                     }
-                }
-                None => emitter.emit(&WorkerToUi::Error {
-                    pty_id,
-                    message: "no such pty".to_string(),
-                }),
-            },
-            UiToWorker::Snapshot { pty_id } => match sessions.get(&pty_id) {
-                Some(session) => {
-                    let data = session.scrollback.lock().unwrap().bytes();
-                    emitter.emit(&WorkerToUi::SnapshotData {
-                        pty_id,
-                        data_b64: b64_encode(&data),
-                    });
                 }
                 None => emitter.emit(&WorkerToUi::Error {
                     pty_id,
