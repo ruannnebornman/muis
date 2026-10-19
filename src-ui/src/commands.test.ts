@@ -3,24 +3,21 @@ import { clampIndex, filterCommands, type Command } from "./commands";
 
 const commands: Command[] = [
   { id: "new-tab", title: "New terminal tab" },
-  { id: "new-agent", title: "New AI tab" },
   { id: "close-tab", title: "Close tab" },
   { id: "settings", title: "Open settings" },
 ];
 
 describe("filterCommands", () => {
   it("returns everything for an empty query", () => {
-    expect(filterCommands("", commands)).toHaveLength(4);
-    expect(filterCommands("   ", commands)).toHaveLength(4);
+    expect(filterCommands("", commands)).toHaveLength(3);
+    expect(filterCommands("   ", commands)).toHaveLength(3);
   });
 
   it("matches case-insensitively anywhere in the title", () => {
     expect(filterCommands("TAB", commands).map((c) => c.id)).toEqual([
       "new-tab",
-      "new-agent",
       "close-tab",
     ]);
-    expect(filterCommands("ai", commands).map((c) => c.id)).toEqual(["new-agent"]);
     expect(filterCommands("sett", commands).map((c) => c.id)).toEqual(["settings"]);
   });
 

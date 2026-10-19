@@ -14,12 +14,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-mod agent;
 mod bridge;
 mod logging;
 mod persist;
 
-use agent::AgentPool;
 use bridge::{EventSink, WorkerLaunch, WorkerPool, WORKER_EVENT};
 use tauri::{Emitter, Manager};
 
@@ -402,135 +400,6 @@ fn system_stats_active(active: bool) {
     STATS_ACTIVE.store(active, Ordering::Relaxed);
 }
 
-/// Whether `command` resolves to an executable on PATH (or an existing
-/// file path). Decides if the New AI tab option is offered.
-#[tauri::command]
-fn command_available(command: String) -> bool {
-    let command = command.trim();
-    if command.is_empty() {
-        return false;
-    }
-    if command.contains('/') || command.contains('\\') {
-        return Path::new(command).is_file();
-    }
-    let Some(path) = std::env::var_os("PATH") else {
-        return false;
-    };
-    let exts: Vec<String> = if cfg!(windows) {
-        std::env::var("PATHEXT")
-            .unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_string())
-            .split(';')
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_lowercase())
-            .collect()
-    } else {
-        vec![String::new()]
-    };
-    for dir in std::env::split_paths(&path) {
-        for ext in &exts {
-            if dir.join(format!("{command}{ext}")).is_file() {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-/// One agent session from `opencode session list --format json`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct AgentSession {
-    pub id: String,
-    pub title: String,
-    pub directory: String,
-}
-
-/// Parse the JSON emitted by `opencode session list --format json`. Unknown
-/// fields are ignored; a missing title/directory defaults to empty.
-fn parse_agent_sessions(json: &str) -> Result<Vec<AgentSession>, String> {
-    #[derive(serde::Deserialize)]
-    struct Raw {
-        id: String,
-        #[serde(default)]
-        title: String,
-        #[serde(default)]
-        directory: String,
-    }
-    let raw: Vec<Raw> = serde_json::from_str(json).map_err(|e| e.to_string())?;
-    Ok(raw
-        .into_iter()
-        .map(|r| AgentSession {
-            id: r.id,
-            title: r.title,
-            directory: r.directory,
-        })
-        .collect())
-}
-
-/// List opencode sessions for one tab's directory. `opencode session list`
-/// is scoped to the project of its working directory, so the command must
-/// run from the tab's cwd to see that project's sessions. Bounded by a
-/// timeout, so a stuck opencode can never freeze the window. Empty when
-/// opencode is missing or errors.
-#[tauri::command]
-async fn opencode_sessions(cwd: String) -> Vec<AgentSession> {
-    tauri::async_runtime::spawn_blocking(move || list_opencode_sessions(&cwd))
-        .await
-        .unwrap_or_default()
-}
-
-fn list_opencode_sessions(cwd: &str) -> Vec<AgentSession> {
-    use std::io::Read;
-    use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
-
-    let mut cmd = Command::new("opencode");
-    cmd.args(["session", "list", "--format", "json", "--max-count", "200"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    let dir = cwd.trim();
-    if !dir.is_empty() && Path::new(dir).is_dir() {
-        cmd.current_dir(dir);
-    }
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
-    let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        return Vec::new();
-    };
-    let reader = std::thread::spawn(move || {
-        let mut buf = String::new();
-        let mut stdout = stdout;
-        let _ = stdout.read_to_string(&mut buf);
-        buf
-    });
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    return Vec::new();
-                }
-                break;
-            }
-            Ok(None) => {}
-            Err(_) => {
-                let _ = child.kill();
-                return Vec::new();
-            }
-        }
-        if Instant::now() > deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Vec::new();
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    parse_agent_sessions(&reader.join().unwrap_or_default()).unwrap_or_default()
-}
-
 /// Directory opencode loads global plugins from.
 fn opencode_plugins_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -617,17 +486,6 @@ fn reset_sessions_and_restart(app: tauri::AppHandle) -> Result<(), String> {
     }
     app.exit(0);
     Ok(())
-}
-
-/// Read a UTF-8 text file for attaching to an agent prompt. Capped so a
-/// huge file can't be slurped by accident.
-#[tauri::command]
-fn read_text_file(path: String) -> Result<String, String> {
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    if meta.len() > 512 * 1024 {
-        return Err("file too large (max 512 KiB)".into());
-    }
-    std::fs::read_to_string(&path).map_err(|e| format!("not a UTF-8 text file: {e}"))
 }
 
 /// Names of up to `limit` non-hidden subdirectories of `path`, sorted. Used
@@ -742,19 +600,13 @@ fn main() {
             git_branch,
             sys_info,
             system_stats_active,
-            command_available,
-            opencode_sessions,
             install_opencode_plugin,
-            read_text_file,
             list_subdirs,
             open_url,
             reset_sessions_and_restart,
             worker_spawn,
             worker_send,
-            worker_stop,
-            agent::agent_spawn,
-            agent::agent_write,
-            agent::agent_kill
+            worker_stop
         ])
         .setup(|app| {
             log::info!(
@@ -790,7 +642,6 @@ fn main() {
             let sink: EventSink =
                 Arc::new(move |event| handle.emit(WORKER_EVENT, &event).is_ok());
             app.handle().manage(WorkerPool::new(sink, launch));
-            app.handle().manage(AgentPool::new());
 
             // Notification endpoint for `muis-notify` clients. One per-user
             // socket; each request is forwarded to the frontend, which routes
@@ -844,26 +695,6 @@ mod tests {
         assert!(OPENCODE_PLUGIN_FILE.ends_with(".js") || OPENCODE_PLUGIN_FILE.ends_with(".ts"));
         assert_ne!(OPENCODE_PLUGIN_FILE, OPENCODE_PLUGIN_LEGACY);
         assert!(OPENCODE_PLUGIN_SRC.contains(OPENCODE_PLUGIN_MARKER));
-    }
-
-    #[test]
-    fn parses_opencode_sessions_json() {
-        let json = r#"[
-            {"id":"ses_1","title":"A","updated":1,"directory":"/p/a"},
-            {"id":"ses_2","title":"B","directory":"/p/b"}
-        ]"#;
-        let sessions = parse_agent_sessions(json).unwrap();
-        assert_eq!(sessions.len(), 2);
-        assert_eq!(
-            sessions[0],
-            AgentSession {
-                id: "ses_1".into(),
-                title: "A".into(),
-                directory: "/p/a".into(),
-            }
-        );
-        assert!(parse_agent_sessions("[]").unwrap().is_empty());
-        assert!(parse_agent_sessions("not json").is_err());
     }
 
     #[test]
@@ -922,14 +753,6 @@ mod tests {
         let info = sys_info();
         assert!(!info.user.is_empty());
         assert!(!info.host.is_empty());
-    }
-
-    #[test]
-    fn command_available_rejects_missing_and_accepts_paths() {
-        assert!(!command_available("this-command-does-not-exist-9f3a".to_string()));
-        assert!(!command_available("   ".to_string()));
-        let exe = std::env::current_exe().unwrap();
-        assert!(command_available(exe.to_string_lossy().into_owned()));
     }
 
     #[test]

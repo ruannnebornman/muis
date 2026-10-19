@@ -44,42 +44,18 @@ Branch `feature/decided-ux`. Also not yet exercised in a real client.
 - **Version in the status bar** — done (`v1.1.2` from the Tauri bundle
   version). Crate/package dev versions are left alone: releases bump only
   `tauri.conf.json`, so aligning them would drift again each release.
-- **Split new-tab (shell vs AI)** — done: `+` shell, `AI` agent tab,
-  hidden unless the agent is on PATH; restores scrollback then relaunches
-  the agent. Test: option hidden without the agent; agent launches on a
-  new and a restored AI tab.
 - **Less blue `＋ session` button** — done (neutral, accent on hover).
 - **Reorder bottom-left items** — done, fixed order
   `cwd → git → session·tab → user`.
 - **Drag-and-drop reorder** — done: drop between items; dragged active
   item stays active. Test: reorder tabs and sessions, active follows.
 
-### Implemented after this list (PRs #47, #50)
+### Implemented after this list (PR #47)
 
-Not in the original list; built during the ACP work. On `feature/decided-ux`
-(merged), `feature/settings-and-tab-move`, and `feature/acp-pane`.
+Not in the original list; built on `feature/decided-ux` (merged) and
+`feature/settings-and-tab-move`.
 
 - **Visible Settings button** (gear) and **tab-into-session drag** (#47).
-- **ACP pane** (Phase 1 of `docs/agent-integration.md`): `AI` opens a
-  native agent surface — streaming text/thoughts, tool-call cards with
-  diffs, permissions, stop; exact `session/load` resume (#50).
-- **Exact session capture (opencode)**: a plugin reports the session id
-  via `muis-notify --agent-session`; the tab resumes with
-  `opencode -s <id>` instead of `--continue` (#50).
-- **Auto-mark agent tabs**: a tab whose last command was
-  opencode/claude/codex is remembered as an agent tab (#50).
-- **Staggered agent restore**: a queue with a core-scaled concurrency
-  window (capped at 4), visible-tab-first, `nice`d spawns (#50).
-- **opencode completion notify**: the plugin reports `session.idle`; the
-  tab gets the done badge/toast (#50).
-- **ACP polish** (#50): plan/steps cards, colored diffs, permission cards
-  (tool + path), model picker, attachments, Stop unblocks the input.
-- **Agent tab detection** (#50): running a known agent in a shell tab
-  silently marks it as an agent tab (remembered for restore, exact session
-  id captured via the plugin). No chip/prompt — the AI tab button is the
-  opt-in path to the ACP panel.
-- **ACP Phase 5 decided** (not built): ACP panes as tabs *and* a
-  session-linked side panel (Snor-ready); multiple ACP tabs allowed.
 
 ### Implemented — terminal base (PR #54)
 
@@ -124,47 +100,8 @@ Terminal base:
 - **Integration**: "Open with muis here" file-manager action; more `muis`
   CLI flags; restore-on-login / systemd unit (packaging pass).
 
-ACP:
-
-- Phase 3/4 for Claude/Codex (deferred until those CLIs are installed).
-- Phase 5 (side-panel ACP + session linkage; Snor) — parked.
-
 Deferred/platform: single Windows exe, Windows installer, Flatpak,
 aarch64, website, auto-update, Snor engine.
-
-### Terminal agent resume (behaviour)
-
-A terminal AI tab restores with this precedence:
-
-`opencode -s <id>` (exact captured id, validated) → `opencode -s <id>`
-found by tab title + directory lookup → `opencode --continue`
-(`agentResume`) → configured `agentCommand`.
-
-The exact id comes from the auto-installed opencode plugin
-(`~/.config/opencode/plugins/muis.js`, marker-guarded; delete it to opt
-out) reporting via `muis-notify --agent-session` (plus
-`--agent-session-dir`), routed by `MUIS_TAB_ID`. The plugin must stay a
-`.js`/`.ts` file: opencode only auto-loads those extensions, so the earlier
-`muis.mjs` name was silently ignored. So opening a **new** tab and running
-`opencode` (or `opencode --continue`) captures that tab's session id and it
-restores exactly next launch; `--continue` is only the fallback when no id
-was captured (e.g. the plugin was not loaded because opencode had not been
-restarted). The plugin also fires the completion notification on
-`session.idle`.
-
-A reported id is latched only when its directory matches the tab's cwd
-(`src-ui/src/agentSessions.ts`), so a session that leaked in from a shared
-agent process in another project cannot overwrite a tab's real session. On
-restore the stored id is validated against `opencode session list --format
-json`; when it is missing or foreign, the tab is matched by its label
-(`OC | <title>`, prefix-tolerant of truncation) within its directory before
-falling back to `--continue`. Because `opencode session list` is scoped to
-its working directory, the list is fetched per directory (at most once per
-launch), only when a restored tab needs it.
-
-ACP (AI) panes are separate: a new AI tab starts a fresh session
-(`session/new`); restore resumes via the stored `acpSessionId`
-(`session/load`).
 
 ### Release checklist
 
@@ -287,33 +224,6 @@ bundle version via `@tauri-apps/api/app` `getVersion()` (needs
 - The dev versions (`crates/muis-shell/Cargo.toml` `0.1.0`,
   `src-ui/package.json` `1.0.0`) are intentionally left alone — aligning
   them would just drift again at the next release.
-
-### Split "new tab" button: shell vs AI
-
-The `+` button currently always opens a plain shell tab. Split it into a
-two-option control: **New terminal (fish)** and **New AI tab**.
-
-- "New terminal" is the current behavior (probe fish on Linux, pwsh on
-  Windows — shell probe in `muis-core`).
-- "New AI tab" opens a tab whose startup command launches the configured
-  AI agent (Codex, Claude Code, …) instead of a plain shell. muis
-  already detects these agents from OSC 9/777/99 escapes
-  (`docs/archive/notifications.md`), so the tab can also carry an agent label.
-- UI: split button (primary `+` = shell, chevron/menu = AI) or a small
-  chooser popover. The agent command and args should be configurable in
-  `AppConfig` (`src-ui/src/config.ts`) so the choice is not hardcoded.
-Decided (2026-10-06):
-
-- One configured agent (a single command from config, e.g. opencode), not
-  a menu of agents.
-- If the configured agent is not found on PATH, hide the AI option so only
-  a normal shell tab is offered.
-- On restart, restore the tab's scrollback and relaunch the configured
-  agent. Whether to pass the agent a "continue/resume last session" flag
-  is part of the agent's config.
-
-Still open (minor): the exact config shape (command + args) and where the
-PATH probe lives.
 
 ### Less blue "＋ session" button
 
@@ -495,27 +405,6 @@ three-file portable zip (`docs/windows.md`).
 Open questions: keep the 3-file zip as a fallback artifact, whether notify
 is embedded or folded into `muis.exe`, and the extraction/cleanup policy
 (per-user app dir, not `%TEMP%`, to reduce AV/SmartScreen noise).
-
-### Option to run the ACP agent in pure mode (`--pure`)
-
-Add a **setting** to launch the ACP agent with `--pure` (no external
-plugins). Measured delta on one idle `opencode acp`: **~15 MB (~4%)**, so
-it is a small optional win, not a default — and disabling plugins changes
-agent behaviour, so the user chooses.
-
-- Backend: include `--pure` in the ACP launch args when the setting is on
-  (`crates/muis-shell/src/agent.rs`; with the shared-backend plan the flag
-  applies to the single shared process).
-- Settings: a toggle, default **off** (e.g. "ACP agent: run without
-  plugins (pure)"). Per-agent launch config is the natural home if agents
-  become multi-agent.
-- Tests: unit-test arg assembly (pure on/off → exact argv).
-- Note: `--pure` also disables muis's own opencode plugin; harmless for ACP
-  panes (session ids come from the protocol) but it disables any other user
-  plugins too — hence opt-in.
-
-Decided (2026-10-12): expose as a user setting; keep plugins on by
-default.
 
 ## Known issues
 

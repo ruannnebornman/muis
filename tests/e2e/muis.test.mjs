@@ -287,7 +287,7 @@ describe("muis chrome", () => {
 
   it("keeps a session open when its last tab closes", async () => {
     // Switch to the second session and close its only tab; the session
-    // must stay in the sidebar with no tabs (only +/AI), not disappear.
+    // must stay in the sidebar with no tabs (only +), not disappear.
     await (await driver.findElements(By.css(".session")))[1].click();
     await driver.wait(async () => (await tabs()).length === 1, 5000);
     await driver.findElement(By.css("#tabbar .tab .x")).click();

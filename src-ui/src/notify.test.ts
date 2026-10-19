@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { NotifyRouter, NOTIFY_DEDUPE_MS, notifyEventFromCli, type NotifyContext } from "./notify";
+import {
+  NotifyRouter,
+  NOTIFY_DEDUPE_MS,
+  notifyEventFromCli,
+  notifyEventFromCommand,
+  type NotifyContext,
+} from "./notify";
 import type { NotifyEvent } from "./osc";
 
 const osc9 = (body: string): NotifyEvent => ({ type: "notify", title: null, body, source: "osc9" });
@@ -77,6 +83,17 @@ describe("notifyEventFromCli", () => {
       title: null,
       body: "hi",
       source: "cli",
+    });
+  });
+});
+
+describe("notifyEventFromCommand", () => {
+  it("maps a locally detected finish to a command-source event", () => {
+    expect(notifyEventFromCommand("build", "make finished")).toEqual({
+      type: "notify",
+      title: "build",
+      body: "make finished",
+      source: "command",
     });
   });
 });

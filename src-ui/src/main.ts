@@ -22,18 +22,10 @@ import { shouldToastOnFinish } from "./finish";
 import { collectMatches, type SearchHit, type SearchScope, type SearchableTab } from "./searchall";
 import { resolveShortcut } from "./shortcuts";
 import { DoneTracker } from "./done";
-import { NotifyRouter, notifyEventFromCli, type CliNotify } from "./notify";
+import { NotifyRouter, notifyEventFromCli, notifyEventFromCommand, type CliNotify } from "./notify";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
 import { shouldFocusTerminal } from "./focus";
-import { AcpConnection, AcpClient, type PermissionRequest } from "./acp";
-import { AGENT_CANDIDATES, agentResumeForCommand, availableAgents } from "./agents";
-import {
-  dirsCompatible,
-  latchPatch,
-  restoreCommand,
-  type AgentSessionInfo,
-} from "./agentSessions";
 import muisIcon from "./assets/muis.png";
 import type { UiToWorker, WorkerToUi } from "./ipc";
 import { b64encode, b64decode } from "./ipc";
@@ -172,50 +164,6 @@ if (IN_TAURI) {
 /** View options; loaded from disk in init, edited in the settings dialog. */
 let cfg: AppConfig = defaultConfig();
 
-/** Whether the configured AI agent is on PATH (controls the AI tab option). */
-let agentReady = false;
-
-/** Tabs whose agent has already been launched this launch. */
-const agentLaunched = new Set<string>();
-
-/** Tab ids that came back from a saved session (restored on this launch). */
-const restoredTabs = new Set<string>();
-
-/**
- * opencode's session list for a tab's directory, fetched at most once per
- * directory per launch (`opencode session list` is scoped to its working
- * directory). Used only when a restored tab has no validated session id.
- * Empty when opencode is absent or errors.
- */
-const opencodeSessionsCache = new Map<string, Promise<AgentSessionInfo[]>>();
-function opencodeSessions(cwd: string): Promise<AgentSessionInfo[]> {
-  if (!IN_TAURI) return Promise.resolve([]);
-  let pending = opencodeSessionsCache.get(cwd);
-  if (!pending) {
-    pending = invoke<AgentSessionInfo[]>("opencode_sessions", { cwd }).catch(() => []);
-    opencodeSessionsCache.set(cwd, pending);
-  }
-  return pending;
-}
-
-/** Probe PATH for the configured agent; hide the AI option when absent. */
-async function refreshAgentReady(): Promise<void> {
-  agentReady = false;
-  const command = cfg.agentCommand.trim();
-  if (!IN_TAURI || !command) return;
-  try {
-    agentReady = await invoke<boolean>("command_available", { command });
-  } catch {
-    agentReady = false;
-  }
-}
-
-/** Probe PATH for the known agent binaries that back the settings choices. */
-async function scanAgents(): Promise<string[]> {
-  if (!IN_TAURI) return [...AGENT_CANDIDATES];
-  return availableAgents((command) => invoke<boolean>("command_available", { command }));
-}
-
 /** Pty liveness for dirty-tab / quit confirmations. */
 const activity = newActivityState();
 
@@ -266,674 +214,6 @@ interface TabView {
 }
 
 const views = new Map<string, TabView>();
-
-/* ---------------- agent (ACP) panes ---------------- */
-
-interface AgentView {
-  box: HTMLElement;
-  log: HTMLElement;
-  input: HTMLInputElement;
-  send: HTMLButtonElement;
-  stop: HTMLButtonElement;
-  status: HTMLElement;
-  client: AcpClient;
-  tabId: string;
-  sessionId: string;
-  started: boolean;
-  running: boolean;
-  ready: boolean;
-  /** Streaming nodes keyed by message/tool id. */
-  nodes: Map<string, HTMLElement>;
-  /** Files attached to the next prompt (embedded as ACP resource parts). */
-  attachments: { name: string; uri: string; mimeType: string; text: string }[];
-  /** Container for the attachment chips. */
-  chips: HTMLElement;
-  /** Tool-call cards keyed by toolCallId, with merged fields across updates. */
-  tools: Map<
-    string,
-    {
-      card: HTMLElement;
-      title: HTMLElement;
-      badge: HTMLElement;
-      body: HTMLElement;
-      raw: { oldString?: string; newString?: string; content?: string };
-      paths: string[];
-    }
-  >;
-}
-
-const agentViews = new Map<string, AgentView>();
-
-/**
- * One shared ACP process serves every AI pane. The transport is created
- * lazily; panes get a per-session `AcpClient` over it. Sessions are routed
- * by the session id carried in each message.
- */
-let acpConn: AcpConnection | null = null;
-let acpSpawned = false;
-/** Set while we intentionally stop the shared process (idle kill). */
-let acpStopping = false;
-let acpIdleTimer: number | null = null;
-
-function agentConnection(): AcpConnection {
-  if (!acpConn) {
-    acpConn = new AcpConnection((line) => {
-      if (IN_TAURI) void invoke("agent_write", { line }).catch(() => {});
-    });
-  }
-  return acpConn;
-}
-
-/** Spawn the shared agent process on first use (idempotent). */
-async function ensureSharedAgent(cwd: string): Promise<void> {
-  if (!IN_TAURI || acpSpawned) return;
-  const command = cfg.agentCommand.trim() || "opencode";
-  await invoke("agent_spawn", { cwd, command, pure: cfg.agentPure });
-  acpSpawned = true;
-}
-
-/** Handshake the shared connection, retrying until the agent answers. */
-async function handshake(conn: AcpConnection): Promise<boolean> {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    try {
-      await conn.initialize(1500);
-      return true;
-    } catch {
-      await new Promise((r) => window.setTimeout(r, 400));
-    }
-  }
-  return false;
-}
-
-function cancelIdleStop(): void {
-  if (acpIdleTimer !== null) {
-    window.clearTimeout(acpIdleTimer);
-    acpIdleTimer = null;
-  }
-}
-
-/** Kill the shared process once no AI pane remains (after a grace period). */
-function maybeStopIdleAgent(): void {
-  if (!IN_TAURI) return;
-  cancelIdleStop();
-  if (agentViews.size > 0) return;
-  acpIdleTimer = window.setTimeout(() => {
-    acpIdleTimer = null;
-    if (agentViews.size === 0) stopSharedAgent();
-  }, 30000);
-}
-
-function stopSharedAgent(): void {
-  if (!IN_TAURI || !acpSpawned) return;
-  acpStopping = true;
-  acpSpawned = false;
-  acpConn?.reset();
-  void invoke("agent_kill")
-    .catch(() => {})
-    .finally(() => {
-      window.setTimeout(() => {
-        acpStopping = false;
-      }, 1000);
-    });
-}
-
-/**
- * Recover after the shared process died unexpectedly: respawn, re-init, and
- * reload every open pane's session (config, history, and context come back).
- */
-async function recoverSharedAgent(): Promise<void> {
-  if (!IN_TAURI) return;
-  acpSpawned = false;
-  const conn = agentConnection();
-  conn.reset();
-  const views = [...agentViews.values()];
-  if (views.length === 0) return;
-  const cwd = findTab(views[0].tabId)?.cwd || homeDir || "/";
-  for (const v of views) appendAgentNode(v, "a-sys", "agent exited; reconnecting…");
-  try {
-    await ensureSharedAgent(cwd);
-    if (!(await handshake(conn))) return;
-    for (const v of views) {
-      const tab = findTab(v.tabId);
-      if (!v.sessionId || !tab) continue;
-      try {
-        await v.client.loadSession(tab.cwd, v.sessionId);
-        appendAgentNode(v, "a-sys", `resumed ${v.sessionId}`);
-      } catch (e) {
-        appendAgentNode(v, "a-msg error", `reconnect failed: ${String(e)}`);
-      }
-    }
-  } catch (e) {
-    for (const v of views) appendAgentNode(v, "a-msg error", `agent exited: ${String(e)}`);
-  }
-}
-
-function findTab(tabId: string): Tab | undefined {
-  for (const w of store.workspaces) {
-    const t = w.tabs.find((x) => x.id === tabId);
-    if (t) return t;
-  }
-  return undefined;
-}
-
-function appendAgentNode(v: AgentView, cls: string, text: string): HTMLElement {
-  const d = document.createElement("div");
-  d.className = cls;
-  d.textContent = text;
-  v.log.append(d);
-  v.log.scrollTop = v.log.scrollHeight;
-  return d;
-}
-
-function contentText(c: unknown): string {
-  const content = c as { type?: string; text?: string } | undefined;
-  return content?.type === "text" ? content.text ?? "" : "";
-}
-
-/** Colored `-`/`+` diff rendered as line spans. */
-function diffPre(oldText: string, newText: string): HTMLElement {
-  const pre = document.createElement("pre");
-  pre.className = "a-diff";
-  const add = (sign: string, text: string, cls: string): void => {
-    if (!text) return;
-    for (const line of text.split("\n")) {
-      const span = document.createElement("span");
-      span.className = cls;
-      span.textContent = `${sign} ${line}\n`;
-      pre.append(span);
-    }
-  };
-  add("-", oldText, "d-del");
-  add("+", newText, "d-add");
-  return pre;
-}
-
-/** Render a `plan` update (opencode's TODO list) as a steps card. */
-function renderPlan(v: AgentView, u: Record<string, unknown>): void {
-  const entries = Array.isArray(u.entries)
-    ? (u.entries as { content?: string; status?: string }[])
-    : [];
-  let node = v.nodes.get("plan");
-  if (!node) {
-    node = appendAgentNode(v, "a-plan", "");
-    v.nodes.set("plan", node);
-  }
-  node.textContent = "";
-  for (const e of entries) {
-    const row = document.createElement("div");
-    const status = String(e.status ?? "pending");
-    row.className = `a-plan-row ${status}`;
-    const mark = status === "completed" ? "✔" : status === "in_progress" ? "▶" : "•";
-    row.textContent = `${mark} ${e.content ?? ""}`;
-    node.append(row);
-  }
-  v.log.scrollTop = v.log.scrollHeight;
-}
-
-function renderToolCard(v: AgentView, u: Record<string, unknown>): void {
-  const id = String(u.toolCallId ?? "tool");
-  let node = v.tools.get(id);
-  if (!node) {
-    const card = document.createElement("div");
-    card.className = "a-toolcard";
-    const head = document.createElement("div");
-    head.className = "a-tool-head";
-    const title = document.createElement("span");
-    title.className = "a-tool-title";
-    const badge = document.createElement("span");
-    badge.className = "a-tool-badge";
-    head.append(title, badge);
-    const body = document.createElement("div");
-    body.className = "a-tool-body";
-    card.append(head, body);
-    node = { card, title, badge, body, raw: {}, paths: [] };
-    v.tools.set(id, node);
-    v.log.append(card);
-  }
-  node.title.textContent = String(u.title ?? u.kind ?? "tool");
-  const status = String(u.status ?? "");
-  node.badge.textContent = status;
-  node.badge.dataset.status = status;
-
-  // opencode's final update omits rawInput/locations, so merge everything
-  // ever seen for this tool and render from the merged state.
-  const raw = (u.rawInput ?? {}) as { oldString?: unknown; newString?: unknown; content?: unknown };
-  if (typeof raw.oldString === "string") node.raw.oldString = raw.oldString;
-  if (typeof raw.newString === "string") node.raw.newString = raw.newString;
-  if (typeof raw.content === "string") node.raw.content = raw.content;
-  const locs = Array.isArray(u.locations) ? (u.locations as { path?: string }[]) : [];
-  const paths = locs.map((l) => l?.path).filter((p): p is string => Boolean(p));
-  if (paths.length) node.paths = paths;
-
-  node.body.textContent = "";
-  if (node.paths.length) {
-    const p = document.createElement("div");
-    p.className = "a-tool-path";
-    p.textContent = node.paths.join(", ");
-    node.body.append(p);
-  }
-  if (node.raw.oldString !== undefined || node.raw.newString !== undefined) {
-    node.body.append(diffPre(node.raw.oldString ?? "", node.raw.newString ?? ""));
-  } else if (node.raw.content !== undefined) {
-    node.body.append(diffPre("", node.raw.content));
-  }
-  const content = Array.isArray(u.content) ? u.content : [];
-  for (const c of content) {
-    const t = contentText((c as { content?: unknown })?.content);
-    if (t) {
-      const d = document.createElement("div");
-      d.className = "a-tool-out";
-      d.textContent = t;
-      node.body.append(d);
-    }
-  }
-  v.log.scrollTop = v.log.scrollHeight;
-}
-
-function renderAgentUpdate(v: AgentView, u: Record<string, unknown>): void {
-  const kind = String(u.sessionUpdate ?? "");
-  const textOf = contentText;
-  switch (kind) {
-    case "agent_message_chunk": {
-      const id = String(u.messageId ?? "msg");
-      let node = v.nodes.get(id);
-      if (!node) {
-        node = appendAgentNode(v, "a-msg agent", "");
-        v.nodes.set(id, node);
-      }
-      node.textContent += textOf(u.content);
-      v.log.scrollTop = v.log.scrollHeight;
-      break;
-    }
-    case "user_message_chunk": {
-      const id = String(u.messageId ?? "user");
-      let node = v.nodes.get(id);
-      if (!node) {
-        node = appendAgentNode(v, "a-msg user", "");
-        v.nodes.set(id, node);
-      }
-      node.textContent += textOf(u.content);
-      v.log.scrollTop = v.log.scrollHeight;
-      break;
-    }
-    case "agent_thought_chunk": {
-      const id = String(u.messageId ?? "thought");
-      let node = v.nodes.get(id);
-      if (!node) {
-        node = appendAgentNode(v, "a-thought", "");
-        v.nodes.set(id, node);
-      }
-      node.textContent += textOf(u.content);
-      v.log.scrollTop = v.log.scrollHeight;
-      break;
-    }
-    case "plan":
-      renderPlan(v, u);
-      break;
-    case "tool_call":
-    case "tool_call_update":
-      renderToolCard(v, u);
-      break;
-    case "usage_update": {
-      const used = Number(u.used ?? 0);
-      const size = Number(u.size ?? 0);
-      v.status.textContent = size ? `${used.toLocaleString()} / ${size.toLocaleString()} tokens` : "";
-      break;
-    }
-    default:
-      break; // available_commands_update, plan, … ignored for now
-  }
-}
-
-function renderPermission(v: AgentView, req: PermissionRequest): void {
-  const card = document.createElement("div");
-  card.className = "a-perm";
-  const tc = req.toolCall as
-    | { title?: string; kind?: string; locations?: { path?: string }[] }
-    | undefined;
-  const title = document.createElement("div");
-  title.className = "a-perm-title";
-  title.textContent = `Permission: ${tc?.title ?? tc?.kind ?? "tool"}`;
-  card.append(title);
-  const permPaths = (tc?.locations ?? []).map((l) => l?.path).filter(Boolean);
-  if (permPaths.length) {
-    const p = document.createElement("div");
-    p.className = "a-tool-path";
-    p.textContent = permPaths.join(", ");
-    card.append(p);
-  }
-  const row = document.createElement("div");
-  row.className = "a-perm-row";
-  const answer = (optionId: string | null) => {
-    v.client.resolvePermission(req.requestId, optionId);
-    card.remove();
-  };
-  for (const opt of req.options) {
-    const b = el("button", "btn", opt.name ?? opt.optionId);
-    b.addEventListener("click", () => answer(opt.optionId));
-    row.append(b);
-  }
-  const deny = el("button", "btn", "Deny");
-  deny.addEventListener("click", () => answer(null));
-  row.append(deny);
-  card.append(row);
-  v.log.append(card);
-  v.log.scrollTop = v.log.scrollHeight;
-}
-
-function ensureAgentView(tab: Tab): AgentView {
-  const existing = agentViews.get(tab.id);
-  if (existing) {
-    if (!existing.box.isConnected) termWrap.append(existing.box);
-    return existing;
-  }
-  const box = document.createElement("div");
-  box.className = "tabbox agent";
-  const head = document.createElement("div");
-  head.className = "pane-head agent-head";
-  const headLabel = document.createElement("span");
-  headLabel.className = "agent-head-label";
-  headLabel.textContent = `${cfg.agentCommand.trim() || "agent"} · ACP`;
-  const model = document.createElement("select");
-  model.className = "agent-model";
-  model.title = "Model";
-  model.style.display = "none";
-  head.append(headLabel, model);
-  const log = document.createElement("div");
-  log.className = "agent-log";
-  const chips = document.createElement("div");
-  chips.className = "agent-chips";
-  chips.style.display = "none";
-  const inputRow = document.createElement("div");
-  inputRow.className = "agent-input";
-  const attach = document.createElement("button");
-  attach.className = "btn";
-  attach.textContent = "＋";
-  attach.title = "Attach a text file";
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "agent-field";
-  input.placeholder = "Message the agent…";
-  input.disabled = true;
-  const send = document.createElement("button");
-  send.className = "btn";
-  send.textContent = "Send";
-  send.disabled = true;
-  const stop = document.createElement("button");
-  stop.className = "btn";
-  stop.textContent = "Stop";
-  stop.style.display = "none";
-  const status = document.createElement("div");
-  status.className = "a-status";
-  inputRow.append(attach, input, send, stop, status);
-  box.append(head, log, chips, inputRow);
-  termWrap.append(box);
-
-  let v!: AgentView;
-  const client = new AcpClient(agentConnection(), {
-    onUpdate: (u) => renderAgentUpdate(v, u),
-    onPermission: (req) => renderPermission(v, req),
-    onSession: (sid) => {
-      v.sessionId = sid;
-      const t = findTab(v.tabId);
-      if (t) {
-        t.acpSessionId = sid;
-        scheduleSave();
-      }
-    },
-    onConfig: (options) => {
-      const m = options.find((o) => o.id === "model" && o.type === "select");
-      if (!m) return;
-      model.innerHTML = "";
-      for (const o of m.options ?? []) {
-        const opt = document.createElement("option");
-        opt.value = o.value;
-        opt.textContent = o.name;
-        model.append(opt);
-      }
-      model.value = m.currentValue ?? "";
-      model.style.display = "";
-    },
-    onError: (m) => appendAgentNode(v, "a-msg error", m),
-  });
-  v = {
-    box,
-    log,
-    input,
-    send,
-    stop,
-    status,
-    client,
-    tabId: tab.id,
-    sessionId: "",
-    started: false,
-    running: false,
-    ready: false,
-    nodes: new Map(),
-    tools: new Map(),
-    attachments: [],
-    chips,
-  };
-  agentViews.set(tab.id, v);
-  attach.addEventListener("click", () => void attachFile(v));
-  model.addEventListener("change", () => {
-    void v.client.setConfigOption("model", model.value).catch(() => {});
-  });
-
-  const submit = () => void sendPrompt(v);
-  send.addEventListener("click", submit);
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      submit();
-    }
-  });
-  stop.addEventListener("click", () => {
-    if (!v.ready) return;
-    v.client.cancel();
-    // Unblock the input immediately; the turn's promise may resolve later.
-    v.running = false;
-    v.stop.style.display = "none";
-    appendAgentNode(v, "a-sys", "cancelled");
-  });
-  return v;
-}
-
-async function startAgent(v: AgentView, tab: Tab): Promise<void> {
-  if (!IN_TAURI) {
-    appendAgentNode(v, "a-sys", "ACP panes need the desktop app");
-    return;
-  }
-  appendAgentNode(v, "a-sys", "starting agent…");
-  cancelIdleStop();
-  try {
-    // One shared process for every pane; sessions are multiplexed on it.
-    await ensureSharedAgent(tab.cwd);
-    const conn = agentConnection();
-    if (!(await handshake(conn))) {
-      appendAgentNode(v, "a-msg error", "agent did not respond to initialize");
-      return;
-    }
-    if (tab.acpSessionId) {
-      await v.client.loadSession(tab.cwd, tab.acpSessionId);
-      appendAgentNode(v, "a-sys", `resumed ${tab.acpSessionId}`);
-    } else {
-      await v.client.newSession(tab.cwd);
-    }
-    v.ready = true;
-    v.input.disabled = false;
-    v.send.disabled = false;
-    v.input.focus();
-  } catch (e) {
-    appendAgentNode(v, "a-msg error", `failed to start agent: ${String(e)}`);
-  }
-}
-
-function renderChips(v: AgentView): void {
-  v.chips.textContent = "";
-  v.attachments.forEach((a, i) => {
-    const chip = document.createElement("span");
-    chip.className = "agent-chip";
-    chip.textContent = a.name;
-    const x = document.createElement("span");
-    x.className = "x";
-    x.textContent = "✕";
-    x.addEventListener("click", () => {
-      v.attachments.splice(i, 1);
-      renderChips(v);
-    });
-    chip.append(x);
-    v.chips.append(chip);
-  });
-  v.chips.style.display = v.attachments.length ? "" : "none";
-}
-
-async function attachFile(v: AgentView): Promise<void> {
-  if (!IN_TAURI) return;
-  try {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ multiple: false, directory: false });
-    if (typeof picked !== "string") return;
-    const text = await invoke<string>("read_text_file", { path: picked });
-    const name = picked.split("/").pop() ?? picked;
-    v.attachments.push({ name, uri: `file://${picked}`, mimeType: "text/plain", text });
-    renderChips(v);
-  } catch (e) {
-    appendAgentNode(v, "a-msg error", `attach failed: ${String(e)}`);
-  }
-}
-
-async function sendPrompt(v: AgentView): Promise<void> {
-  const text = v.input.value.trim();
-  if ((!text && v.attachments.length === 0) || !v.ready || v.running) return;
-  v.input.value = "";
-  if (text) appendAgentNode(v, "a-msg user", text);
-  const attachments = v.attachments.map((a) => ({
-    uri: a.uri,
-    mimeType: a.mimeType,
-    text: a.text,
-  }));
-  v.attachments = [];
-  renderChips(v);
-  v.running = true;
-  v.stop.style.display = "";
-  try {
-    await v.client.prompt(text, attachments);
-  } catch (e) {
-    appendAgentNode(v, "a-msg error", String((e as { message?: string })?.message ?? e));
-  } finally {
-    v.running = false;
-    v.stop.style.display = "none";
-  }
-}
-
-function disposeAgentView(v: AgentView): void {
-  // Close the session (freeing agent-side state) but keep the shared
-  // process alive for other panes; it is killed once no pane remains.
-  void v.client.close();
-  v.box.remove();
-  agentViews.delete(v.tabId);
-  maybeStopIdleAgent();
-}
-
-/* ---------------- staggered agent restore ---------------- */
-
-interface LoadEntry {
-  ws: Workspace;
-  tab: Tab;
-}
-
-const loadQueue: LoadEntry[] = [];
-let loadActive = 0;
-/** Loads in flight at once: scales with cores (4->2, 6->3, 8->4), capped at 4. */
-const loadConcurrency = Math.max(
-  1,
-  Math.min(4, Math.floor((navigator.hardwareConcurrency || 4) / 2)),
-);
-const LOAD_STAGGER_MS = 300;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((r) => window.setTimeout(r, ms));
-}
-
-function isAgentTab(t: Tab): boolean {
-  return t.kind === "agent" || t.agent === true;
-}
-
-function isAgentStarted(t: Tab): boolean {
-  if (t.kind === "agent") return agentViews.get(t.id)?.started ?? false;
-  return views.has(t.id); // legacy terminal agent tab: pty spawned
-}
-
-/** Restored agent tabs in load order: visible, current session, then rest. */
-function agentTabsInLoadOrder(): LoadEntry[] {
-  const out: LoadEntry[] = [];
-  const push = (ws: Workspace, t: Tab): void => {
-    if (isAgentTab(t) && !isAgentStarted(t)) out.push({ ws, tab: t });
-  };
-  const ws = store.currentWorkspace();
-  if (ws) {
-    const active = ws.tabs[ws.active];
-    if (active) push(ws, active);
-    for (const t of ws.tabs) if (t !== active) push(ws, t);
-  }
-  for (const w of store.workspaces) {
-    if (w === ws) continue;
-    for (const t of w.tabs) push(w, t);
-  }
-  return out;
-}
-
-function updateLoadingHint(): void {
-  const n = loadQueue.length + loadActive;
-  const show = n > 0 && segmentVisible(cfg.statusbar, "load");
-  stLoad.style.display = show ? "" : "none";
-  stLoad.textContent = n > 0 ? `loading ${n}` : "";
-}
-
-async function loadAgent(entry: LoadEntry): Promise<void> {
-  const { ws, tab } = entry;
-  if (tab.kind === "agent") {
-    const v = ensureAgentView(tab);
-    if (v.started) return;
-    v.started = true;
-    await startAgent(v, tab);
-  } else {
-    if (views.has(tab.id)) return; // already spawned (current session)
-    ensureView(ws.id, tab);
-    // The TUI has no completion event; allow the spawn + resume write.
-    await delay(900);
-  }
-}
-
-function pumpLoadQueue(): void {
-  if (loadActive >= loadConcurrency || loadQueue.length === 0) {
-    updateLoadingHint();
-    return;
-  }
-  const entry = loadQueue.shift()!;
-  loadActive++;
-  updateLoadingHint();
-  void loadAgent(entry)
-    .catch(() => {})
-    .finally(() => {
-      loadActive--;
-      updateLoadingHint();
-      pumpLoadQueue();
-    });
-  // Stagger the next start so a full window does not boot in one tick.
-  window.setTimeout(pumpLoadQueue, LOAD_STAGGER_MS);
-}
-
-/**
- * Bring every agent tab back up, a few at a time, so a burst of agent
- * startups does not spike the CPU. Plain terminal tabs are left as shells
- * — muis never re-runs a command the user typed by hand.
- */
-function startRestoredAgents(): void {
-  loadQueue.push(...agentTabsInLoadOrder());
-  pumpLoadQueue();
-}
 
 /** Scrollback search follows the visible tab. */
 function activeSearch() {
@@ -1346,39 +626,11 @@ function ensureView(sessionId: string, tab: Tab): TabView {
             window.setTimeout(() => dropSessionIfLastTab(sessionId, tab.id), 0);
           },
         );
-        // AI tab: after the shell (and any restored scrollback) is up,
-        // launch the configured agent once per launch.
-        const launchAgent = async (): Promise<void> => {
-          if (!tab.agent || agentLaunched.has(tab.id)) return;
-          const restored = restoredTabs.has(tab.id);
-          // A restored tab may need opencode's session list to validate its
-          // stored id or find the right session by title; a new tab does
-          // not, and neither does one whose stored id already checks out.
-          const needsLookup =
-            restored && !(tab.agentSession && dirsCompatible(tab.agentSessionDir, tab.cwd));
-          const sessions = needsLookup ? await opencodeSessions(tab.cwd) : [];
-          if (agentLaunched.has(tab.id)) return;
-          const command = restoreCommand(tab, {
-            restored,
-            sessions,
-            agentCommand: cfg.agentCommand,
-            agentResumeCommand: cfg.agentResumeCommand,
-          });
-          if (!command) return;
-          agentLaunched.add(tab.id);
-          window.setTimeout(() => {
-            trackInput(tab.id, `${command}\n`);
-            void client.write(sessionId, tab.id, enc.encode(`${command}\n`)).catch(() => {});
-          }, 600);
-        };
         if (replay) {
           replaying = true;
           term.write(b64decode(replay), () => {
             replaying = false;
-            void launchAgent();
           });
-        } else {
-          void launchAgent();
         }
         // The pty exists now. The fit that ran when the tab was created may
         // have raced the spawn and been dropped by the worker, leaving the
@@ -1412,8 +664,8 @@ function ensureView(sessionId: string, tab: Tab): TabView {
   // Refit whenever the surface actually changes size. This catches the
   // hidden->shown transition (xterm measures 0 while display:none, so the
   // first fit can be stale) and window/sidebar resizes, which a single
-  // one-shot fit misses — the cause of an agent TUI rendering at the wrong
-  // size and not filling the pane.
+  // one-shot fit misses — the cause of a TUI rendering at the wrong size
+  // and not filling the pane.
   const self = view;
   view.ro = new ResizeObserver(() => {
     if (!self.box.classList.contains("active")) return;
@@ -1455,7 +707,6 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
       const cmd = ev.cmd || st.input.trim() || currentInputLine(tabNow.id);
       commandTracker.onCmdStart(tabNow.id, cmd);
       renderCommandHead(tabNow.id);
-      markAgentTab(tabNow.id);
     } else if (ev.type === "cmd-end") {
       finishCommand(tabNow.id, ev.exit);
     } else if (ev.type === "notify") {
@@ -1588,8 +839,8 @@ function applyWorkspaceTheme(): void {
 function renderAll(): void {
   const ws = store.currentWorkspace();
   applyWorkspaceTheme();
-  // A session with no tabs is a valid state: it shows only the +/AI tab
-  // buttons and no terminal, and is kept until the user closes the session
+  // A session with no tabs is a valid state: it shows only the + tab
+  // button and no terminal, and is kept until the user closes the session
   // or exits its last process. New sessions open a tab in addSession.
   // Looking at a tab acknowledges its finished command.
   const active = ws?.tabs[ws.active];
@@ -2023,14 +1274,6 @@ function renderTabs(): void {
   nb.title = "New terminal";
   nb.addEventListener("click", () => addShellTab(ws));
   tabbar.append(nb);
-  // The AI tab is only offered when the configured agent is on PATH.
-  if (agentReady) {
-    const ai = el("button", "newtab ai", "AI");
-    const mode = cfg.agentLaunchMode === "tui" ? "TUI" : "ACP";
-    ai.title = `New ${cfg.agentCommand.trim()} ${mode} tab`;
-    ai.addEventListener("click", () => launchAgentTab(ws));
-    tabbar.append(ai);
-  }
   const gear = el("button", "newtab settings", "⚙");
   gear.title = "Settings (ctrl + ,)";
   gear.style.marginLeft = "auto";
@@ -2040,28 +1283,6 @@ function renderTabs(): void {
 
 function addShellTab(ws: Workspace): void {
   store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
-  renderAll();
-}
-
-function addAgentTab(ws: Workspace): void {
-  // AI button opens an ACP pane, not a shell running the agent.
-  const label = cfg.agentCommand.trim() || "AI";
-  store.newTab(label, newTabCwd(ws), "agent");
-  renderAll();
-}
-
-/** Launch the AI action in the configured mode. */
-function launchAgentTab(ws: Workspace): void {
-  if (cfg.agentLaunchMode === "tui") addAgentTuiTab(ws);
-  else addAgentTab(ws);
-}
-
-/** Open a shell tab that runs the configured agent's TUI (not the ACP pane). */
-function addAgentTuiTab(ws: Workspace): void {
-  const label = cfg.agentCommand.trim() || "AI";
-  const id = store.newTab(label, newTabCwd(ws));
-  const tab = id ? findTab(id) : undefined;
-  if (tab) tab.agent = true;
   renderAll();
 }
 
@@ -2151,31 +1372,13 @@ function renderTerms(ws: Workspace | undefined): void {
       view.box.classList.remove("active");
     }
   }
-  for (const [id, v] of agentViews) {
-    if (!store.workspaces.some((w) => w.tabs.some((t) => t.id === id))) {
-      disposeAgentView(v);
-    } else {
-      v.box.classList.remove("active");
-    }
-  }
   // No sessions: every terminal view was just disposed above.
   if (!ws) return;
   for (const t of ws.tabs) {
     const show = ws.tabs[ws.active]?.id === t.id;
-    if (t.kind === "agent") {
-      const v = ensureAgentView(t);
-      v.box.classList.toggle("active", show);
-      // The visible tab starts immediately (bypasses the load queue); the
-      // rest are brought up by startRestoredAgents() a few at a time.
-      if (show && !v.started) {
-        v.started = true;
-        void startAgent(v, t);
-      }
-    } else {
-      const view = ensureView(ws.id, t);
-      view.box.classList.toggle("active", show);
-      if (show) fitShown(ws.id, t, view);
-    }
+    const view = ensureView(ws.id, t);
+    view.box.classList.toggle("active", show);
+    if (show) fitShown(ws.id, t, view);
   }
 }
 
@@ -2188,8 +1391,6 @@ const stUser = el("span", "pill", "");
 const stCpu = el("span", "pill", "");
 const stRam = el("span", "pill", "");
 const stGpu = el("span", "pill", "");
-const stLoad = el("span", "pill", "");
-stLoad.style.display = "none";
 const stVersion = el("span", "pill", "");
 const stClock = el("span", "clock", "");
 const stShell = el("span", "pill", "");
@@ -2204,7 +1405,6 @@ statusbar.append(
   stCpu,
   stRam,
   stGpu,
-  stLoad,
   stShell,
   stVersion,
   stClock,
@@ -2260,9 +1460,6 @@ function applyStatusbarVisibility(): void {
     node.style.display = segmentVisible(cfg.statusbar, id) ? "" : "none";
   }
   if (!segmentVisible(cfg.statusbar, "gpu")) stGpu.style.display = "none";
-  // The load pill is shown only while agents load, so let updateLoadingHint
-  // own its display (an empty visible pill otherwise leaks through).
-  updateLoadingHint();
 }
 
 function tickClock(): void {
@@ -2393,10 +1590,6 @@ const onShortcut = (e: KeyboardEvent): void => {
       store.newTab(`Terminal ${ws.tabs.length + 1}`, newTabCwd(ws));
       renderAll();
       break;
-    case "new-agent-tab":
-      e.preventDefault();
-      if (agentReady) launchAgentTab(ws);
-      break;
     case "close-tab": {
       e.preventDefault();
       const active = ws.tabs[ws.active];
@@ -2521,33 +1714,6 @@ for (const name of themeNames()) {
   o.textContent = name;
   optTheme.append(o);
 }
-const optAgentMode = document.createElement("select");
-for (const [value, label] of [
-  ["acp", "ACP pane"],
-  ["tui", "TUI tab"],
-] as const) {
-  const o = document.createElement("option");
-  o.value = value;
-  o.textContent = label;
-  optAgentMode.append(o);
-}
-optAgentMode.title = "What the AI button opens";
-const optAgent = document.createElement("select");
-optAgent.title = "Detected AI agent; choose Custom for any command";
-const optAgentCustom = document.createElement("input");
-optAgentCustom.type = "text";
-optAgentCustom.placeholder = "opencode";
-optAgentCustom.title = "Custom AI command; empty disables the AI option";
-const agentPick = document.createElement("span");
-agentPick.className = "agent-pick";
-agentPick.append(optAgent, optAgentCustom);
-const optAgentResume = document.createElement("input");
-optAgentResume.type = "text";
-optAgentResume.placeholder = "opencode --continue";
-optAgentResume.title = "Command run when an AI tab is restored";
-const optAgentPure = document.createElement("input");
-optAgentPure.type = "checkbox";
-optAgentPure.title = "Launch the ACP agent with --pure (no external plugins)";
 const optScrollback = document.createElement("input");
 optScrollback.type = "number";
 optScrollback.min = "1000";
@@ -2582,7 +1748,6 @@ const SEGMENTS: [string, string][] = [
   ["cpu", "CPU"],
   ["ram", "RAM"],
   ["gpu", "GPU"],
-  ["load", "loading"],
   ["version", "version"],
   ["clock", "clock"],
   ["shell", "shell"],
@@ -2633,12 +1798,6 @@ settingsBody.append(
     settingsRow("Cursor blink", optCursorBlink),
     settingsRow("Bell", optBell),
   ]),
-  settingsSection("AI", [
-    settingsRow("AI launch mode", optAgentMode),
-    settingsRow("AI agent", agentPick),
-    settingsRow("AI resume command", optAgentResume),
-    settingsRow("Run ACP agent pure (no plugins)", optAgentPure),
-  ]),
   settingsSection("Terminal", [
     settingsRow("Scrollback lines", optScrollback),
   ]),
@@ -2652,48 +1811,10 @@ settingsBody.append(
 settingsOverlay.append(settingsBox);
 document.body.append(settingsOverlay);
 
-/** Sentinel option value for a manually-typed agent command. */
-const CUSTOM_AGENT = "__custom__";
-
-/** Fill the agent select with the binaries found on PATH (plus Custom…). */
-async function populateAgentChoices(): Promise<void> {
-  const detected = await scanAgents();
-  const current = cfg.agentCommand.trim();
-  optAgent.innerHTML = "";
-  for (const name of detected) {
-    const o = document.createElement("option");
-    o.value = name;
-    o.textContent = name;
-    optAgent.append(o);
-  }
-  const custom = document.createElement("option");
-  custom.value = CUSTOM_AGENT;
-  custom.textContent = "Custom…";
-  optAgent.append(custom);
-  const known = detected.includes(current);
-  optAgent.value = known ? current : CUSTOM_AGENT;
-  optAgentCustom.value = known ? "" : current;
-  optAgentCustom.style.display = known ? "none" : "";
-}
-
-optAgent.addEventListener("change", () => {
-  const custom = optAgent.value === CUSTOM_AGENT;
-  optAgentCustom.style.display = custom ? "" : "none";
-  if (custom) {
-    optAgentCustom.focus();
-  } else {
-    optAgentCustom.value = "";
-  }
-});
-
 function openSettings(): void {
   optSessions.checked = cfg.showSessions;
   optFontSize.value = cfg.fontSize?.toString() ?? "";
   optTheme.value = cfg.theme ?? "default";
-  optAgentMode.value = cfg.agentLaunchMode;
-  void populateAgentChoices();
-  optAgentResume.value = cfg.agentResumeCommand;
-  optAgentPure.checked = cfg.agentPure;
   optScrollback.value = cfg.scrollback.toString();
   optFontFamily.value = cfg.fontFamily ?? "";
   optCursorStyle.value = cfg.cursorStyle;
@@ -2715,13 +1836,6 @@ async function applySettings(): Promise<void> {
     showSessions: optSessions.checked,
     fontSize: size === "" ? null : Math.max(6, Math.min(32, Math.floor(Number(size)) || 0)) || null,
     theme: optTheme.value === "default" ? null : optTheme.value,
-    agentCommand:
-      optAgent.value === CUSTOM_AGENT
-        ? optAgentCustom.value.trim()
-        : optAgent.value.trim() || cfg.agentCommand,
-    agentLaunchMode: optAgentMode.value as AppConfig["agentLaunchMode"],
-    agentResumeCommand: optAgentResume.value.trim(),
-    agentPure: optAgentPure.checked,
     scrollback: clampScrollback(Number(optScrollback.value)),
     keybindings: cfg.keybindings,
     copyOnSelect: cfg.copyOnSelect,
@@ -2747,7 +1861,6 @@ async function applySettings(): Promise<void> {
     view.term.options.cursorStyle = cfg.cursorStyle;
     view.term.options.cursorBlink = cfg.cursorBlink;
   }
-  await refreshAgentReady();
   appliedTheme = null; // settings may have changed the theme
   closeSettings();
   renderAll();
@@ -2821,7 +1934,6 @@ function openPalette(): void {
   };
   if (ws) {
     add("new-tab", "New terminal tab", () => addShellTab(ws));
-    if (agentReady) add("new-agent", "New AI tab", () => launchAgentTab(ws));
     if (active) add("close-tab", "Close tab", () => closeTab(ws.id, active.id));
     if (ws.tabs.length > 1) {
       add("next-tab", "Next tab", () => {
@@ -3008,27 +2120,7 @@ function trackInput(tabId: string, data: string): void {
   if (commandTracker.onInput(tabId, data)) {
     renderCommandHead(tabId);
     armIdleFallback(tabId);
-    markAgentTab(tabId);
   }
-}
-
-/**
- * If the command a tab just ran is a known TUI coding agent, remember the
- * tab as an agent tab so it reopens the agent on restore. muis has no
- * manual way to mark a tab, so this is inferred from what actually ran.
- * The session id is captured separately (the opencode plugin), so the tab
- * restores its exact session. No chip/prompt: the AI tab button is there
- * for anyone who wants the ACP panel.
- */
-function markAgentTab(tabId: string): void {
-  const resume = agentResumeForCommand(commandTracker.state(tabId).lastCmd);
-  if (!resume) return;
-  const tab = findTab(tabId);
-  if (!tab || tab.kind === "agent" || tab.agent) return;
-  tab.agent = true;
-  tab.agentResume = resume;
-  scheduleSave();
-  renderTabs();
 }
 
 function finishCommand(tabId: string, exit: number | null): void {
@@ -3069,8 +2161,12 @@ function maybeNotifyFinished(tabId: string): void {
   }
   const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === tabId));
   const tab = ws?.tabs.find((t) => t.id === tabId);
-  const label = tab ? tabLabelOf(tab.title, tab.manual, st.lastCmd) : "muis";
-  void sendDesktopNotification(label, `${st.lastCmd ?? "command"} finished`);
+  if (!tab) return;
+  const label = tabLabelOf(tab.title, tab.manual, st.lastCmd);
+  applyNotification(
+    tab,
+    notifyEventFromCommand(label, `${st.lastCmd ?? "command"} finished`),
+  );
 }
 
 function forgetTabState(tabId: string): void {
@@ -3113,20 +2209,6 @@ function handleNotifyRequest(req: CliNotify): void {
   const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === req.tab_id));
   const tab = ws?.tabs.find((t) => t.id === req.tab_id);
   if (!tab) return;
-  // An agent hook/plugin reported its session id: remember it so the tab
-  // resumes that exact session instead of "last in this folder". Reject an
-  // id whose directory does not match the tab, so a session that leaked in
-  // from another project (e.g. a shared agent process) never latches.
-  if (req.agent_session) {
-    const patch = latchPatch(tab, req.agent_session, req.agent_session_dir);
-    if (patch) {
-      tab.agentSession = patch.agentSession;
-      if (patch.agentSessionDir) tab.agentSessionDir = patch.agentSessionDir;
-      tab.agent = true;
-      scheduleSave();
-    }
-    return;
-  }
   if (applyNotification(tab, notifyEventFromCli(req))) {
     renderTabs();
     renderSessions();
@@ -3362,21 +2444,8 @@ async function init(): Promise<void> {
     } catch {
       /* system monitor is best-effort */
     }
-    // ACP agent bridge: one shared process; the transport routes each
-    // line to its session's pane.
-    try {
-      await listen<{ line: string }>("agent-msg", (e) => {
-        agentConnection().receive(e.payload.line);
-      });
-      await listen("agent-exit", () => {
-        if (acpStopping) return; // we stopped it on purpose (idle kill)
-        void recoverSharedAgent();
-      });
-    } catch {
-      /* agent bridge is best-effort */
-    }
-    // Install the opencode plugin that reports session ids back to muis
-    // (idempotent; only written when missing).
+    // Install the opencode notification plugin (idempotent; only written
+    // when missing or still ours).
     try {
       await invoke("install_opencode_plugin");
     } catch {
@@ -3388,9 +2457,6 @@ async function init(): Promise<void> {
       if (saved) {
         store = SessionStore.fromJSON(saved);
         resumed = true;
-        for (const w of store.workspaces) {
-          for (const t of w.tabs) restoredTabs.add(t.id);
-        }
       }
       reportDebugStage("sessions-loaded", Boolean(saved));
     } catch {
@@ -3408,10 +2474,8 @@ async function init(): Promise<void> {
   // Only mint a default session on a fresh start. A resumed empty store
   // means the user closed every session and quit that way on purpose.
   if (store.workspaces.length === 0 && !resumed) store.ensureDefault("home", home);
-  await refreshAgentReady();
   applyTheme(cfg.theme);
   renderAll();
-  startRestoredAgents();
   reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });
   installDebugHook();
   startSnapshotLoop();

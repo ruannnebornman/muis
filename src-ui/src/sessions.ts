@@ -10,18 +10,6 @@ export interface Tab {
   cwd: string;
   /** User pinned the title; shell OSC 0/2 must not overwrite it. */
   manual?: boolean;
-  /** AI tab: relaunch the configured agent when the tab starts. */
-  agent?: boolean;
-  /** Resume command for an auto-detected agent tab (overrides config). */
-  agentResume?: string;
-  /** Exact agent session id reported by a hook/plugin (opencode). */
-  agentSession?: string;
-  /** Directory that session belongs to, to reject cross-project ids. */
-  agentSessionDir?: string;
-  /** "terminal" (pty, default) or "agent" (ACP pane). */
-  kind?: "terminal" | "agent";
-  /** ACP session id, persisted so an agent tab resumes its session. */
-  acpSessionId?: string;
 }
 
 export interface Workspace {
@@ -151,11 +139,11 @@ export class SessionStore {  workspaces: Workspace[] = [];
     return this.workspaces[this.current];
   }
 
-  newTab(title: string, cwd: string, kind?: "agent"): string | undefined {
+  newTab(title: string, cwd: string): string | undefined {
     const ws = this.currentWorkspace();
     if (!ws) return undefined;
     const id = this.mint("t");
-    ws.tabs.push({ id, title, cwd, manual: false, ...(kind ? { kind } : {}) });
+    ws.tabs.push({ id, title, cwd, manual: false });
     ws.active = ws.tabs.length - 1;
     return id;
   }
