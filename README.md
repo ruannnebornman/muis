@@ -1,12 +1,12 @@
 # muis
 
 muis is the terminal emulator for Veldmuis: Rust backend, xterm.js
-frontend, Tauri native window. It ships as the Arch system package
-(Veldmuis default) and builds from source on Linux.
+frontend, Tauri native window. It ships as the Veldmuis Arch system package
+(the default).
 
-The only supported target is Linux. Windows, Flatpak, and AppImage
-builds were removed to keep the pipeline focused on the Veldmuis
-artifact; see `docs/deferred.md` before restoring any of them.
+The only supported build path is the Veldmuis Linux tarball. Windows,
+Flatpak, AppImage, and AUR builds were removed to keep the pipeline focused;
+see `docs/deferred.md` before restoring any of them.
 
 Chrome follows `../wezterm-web/index.html` (Breeze titlebar, sessions
 sidebar, tabbar, statusbar). `design/mock.html` is superseded. VT
