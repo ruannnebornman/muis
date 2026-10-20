@@ -4,5 +4,6 @@ members = [
   "crates/muis-worker",
   "crates/muis-shell",
   "crates/muis-notify",
+  "crates/muis-agent",
 ]
 resolver = "2"

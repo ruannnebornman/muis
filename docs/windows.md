@@ -20,9 +20,9 @@ downloaded" warnings; `.zip` is not on their risky-type list, so the
 download is quiet. Unzip it anywhere (Desktop, USB stick, `%LOCALAPPDATA%\muis`)
 and run `muis.exe`.
 
-`muis.exe` links the pty worker and the `muis-notify` CLI and runs them in
-hidden `--muis-worker` / `--muis-notify` modes, so there are no sidecar
-files to keep next to it. Both modes run in the same consoleless GUI
+`muis.exe` links the pty worker and the `muis-notify` / `muis-agent` CLIs
+and runs them in hidden `--muis-worker` / `--muis-notify` / `--muis-agent`
+modes, so there are no sidecar files to keep next to it. Both modes run in the same consoleless GUI
 process (release builds are `windows-subsystem`), so no CLI window ever
 appears.
 
@@ -53,8 +53,8 @@ cargo build --release -p muis-shell
 Compress-Archive -Path target\release\muis.exe "muis-<version>-x86_64-windows.zip"
 ```
 
-Only the shell target is built: on Windows it links `muis-worker` and
-`muis-notify`, so no separate sidecars exist. The frontend is embedded in
+Only the shell target is built: on Windows it links `muis-worker`,
+`muis-notify`, and `muis-agent`, so no separate sidecars exist. The frontend is embedded in
 `muis.exe` at compile time from `src-ui/dist` (rebuild it first with
 `npm run build`).
 
@@ -88,7 +88,9 @@ exclusion or code signing.
   - shell probe picks `pwsh` / `powershell` / `cmd`;
   - state is written to `%APPDATA%\muis`, and deleting it resets;
   - `muis.exe --muis-notify --body done` from a tab raises a toast (the
-    opencode plugin reaches it through `MUIS_BIN`).
+    opencode plugin reaches it through `MUIS_BIN`);
+  - `muis.exe --muis-agent session ses_test` from a tab updates that tab's
+    saved agent session (the TUI/server plugins reach it through `MUIS_BIN`).
 
 ## Per-user installer (optional, not planned)
 

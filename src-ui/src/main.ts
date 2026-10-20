@@ -22,6 +22,18 @@ import { collectMatches, type SearchHit, type SearchScope, type SearchableTab } 
 import { resolveShortcut } from "./shortcuts";
 import { DoneTracker } from "./done";
 import { NotifyRouter, notifyEventFromCli, notifyEventFromCommand, type CliNotify } from "./notify";
+import {
+  applyAgentReport,
+  isOpencodeTitle,
+  opencodeResume,
+  opencodeTitleFromLabel,
+  resolveRestoreSession,
+  restoreQueue,
+  shouldClearAgentOnCommandEnd,
+  type AgentSessionInfo,
+  type RestoreEntry,
+} from "./agentSessions";
+import { RestorePump } from "./restore";
 import { expandHome, shortPath as shortPathOf } from "./paths";
 import { clockText } from "./clock";
 import { shouldFocusTerminal } from "./focus";
@@ -149,6 +161,44 @@ class EchoTransport implements Transport {
 let store = new SessionStore();
 const client = new WorkerClient(IN_TAURI ? new TauriTransport() : new EchoTransport());
 
+/** A `muis-agent session` report routed from the shell. */
+interface CliAgentSession {
+  kind?: string;
+  session?: string | null;
+  directory?: string | null;
+  tab_id?: string | null;
+}
+
+/** Tabs whose restore launch already ran this session. */
+const agentLaunched = new Set<string>();
+/** opencode's session list is per directory; fetch once per launch. */
+const opencodeSessionsCache = new Map<string, Promise<AgentSessionInfo[]>>();
+let saveTimer: number | undefined;
+let lastSaved = "";
+/** Tabs that have produced any pty output, and callbacks waiting for it. */
+const sawOutput = new Set<string>();
+const outputWaiters = new Map<string, () => void>();
+
+function scheduleSave(): void {
+  if (!IN_TAURI || testModeActive) return;
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    void saveNow();
+  }, 400);
+}
+
+async function saveNow(): Promise<void> {
+  if (!IN_TAURI || testModeActive) return;
+  const json = store.toJSON();
+  if (json === lastSaved) return;
+  lastSaved = json;
+  try {
+    await invoke("sessions_save", { json });
+  } catch {
+    /* best effort: a lost save must never break the terminal */
+  }
+}
+
 // `muis-notify` clients reach the shell over a local socket; the shell
 // forwards each request here as a `muis-notify` event.
 if (IN_TAURI) {
@@ -156,6 +206,11 @@ if (IN_TAURI) {
     const w = window as unknown as { __muisErrors?: string[] };
     w.__muisErrors ??= [];
     w.__muisErrors.push(`notify-listen failed: ${String(e)}`);
+  });
+  void listen<CliAgentSession>("muis-agent-session", (e) => handleAgentSession(e.payload)).catch((e: unknown) => {
+    const w = window as unknown as { __muisErrors?: string[] };
+    w.__muisErrors ??= [];
+    w.__muisErrors.push(`agent-listen failed: ${String(e)}`);
   });
 }
 
@@ -586,6 +641,8 @@ function ensureView(sessionId: string, tab: Tab): TabView {
           24,
           (data) => {
             activity.lastOutputAt.set(tab.id, Date.now());
+            sawOutput.add(tab.id);
+            outputWaiters.get(tab.id)?.();
             term.write(data);
             observeOsc(sessionId, tab, data);
             armIdleFallback(tab.id);
@@ -673,10 +730,18 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
     if (ev.type === "cwd" && tabNow.cwd !== ev.path) {
       tabNow.cwd = ev.path;
       changed = true;
-    } else if (ev.type === "title" && ev.title && tabNow.title !== ev.title) {
+    } else if (ev.type === "title" && ev.title) {
       // Fish reports its abbreviated cwd as title. Pinned (manual) tabs
-      // keep their names.
-      if (!tabNow.manual) {
+      // keep their names. opencode prefixes its session title with "OC |";
+      // remember that separately so a manual rename never hides the session.
+      if (isOpencodeTitle(ev.title)) {
+        const agentTitle = opencodeTitleFromLabel(ev.title);
+        if (agentTitle && tabNow.agentTitle !== agentTitle) {
+          tabNow.agentTitle = agentTitle;
+          changed = true;
+        }
+      }
+      if (!tabNow.manual && tabNow.title !== ev.title) {
         tabNow.title = ev.title;
         changed = true;
       }
@@ -701,6 +766,7 @@ function observeOsc(sessionId: string, tab: Tab, data: Uint8Array): void {
     renderSessions();
     renderStatusbar();
     updateWindowTitle();
+    scheduleSave();
   }
 }
 
@@ -735,6 +801,8 @@ function closeTab(sessionId: string, tabId: string): void {
     if (tabIndex >= 0) store.closeTab(wsIndex, tabIndex);
   }
   renderAll();
+  // Closing a tab must never resurrect it on the next launch.
+  void saveNow();
 }
 
 function closeSession(w: Workspace): void {
@@ -759,6 +827,7 @@ function closeSession(w: Workspace): void {
   const idx = store.workspaces.findIndex((x) => x.id === w.id);
   if (idx >= 0) store.removeWorkspace(idx);
   renderAll();
+  void saveNow();
 }
 
 /**
@@ -787,6 +856,8 @@ function dropSessionIfLastTab(sessionId: string, tabId: string): void {
   const idx = store.workspaces.findIndex((w) => w.id === sessionId);
   if (idx >= 0) store.removeWorkspace(idx);
   renderAll();
+  // A dead session must not come back on the next launch.
+  void saveNow();
 }
 
 /* ---------------- chrome render ---------------- */
@@ -825,6 +896,7 @@ function renderAll(): void {
   renderTerms(ws);
   renderStatusbar();
   renderPanelSlot();
+  scheduleSave();
 }
 
 function renderSessions(): void {
@@ -1438,7 +1510,18 @@ function renderPanelSlot(): void {
 
 /* ---------------- quit guard + shortcuts ---------------- */
 
+if (IN_TAURI) {
+  // Flush the layout before the window closes, not just on the 400 ms
+  // debounce. beforeunload alone may not let an async invoke finish.
+  void getCurrentWindow()
+    .onCloseRequested(async () => {
+      await saveNow();
+    })
+    .catch(() => {});
+}
+
 window.addEventListener("beforeunload", (e) => {
+  void saveNow();
   const ids = store.workspaces.flatMap((w) => w.tabs.map((t) => t.id));
   if (anyTabBusy(activity, ids, Date.now())) {
     // WebKit shows its own confirmation dialog.
@@ -1982,7 +2065,13 @@ function trackInput(tabId: string, data: string): void {
 }
 
 function finishCommand(tabId: string, exit: number | null): void {
+  const finished = commandTracker.state(tabId);
   commandTracker.onCmdEnd(tabId, exit);
+  // A shell-reported end for opencode means the TUI is gone: forget the
+  // session so a restart does not resurrect a tab the user left at a prompt.
+  if (shouldClearAgentOnCommandEnd(finished.sawOsc, finished.lastCmd)) {
+    clearAgentSession(tabId);
+  }
   window.clearTimeout(idleFallback.get(tabId));
   idleFallback.delete(tabId);
   renderCommandHead(tabId);
@@ -2058,6 +2147,21 @@ function applyNotification(tab: Tab, ev: NotifyEvent): boolean {
   if (!decision.markDone) return false;
   doneTabs.mark(tab.id);
   return true;
+}
+
+/** A `muis-agent session` report forwarded by the shell. */
+function handleAgentSession(req: CliAgentSession): void {
+  if (!req?.tab_id) return;
+  if (applyAgentReport(store.workspaces, req.tab_id, req.session, req.directory) !== "ignored") {
+    scheduleSave();
+  }
+}
+
+/** Forget a tab's agent session (opencode left the session or exited). */
+function clearAgentSession(tabId: string): void {
+  if (applyAgentReport(store.workspaces, tabId, null, null) !== "ignored") {
+    scheduleSave();
+  }
 }
 
 /** A `muis-notify` request forwarded by the shell, routed to its tab. */
@@ -2260,11 +2364,82 @@ function updateWindowTitle(): void {
   document.title = testModeActive ? `[test] ${base}` : base;
 }
 
+/* ---------------- agent restore ---------------- */
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+/** Resolve when the pty has produced output, or after a timeout. Typing a
+ *  restore command before the shell is ready loses it, so wait for the
+ *  prompt instead of guessing with a fixed delay. */
+function waitForTabOutput(tabId: string, timeoutMs: number): Promise<void> {
+  if (sawOutput.has(tabId)) return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      outputWaiters.delete(tabId);
+      resolve();
+    };
+    const timer = window.setTimeout(finish, timeoutMs);
+    outputWaiters.set(tabId, finish);
+  });
+}
+
+/** opencode's session list for a directory, fetched at most once a launch. */
+function opencodeSessions(cwd: string): Promise<AgentSessionInfo[]> {
+  if (!IN_TAURI) return Promise.resolve([]);
+  let pending = opencodeSessionsCache.get(cwd);
+  if (!pending) {
+    pending = invoke<AgentSessionInfo[]>("opencode_sessions", { cwd }).catch(() => []);
+    opencodeSessionsCache.set(cwd, pending);
+  }
+  return pending;
+}
+
+/** Relaunch opencode in one restored tab, exactly once. */
+async function restoreAgentTab(entry: RestoreEntry): Promise<void> {
+  if (!IN_TAURI || testModeActive || agentLaunched.has(entry.tabId)) return;
+  agentLaunched.add(entry.tabId);
+  const ws = store.workspaces.find((w) => w.tabs.some((t) => t.id === entry.tabId));
+  const tab = ws?.tabs.find((t) => t.id === entry.tabId);
+  if (!ws || !tab) return;
+
+  ensureView(ws.id, tab);
+  const sessions = await opencodeSessions(tab.cwd);
+  const id = resolveRestoreSession(tab, sessions);
+  if (!id || !/^ses_[A-Za-z0-9]+$/.test(id)) return; // deleted/unknown session
+  // Keep the resolved id so a title match becomes an exact id next launch.
+  tab.agentSession = id;
+  const known = sessions.find((s) => s.id === id);
+  if (known?.directory) tab.agentSessionDir = known.directory;
+  scheduleSave();
+
+  // Wait for the shell prompt before typing into the pty.
+  await waitForTabOutput(tab.id, 1500);
+  await delay(150);
+  if (!views.has(tab.id)) return;
+  await client.write(ws.id, tab.id, enc.encode(`${opencodeResume(id)}\n`)).catch(() => {});
+}
+
+const restorePump = new RestorePump({
+  start: restoreAgentTab,
+  schedule: (fn, ms) => void window.setTimeout(fn, ms),
+});
+
+function startRestoredAgents(): void {
+  restorePump.push(restoreQueue(store.workspaces, store.current));
+}
+
 /* ---------------- init ---------------- */
 
 async function init(): Promise<void> {
   reportDebugStage("init-start");
   let home = "~";
+  let resumed = false;
   if (IN_TAURI) {
     try {
       testModeActive = await invoke<boolean>("is_test_mode");
@@ -2293,11 +2468,25 @@ async function init(): Promise<void> {
     } catch {
       reportDebugStage("config-load-failed");
     }
+    // Restore where we left off. A corrupt file starts fresh, never broken.
+    try {
+      const saved = await invoke<string>("sessions_load");
+      if (saved) {
+        store = SessionStore.fromJSON(saved);
+        resumed = true;
+      }
+      reportDebugStage("sessions-loaded", Boolean(saved));
+    } catch {
+      reportDebugStage("sessions-load-failed");
+    }
   }
   homeDir = home.startsWith("/") ? home : "";
-  if (store.workspaces.length === 0) store.ensureDefault("home", home);
+  // Only mint a default session on a fresh start. An empty resumed store
+  // means the user closed every session and quit that way on purpose.
+  if (store.workspaces.length === 0 && !resumed) store.ensureDefault("home", home);
   applyTheme(cfg.theme);
   renderAll();
+  startRestoredAgents();
   reportDebugStage("initial-render-complete", { workspaces: store.workspaces.length, views: views.size });
   installDebugHook();
   tickClock();

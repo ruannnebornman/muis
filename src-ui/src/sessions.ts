@@ -9,7 +9,16 @@ export interface Tab {
   cwd: string;
   /** User pinned the title; shell OSC 0/2 must not overwrite it. */
   manual?: boolean;
+  /** Exact agent session reported by the TUI/server plugin. */
+  agentSession?: string;
+  /** Directory that session belongs to, to reject cross-project ids. */
+  agentSessionDir?: string;
+  /** Last session title opencode put in the terminal title ("OC | ..."). */
+  agentTitle?: string;
 }
+
+/** Bump only for an incompatible layout; older files still load. */
+export const SESSION_FILE_VERSION = 1;
 
 export interface Workspace {
   id: string;
@@ -166,4 +175,93 @@ export class SessionStore {  workspaces: Workspace[] = [];
     const ws = this.currentWorkspace();
     return ws?.tabs[ws.active];
   }
+
+  /** Canonical persistence form. Ids and the counter survive restore so no
+   *  id is ever reused. */
+  toJSON(): string {
+    return JSON.stringify({
+      version: SESSION_FILE_VERSION,
+      workspaces: this.workspaces,
+      current: this.current,
+      next_id: this.nextId,
+    });
+  }
+
+  static fromJSON(json: string): SessionStore {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(json);
+    } catch {
+      throw new Error("session file is not JSON");
+    }
+    if (typeof raw !== "object" || raw === null) throw new Error("session file has no object");
+    const r = raw as {
+      version?: unknown;
+      workspaces?: unknown;
+      current?: unknown;
+      next_id?: unknown;
+    };
+    if (typeof r.version === "number" && r.version > SESSION_FILE_VERSION) {
+      throw new Error("session file is from a newer muis");
+    }
+    if (!Array.isArray(r.workspaces)) throw new Error("session file has no workspaces");
+    const s = new SessionStore();
+    s.workspaces = r.workspaces.flatMap((value) => {
+      const ws = sanitizeWorkspace(value);
+      return ws ? [ws] : [];
+    });
+    if (r.workspaces.length > 0 && s.workspaces.length === 0) {
+      throw new Error("session file has no usable workspaces");
+    }
+    s.current = typeof r.current === "number" ? Math.floor(r.current) : 0;
+    if (s.current < 0 || s.current >= s.workspaces.length) s.current = 0;
+    s.nextId = typeof r.next_id === "number" && r.next_id > 0 ? Math.floor(r.next_id) : 1;
+    // Clamp the counter past every id in the file so resume never reuses one.
+    for (const w of s.workspaces) {
+      for (const t of [w.id, ...w.tabs.map((tab) => tab.id)]) {
+        const m = /^([a-z]+)(\d+)$/.exec(t ?? "");
+        if (m) s.nextId = Math.max(s.nextId, parseInt(m[2], 10) + 1);
+      }
+    }
+    return s;
+  }
+}
+
+function text(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function sanitizeWorkspace(value: unknown): Workspace | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  const id = text(raw.id);
+  const name = text(raw.name);
+  const dir = text(raw.dir);
+  if (!id || name === null || dir === null || !Array.isArray(raw.tabs)) return null;
+  const tabs = raw.tabs.flatMap((item) => {
+    const tab = sanitizeTab(item);
+    return tab ? [tab] : [];
+  });
+  let active = typeof raw.active === "number" ? Math.floor(raw.active) : 0;
+  if (active < 0 || active >= tabs.length) active = 0;
+  return { id, name, dir, tabs, active };
+}
+
+function sanitizeTab(value: unknown): Tab | null {
+  if (typeof value !== "object" || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  const id = text(raw.id);
+  const title = text(raw.title);
+  const cwd = text(raw.cwd);
+  if (!id || title === null || cwd === null) return null;
+  const tab: Tab = { id, title, cwd };
+  if (typeof raw.manual === "boolean") tab.manual = raw.manual;
+  if (typeof raw.agentSession === "string" && /^ses_[A-Za-z0-9]+$/.test(raw.agentSession)) {
+    tab.agentSession = raw.agentSession;
+  }
+  if (typeof raw.agentSessionDir === "string" && raw.agentSessionDir) {
+    tab.agentSessionDir = raw.agentSessionDir;
+  }
+  if (typeof raw.agentTitle === "string" && raw.agentTitle) tab.agentTitle = raw.agentTitle;
+  return tab;
 }

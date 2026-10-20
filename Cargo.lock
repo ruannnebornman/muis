@@ -2114,6 +2114,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "muis-agent"
+version = "0.1.0"
+dependencies = [
+ "muis-core",
+]
+
+[[package]]
 name = "muis-core"
 version = "0.1.0"
 dependencies = [
@@ -2135,6 +2142,7 @@ name = "muis-shell"
 version = "0.1.0"
 dependencies = [
  "log",
+ "muis-agent",
  "muis-core",
  "muis-notify",
  "muis-worker",

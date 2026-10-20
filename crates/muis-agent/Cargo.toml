@@ -1,0 +1,16 @@
+[package]
+name = "muis-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Report the active agent session to a running muis window"
+
+[lib]
+name = "muis_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "muis-agent"
+path = "src/main.rs"
+
+[dependencies]
+muis-core = { path = "../muis-core" }

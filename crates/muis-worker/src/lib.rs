@@ -224,6 +224,11 @@ fn spawn_session(
     if let Ok(bin) = std::env::var("MUIS_BIN") {
         envs.push(("MUIS_BIN".to_string(), bin));
     }
+    // Sibling `muis-agent` path for Linux/dev/AppImage runs where the helper
+    // is not on PATH yet.
+    if let Ok(bin) = std::env::var("MUIS_AGENT_BIN") {
+        envs.push(("MUIS_AGENT_BIN".to_string(), bin));
+    }
 
     let argv = shell_argv(shell, cwd, flatpak, FISH_INTEGRATION, &envs);
     let mut cmd = CommandBuilder::new(&argv[0]);
@@ -491,11 +496,13 @@ mod tests {
             ("TERM_PROGRAM".to_string(), "muis".to_string()),
             ("MUIS_TAB_ID".to_string(), "tab-7".to_string()),
             ("MUIS_SOCKET".to_string(), "muis-notify-x".to_string()),
+            ("MUIS_AGENT_BIN".to_string(), "/opt/muis/muis-agent".to_string()),
         ];
         let argv = shell_argv("/bin/bash", "/home/x", true, "INT", &envs);
         assert!(argv.contains(&"--env=TERM_PROGRAM=muis".to_string()));
         assert!(argv.contains(&"--env=MUIS_TAB_ID=tab-7".to_string()));
         assert!(argv.contains(&"--env=MUIS_SOCKET=muis-notify-x".to_string()));
+        assert!(argv.contains(&"--env=MUIS_AGENT_BIN=/opt/muis/muis-agent".to_string()));
         // Env args must precede the shell command.
         let shell_at = argv.iter().position(|a| a == "/bin/bash").unwrap();
         let last_env = argv.iter().rposition(|a| a.starts_with("--env=")).unwrap();

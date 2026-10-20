@@ -27,6 +27,7 @@ mkdir -p "$INSTALL_DIR"
 cp "$ROOT/target/debug/muis" "$INSTALL_DIR/muis"
 cp "$ROOT/target/debug/muis-worker" "$INSTALL_DIR/muis-worker"
 cp "$ROOT/target/debug/muis-notify" "$INSTALL_DIR/muis-notify"
+cp "$ROOT/target/debug/muis-agent" "$INSTALL_DIR/muis-agent"
 
 export ROOT STATE_HOME CONFIG_HOME MARKER MARKER_FILE SCREENSHOT LOG RUN_DIR INSTALL_DIR
 # Use a distinct per-run socket so the smoke never fights a real muis for the
@@ -36,7 +37,7 @@ export MUIS_SOCKET_NAME="muis-notify-live-${RANDOM}${RANDOM}"
 # then emit each notification protocol so the frontend's OSC observer
 # exercises the real notify path (OSC 9, OSC 777, OSC 99), then drive the
 # real `muis-notify` CLI against the visible tab.
-export MUIS_TEST_COMMAND="printf %s $MARKER > $MARKER_FILE; printf '\033]9;muis-osc9\007\033]777;notify;muis-osc777;body777\007\033]99;i=1:d=1;muis-osc99\007'; $INSTALL_DIR/muis-notify --tab t1 --title muis-live --body cli-notify"
+export MUIS_TEST_COMMAND="printf %s $MARKER > $MARKER_FILE; printf '\033]9;muis-osc9\007\033]777;notify;muis-osc777;body777\007\033]99;i=1:d=1;muis-osc99\007'; $INSTALL_DIR/muis-notify --title muis-live --body cli-notify"
 export GDK_BACKEND=x11
 export LIBGL_ALWAYS_SOFTWARE=1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
