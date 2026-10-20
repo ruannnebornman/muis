@@ -99,16 +99,15 @@ Terminal base:
   CLI flags; restore-on-login / systemd unit (packaging pass).
 
 Deferred: aarch64, website, auto-update, Snor engine. Windows, Flatpak,
-and AppImage targets were removed (`docs/deferred.md`).
+AppImage, and AUR packaging were removed (`docs/deferred.md`).
 
 ### Release checklist
 
 - Bump the version in `crates/muis-shell/tauri.conf.json` (single
   authority) and tag `vX.Y.Z`.
-- `aur/PKGBUILD` is stale (`pkgver=1.0.0`) — bump it when cutting a
-  release. The Veldmuis `veldmuis-muis` package repackages the signed
-  upstream release tarball, so a release is required before that package
-  can pick the new version up.
+- The Veldmuis `veldmuis-muis` package repackages the signed upstream
+  release tarball, so a release is required before that package can pick
+  the new version up.
 - Clear local test state before switching builds: remove the config file
   (`~/.config/muis/muis.json`).
 - Close superseded PRs #48/#49; review #51.
@@ -122,7 +121,7 @@ and AppImage targets were removed (`docs/deferred.md`).
 
 ### Deferred
 
-- Nothing here; Windows, Flatpak, and AppImage targets were removed
+- Nothing here; Windows, Flatpak, AppImage, and AUR packaging were removed
   (`docs/deferred.md`).
 
 ### Resolved or dropped since this list started

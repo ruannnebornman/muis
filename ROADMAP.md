@@ -54,10 +54,10 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
 
 ## Removed
 
-- Windows, Flatpak, and AppImage targets. muis now builds and ships only
-  the Linux artifact Veldmuis consumes. The removed jobs, packaging, docs,
-  and platform code remain in git history; see `docs/deferred.md` before
-  restoring any of them.
+- Windows, Flatpak, AppImage, and AUR packaging. muis now builds and ships
+  only the Linux artifact Veldmuis consumes. The removed jobs, packaging,
+  docs, and platform code remain in git history; see `docs/deferred.md`
+  before restoring any of them.
 
 ## Deferred
 
