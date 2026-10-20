@@ -98,8 +98,8 @@ Terminal base:
 - **Integration**: "Open with muis here" file-manager action; more `muis`
   CLI flags; restore-on-login / systemd unit (packaging pass).
 
-Deferred/platform: single Windows exe, Windows installer, Flatpak,
-aarch64, website, auto-update, Snor engine.
+Deferred: aarch64, website, auto-update, Snor engine. Windows, Flatpak,
+and AppImage targets were removed (`docs/deferred.md`).
 
 ### Release checklist
 
@@ -122,9 +122,8 @@ aarch64, website, auto-update, Snor engine.
 
 ### Deferred
 
-- **Single Windows exe** — deferred; the portable `muis-portable-*.zip`
-  stays the supported Windows artifact until there is a Windows box to
-  verify a self-contained exe on (`docs/windows.md`, `docs/deferred.md`).
+- Nothing here; Windows, Flatpak, and AppImage targets were removed
+  (`docs/deferred.md`).
 
 ### Resolved or dropped since this list started
 
@@ -136,8 +135,7 @@ aarch64, website, auto-update, Snor engine.
   1.0.0. See the section below.
 - Dropped (`docs/deferred.md`): split panes, export/import of session
   state, making muis the Veldmuis default terminal.
-- Deferred (`docs/deferred.md`): Windows per-user installer, Snor engine,
-  neofetch/fastfetch branding.
+- Deferred (`docs/deferred.md`): Snor engine, neofetch/fastfetch branding.
 
 ## Maintainer requests
 
@@ -154,8 +152,8 @@ Implementation sketch:
   (`crates/muis-shell/src/main.rs:167-180`) returning CPU %, RAM
   used/total, and GPU % (nullable). CPUs/RAM via the `sysinfo` crate;
   GPU best-effort — `nvidia-smi --query-gpu=utilization.gpu` on NVIDIA,
-  `/sys/class/drm/card*/device/gpu_busy_percent` on AMD/Intel, blank on
-  Windows portable when unavailable.
+  `/sys/class/drm/card*/device/gpu_busy_percent` on AMD/Intel, blank when
+  unavailable.
 - Frontend: poll on an interval (e.g. 2 s, pause when the window is
   hidden) and render compact pills. Keep the first sample discounted —
   CPU % needs a delta between two reads.
@@ -374,33 +372,6 @@ Decided (2026-10-06):
   hovering the bar itself.
 - The dragged item keeps its active/current state after the reorder.
 
-### Single Windows exe that spawns its own worker
-
-Ship one downloadable `muis.exe` for Windows that carries and launches
-`muis-worker` (and, if needed, `muis-notify`) itself, instead of the
-three-file portable zip (`docs/windows.md`).
-
-- Embed the sidecars at build time (`include_bytes!`) and extract them on
-  startup to a stable per-user dir, e.g.
-  `%LOCALAPPDATA%\muis\bin\<version>\muis-worker.exe`, then resolve the
-  worker from there. `worker_path`/`find_worker_in` already look next to
-  the shell exe (`crates/muis-shell/src/main.rs:26-58`); the change is to
-  also check the extraction dir and extract-if-missing/stale.
-- Gate extraction on an embedded version marker so upgrading `muis.exe`
-  refreshes the worker, and clean older `bin\<version>` dirs.
-- `muis-notify` either gets extracted alongside (hooks keep working via a
-  stable path) or becomes a mode of the same binary (`muis.exe --notify
-  ...`), removing the second file entirely.
-- Still one worker process per session (AGENTS.md) — this only changes
-  how the binary reaches disk, not PTY ownership.
-- CI: the `windows-portable` job builds and uploads a single exe rather
-  than zipping three. Linux/Arch packaging is unaffected and keeps
-  shipping separate files.
-
-Open questions: keep the 3-file zip as a fallback artifact, whether notify
-is embedded or folded into `muis.exe`, and the extraction/cleanup policy
-(per-user app dir, not `%TEMP%`, to reduce AV/SmartScreen noise).
-
 ## Known issues
 
 Bugs reported against muis. Documentation only — the implementation agent
@@ -482,8 +453,8 @@ Ideas worth considering, roughly grouped. None are committed.
 - [P] Window title `● (n) done` count (`docs/archive/missing-features.md` §6).
 - ~~Export / import whole session state as JSON~~ — dropped; mock-only,
   not wanted (`docs/deferred.md`).
-- ~~Windows per-user installer~~ — deferred; portable zip stays the
-  supported artifact (`docs/windows.md`, `docs/deferred.md`).
+- ~~Windows per-user installer~~ — removed with the other non-Linux
+  targets (`docs/deferred.md`).
 - [P] Tabs-on-top setting actually wired up (`tabsOnTop` is currently a
   dead config field).
 

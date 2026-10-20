@@ -104,7 +104,7 @@ async function waitForMarker(markerFile, marker, timeoutMs) {
 
 const opts = args();
 if (!fs.existsSync(opts.binary)) throw new Error(`muis binary missing: ${opts.binary}`);
-const workerPath = path.join(path.dirname(opts.binary), process.platform === "win32" ? "muis-worker.exe" : "muis-worker");
+const workerPath = path.join(path.dirname(opts.binary), "muis-worker");
 if (!fs.existsSync(workerPath)) throw new Error(`worker binary missing: ${workerPath}`);
 
 const runDir = fs.mkdtempSync(path.join(os.tmpdir(), "muis-live-e2e-"));

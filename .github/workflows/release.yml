@@ -33,6 +33,7 @@ jobs:
             }
           fi
 
+  # The Linux tarball is the artifact Veldmuis repackages as veldmuis-muis.
   linux-tarball:
     name: Linux tarball
     needs: version
@@ -73,138 +74,9 @@ jobs:
             muis-*-x86_64-linux.tar.gz
             muis-*-x86_64-linux.tar.gz.sha256
 
-  appimage:
-    name: AppImage
-    needs: version
-    # Ubuntu 22.04 baseline keeps the glibc floor low for broad compatibility.
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - name: Install Tauri and AppImage deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev build-essential librsvg2-dev file patchelf
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
-      - run: cargo build --release --locked -p muis-worker -p muis-notify
-      - name: Build the AppImage
-        working-directory: crates/muis-shell
-        run: ../../src-ui/node_modules/.bin/tauri build --bundles appimage
-      - name: Checksum
-        run: |
-          cd target/release/bundle/appimage
-          sha256sum muis_*.AppImage > SHA256SUMS.appimage
-      - uses: actions/upload-artifact@v6
-        with:
-          name: appimage
-          path: |
-            target/release/bundle/appimage/muis_*.AppImage
-            target/release/bundle/appimage/SHA256SUMS.appimage
-
-  windows:
-    name: Windows portable
-    needs: version
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
-      # The shell links the worker and notify on Windows, so muis.exe alone is
-      # the whole app. It ships zipped so the browser download is quiet; the
-      # exe then stages the worker out of %LOCALAPPDATA% (see docs/windows.md).
-      - run: cargo build --release --locked -p muis-shell
-      - name: Package
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        shell: pwsh
-        run: |
-          $zip = "muis-$env:VERSION-x86_64-windows.zip"
-          Compress-Archive -Path target\release\muis.exe -DestinationPath $zip
-      - uses: actions/upload-artifact@v6
-        with:
-          name: windows
-          path: muis-*-x86_64-windows.zip
-
-  frontend:
-    name: Frontend dist
-    needs: version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: src-ui/package-lock.json
-      - run: npm ci
-        working-directory: src-ui
-      - run: npm run build
-        working-directory: src-ui
-      - name: Package dist
-        # .tgz, not .tar.gz, so the release job's *.tar.gz glob never picks it up.
-        run: tar -C src-ui/dist -czf ui-dist.tgz .
-      - uses: actions/upload-artifact@v6
-        with:
-          name: ui-dist
-          path: ui-dist.tgz
-
-  flatpak:
-    name: Flatpak
-    needs: [version, frontend]
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
-      options: --privileged
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v7
-        with:
-          name: ui-dist
-      - name: Unpack frontend
-        run: |
-          mkdir -p src-ui/dist
-          tar -xzf ui-dist.tgz -C src-ui/dist
-          test -f src-ui/dist/index.html
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: muis.flatpak
-          manifest-path: packaging/flatpak/org.veldmuislinux.muis.yml
-          cache-key: flatpak-builder-${{ github.sha }}
-          # We upload our own versioned bundle; the action's default artifact
-          # would otherwise duplicate muis.flatpak into the release.
-          upload-artifact: false
-      - name: Name the bundle
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: mv muis.flatpak "muis-${VERSION}.flatpak"
-      - name: Checksum
-        run: sha256sum muis-*.flatpak > SHA256SUMS.flatpak
-      - uses: actions/upload-artifact@v6
-        with:
-          name: flatpak
-          path: |
-            muis-*.flatpak
-            SHA256SUMS.flatpak
-
   release:
     name: Publish GitHub Release
-    needs: [version, linux-tarball, appimage, flatpak, windows]
+    needs: [version, linux-tarball]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # Provides MUIS_GPG_PRIVATE_KEY / MUIS_GPG_PASSPHRASE / MUIS_GPG_FPR.
@@ -223,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          find . -maxdepth 1 -type f \( -name '*.AppImage' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.flatpak' \) -print0 \
+          find . -maxdepth 1 -type f -name '*.tar.gz' -print0 \
             | sort -z | xargs -0 sha256sum > SHA256SUMS
           cat SHA256SUMS
       - name: Sign release artifacts
@@ -243,7 +115,7 @@ jobs:
           gpg --batch --import "${key_file}"
 
           shopt -s nullglob
-          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.flatpak dist/SHA256SUMS)
+          artifacts=(dist/*.tar.gz dist/SHA256SUMS)
           for artifact in "${artifacts[@]}"; do
             gpg --batch --yes --pinentry-mode loopback \
               --passphrase-file "${pass_file}" \
@@ -255,7 +127,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          artifacts=(dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.flatpak dist/SHA256SUMS)
+          artifacts=(dist/*.tar.gz dist/SHA256SUMS)
           for artifact in "${artifacts[@]}"; do
             gpgv --keyring packaging/keys/muis-release.gpg "${artifact}.asc" "${artifact}"
           done
@@ -266,6 +138,6 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           gh release create "${GITHUB_REF_NAME}" \
-            dist/*.AppImage dist/*.tar.gz dist/*.zip dist/*.flatpak \
+            dist/*.tar.gz \
             dist/SHA256SUMS dist/*.asc packaging/keys/muis-release.asc \
             --title "muis ${GITHUB_REF_NAME}" --generate-notes
