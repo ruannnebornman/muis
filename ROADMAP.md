@@ -15,7 +15,7 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
       `src-ui` sessions tests, same rules both sides)
 - [x] Config load/save/defaults; corrupt file errors instead of
       silently resetting
-- [x] Shell probe per platform (fish-first Linux, pwsh-first Windows)
+- [x] Shell probe (fish-first on Linux)
 - [x] UI/worker IPC: all 8 frames roundtrip + shared fixture
       (`tests/fixtures/ipc-frames.jsonl` tested from Rust AND TypeScript)
 - [x] Worker stdio roundtrip: real pty echo, `exit 42` propagates,
@@ -36,7 +36,7 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
       shell-reported cwd (OSC 7), falling back to the workspace dir
       (`newTabCwd` + `sessions` tests)
 - [x] CI green: workflow runs on PRs and `main` pushes (rust, ui,
-      browser-e2e, native-xvfb-e2e, windows-portable)
+      browser-e2e, native-xvfb-e2e)
 - [x] One `muis-worker` process per session; UI holds no pty state:
       `WorkerPool` keeps one child per session, spawn is idempotent,
       and stopping one session leaves the others running (bridge tests
@@ -52,10 +52,12 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
 
 - [ ] Nothing open here.
 
-## Moved
+## Removed
 
-- Windows (portable three-exe zip, on-machine verification, and the
-  optional per-user installer): `docs/windows.md`.
+- Windows, Flatpak, and AppImage targets. muis now builds and ships only
+  the Linux artifact Veldmuis consumes. The removed jobs, packaging, docs,
+  and platform code remain in git history; see `docs/deferred.md` before
+  restoring any of them.
 
 ## Deferred
 
@@ -64,4 +66,3 @@ Parked until the terminal itself is polished. See `docs/deferred.md`:
 - Snor engine (slot API is ready)
 - Make muis the default terminal on Veldmuis
 - neofetch/fastfetch branding
-- Windows per-user installer (optional; portable zip stays primary)

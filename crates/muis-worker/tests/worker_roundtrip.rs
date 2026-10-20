@@ -3,9 +3,7 @@
 //! come back. This is the closest thing to opening the
 //! terminal without needing a display.
 
-use muis_core::ipc::{
-    b64_decode, b64_encode, decode_worker, encode_line, UiToWorker, WorkerToUi,
-};
+use muis_core::ipc::{b64_decode, b64_encode, decode_worker, encode_line, UiToWorker, WorkerToUi};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver};
@@ -77,13 +75,13 @@ impl Driver {
         let mut acc = Vec::new();
         loop {
             match self.next() {
-                WorkerToUi::Output { pty_id: id, data_b64 } if id == pty_id => {
+                WorkerToUi::Output {
+                    pty_id: id,
+                    data_b64,
+                } if id == pty_id => {
                     let raw = b64_decode(&data_b64).unwrap();
                     acc.extend_from_slice(&raw);
-                    if acc
-                        .windows(needle.len())
-                        .any(|w| w == needle)
-                    {
+                    if acc.windows(needle.len()).any(|w| w == needle) {
                         return acc;
                     }
                 }
@@ -255,39 +253,4 @@ fn spawned_shell_runs_with_echo_off() {
         "expected -echo in stty output, got: {:?}",
         String::from_utf8_lossy(&out)
     );
-}
-
-#[test]
-fn appimage_env_is_not_leaked_into_the_shell() {
-    // Simulate running from an AppImage: the worker's own env carries the
-    // mount paths, but the shell it spawns must not inherit them.
-    let mut d = Driver::spawn_with_env(&[
-        ("APPIMAGE", "/tmp/muis_1.0.0_amd64.AppImage"),
-        ("APPDIR", "/tmp/.mount_muis_test"),
-        ("LD_LIBRARY_PATH", "/tmp/.mount_muis_test/usr/lib:/usr/lib"),
-        ("PYTHONPATH", "/tmp/.mount_muis_test/usr/share/pyshared"),
-    ]);
-    d.send(&spawn_msg("t5", "/bin/sh"));
-    assert_eq!(
-        d.next(),
-        WorkerToUi::Spawned {
-            pty_id: "t5".into()
-        }
-    );
-
-    d.send(&UiToWorker::Write {
-        pty_id: "t5".into(),
-        data_b64: b64_encode(b"env; echo END-MUIS-ENV\n"),
-    });
-    let out = d.output_until("t5", b"END-MUIS-ENV");
-    let text = String::from_utf8_lossy(&out);
-
-    assert!(text.contains("TERM=xterm-256color"), "shell env missing TERM: {text}");
-    assert!(!text.contains(".mount_muis_test"), "AppImage path leaked: {text}");
-    assert!(!text.contains("APPDIR="), "APPDIR leaked: {text}");
-    assert!(!text.contains("PYTHONPATH="), "PYTHONPATH leaked: {text}");
-
-    d.send(&UiToWorker::Kill {
-        pty_id: "t5".into(),
-    });
 }

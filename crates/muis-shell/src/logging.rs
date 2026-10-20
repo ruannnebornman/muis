@@ -1,9 +1,8 @@
 //! Diagnostics logging to a file.
 //!
-//! Release Windows builds use the `windows` subsystem, so anything written
-//! to stdout/stderr is invisible. Every diagnostic therefore goes to a log
-//! file under [`muis_core::paths::log_dir`], and panics are routed there too
-//! so a start-up failure still leaves a trace on disk.
+//! Every diagnostic goes to a log file under [`muis_core::paths::log_dir`],
+//! and panics are routed there too so a start-up failure still leaves a
+//! trace on disk.
 
 use std::fs::OpenOptions;
 use std::path::PathBuf;
@@ -31,8 +30,7 @@ pub fn init() -> Option<PathBuf> {
         .ok()?;
 
     let level = requested_level();
-    let mut loggers: Vec<Box<dyn SharedLogger>> =
-        vec![WriteLogger::new(level, config(), file)];
+    let mut loggers: Vec<Box<dyn SharedLogger>> = vec![WriteLogger::new(level, config(), file)];
 
     // In dev also mirror to stderr so a terminal run stays readable.
     #[cfg(debug_assertions)]

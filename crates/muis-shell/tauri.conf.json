@@ -16,29 +16,5 @@
         "decorations": false
       }
     ]
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/icon.ico",
-      "../../data/icons/hicolor/48x48/apps/muis.png",
-      "../../data/icons/hicolor/64x64/apps/muis.png",
-      "../../data/icons/hicolor/128x128/apps/muis.png",
-      "../../data/icons/hicolor/256x256/apps/muis.png",
-      "../../data/icons/hicolor/512x512/apps/muis.png"
-    ],
-    "category": "Utility",
-    "shortDescription": "muis terminal for Veldmuis",
-    "linux": {
-      "deb": {},
-      "appimage": {
-        "files": {
-          "usr/bin/muis-worker": "../../target/release/muis-worker",
-          "usr/bin/muis-notify": "../../target/release/muis-notify"
-        }
-      }
-    },
-    "windows": {}
   }
 }

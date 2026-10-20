@@ -1,8 +1,12 @@
 # muis
 
 muis is the terminal emulator for Veldmuis: Rust backend, xterm.js
-frontend, Tauri native window. One codebase ships as the Arch system
-package (Veldmuis default) and as a no-admin portable for Windows.
+frontend, Tauri native window. It ships as the Arch system package
+(Veldmuis default) and builds from source on Linux.
+
+The only supported target is Linux. Windows, Flatpak, and AppImage
+builds were removed to keep the pipeline focused on the Veldmuis
+artifact; see `docs/deferred.md` before restoring any of them.
 
 Chrome follows `../wezterm-web/index.html` (Breeze titlebar, sessions
 sidebar, tabbar, statusbar). `design/mock.html` is superseded. VT
@@ -14,7 +18,7 @@ emulation is xterm.js, not ours.
 crates/muis-core/    session model, config, shell probe, UI/worker IPC (no UI deps)
 crates/muis-worker/  muis-worker binary: one process per session, pty via portable-pty
 crates/muis-notify/  muis-notify binary: send a notification to the running window
-crates/muis-shell/   muis binary: Tauri 2 window (WebKitGTK on Linux, WebView2 on Windows)
+crates/muis-shell/   muis binary: Tauri 2 window (WebKitGTK)
 src-ui/              TypeScript + xterm.js frontend (Vite)
 tests/fixtures/      shared UI/worker IPC contract both sides test against
 docs/                architecture notes, target mockup
@@ -50,7 +54,7 @@ cargo run -p muis-shell
 - Ctrl+T new tab, × button closes (confirms when a process is busy),
   Ctrl+Shift+F12 focuses the terminal, Ctrl+Shift+F search, Ctrl+, settings.
 - Sessions and tabs are in-memory: quitting closes them. Settings persist in
-  `~/.config/muis/muis.json` (`%APPDATA%\muis` on Windows).
+  `~/.config/muis/muis.json`.
 - Tabs track `cd` via OSC 7; fish on Veldmuis needs no setup.
 - Quitting with busy tabs asks first.
 - `muis --testmode` opens a throwaway window: it starts from a fresh
@@ -101,9 +105,3 @@ bash:
 muis_osc7() { printf '\e]7;file://%s%s\e\\' "$HOSTNAME" "$PWD"; }
 PROMPT_COMMAND="muis_osc7${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
 ```
-
-## Windows portable
-
-Zip ships `muis.exe + muis-worker.exe + muis-notify.exe` (per-user, no
-admin, uses the built-in WebView2). Same binaries, same protocol, shells
-probed as pwsh → powershell → cmd.

@@ -90,7 +90,7 @@ Why:
 
 Put it behind a small backend abstraction so an embedded implementation
 can replace it later without changing the panel or the request protocol.
-Long-term embedding is more portable (Windows, Flatpak, single artifact),
+Long-term embedding keeps the install self-contained (single artifact),
 but it is the harder build problem and should not block v1.
 
 ## Phases
@@ -190,10 +190,6 @@ contains secrets.
 
 - Arch: `llama.cpp` as an `optdepends` (or `depends` if it becomes a
   hard requirement), with a note on package flavours (CPU/CUDA/Vulkan).
-- Flatpak: bundle `llama-server` and its shared libraries, or use a
-  runtime extension. Do not assume the host binary is reachable.
-- Windows: bundle `llama-server.exe` plus DLLs, or defer until the
-  embedded backend exists. The portable zip stays the primary artifact.
 - CI: fake backend for unit tests; no model downloads in normal CI; an
   optional manual tiny-GGUF smoke job.
 
@@ -235,14 +231,12 @@ local coding agent.
 3. **Embedded vs external.** "From extra" is Arch-only and keeps GPU
    builds out of muis. Embedding gives portability but brings
    C++/CUDA/Vulkan build and packaging complexity. Is the first target
-   Arch only, with Windows/Flatpak later?
+   Arch only?
 4. **Model distribution.** User-supplied GGUF, or a muis downloader and
    catalog? If a catalog: which models, quants, checksums, licenses,
    default for 8-11 GB VRAM, and what happens on CPU-only machines?
 5. **Licensing.** llama.cpp is fine to ship, but model weights have
    varying licenses. Never bundle weights without explicit permission.
-   Flatpak and Windows still need a concrete story for the server and its
-   shared libraries.
 6. **Memory and lifecycle.** A loaded model can be several GB; opencode
    already costs roughly 400 MB. When does it load and unload? Lazy on
    first open? Idle timeout? One shared model across all workspaces?
