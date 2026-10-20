@@ -116,22 +116,29 @@ body{
 .tabbar{
   display:flex; align-items:flex-end; gap:2px; padding:6px 8px 0 8px;
   background:var(--tabbar);
-  border-bottom:1px solid var(--border-dark); overflow-x:auto; scrollbar-width:none;
+  border-bottom:1px solid var(--border-dark);
   font-family:var(--uifont);
 }
-.tabbar::-webkit-scrollbar{display:none}
+.tab-scroll{
+  display:flex; align-items:flex-end; gap:2px; flex:1 1 auto; min-width:0;
+  overflow-x:auto; scrollbar-width:none;
+}
+.tab-scroll::-webkit-scrollbar{display:none}
 .tab{
   display:flex; align-items:center; gap:8px; padding:7px 10px 7px 12px;
   background:#232629; border:1px solid var(--border-dark); border-bottom:none;
   border-radius:4px 4px 0 0; font-size:12.5px; cursor:pointer; white-space:nowrap; color:var(--dim);
-  min-width:140px; max-width:220px;
+  flex:0 1 180px; min-width:120px;
 }
-.tab.active{background:#31363b; color:#fff; border-color:var(--border-dark); box-shadow:inset 0 2px 0 var(--accent)}
+.tab.active{
+  background:#31363b; color:#fff; border-color:var(--border-dark); box-shadow:inset 0 2px 0 var(--accent);
+  flex:0 0 180px; min-width:max-content;
+}
 .tab .t-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .tab .t-dot{width:8px;height:8px;border-radius:50%; flex:0 0 auto}
 .tab .x{margin-left:auto; flex:0 0 auto; opacity:.6; border-radius:3px; padding:0 5px}
 .tab .x:hover{opacity:1; background:#da4453; color:#fff}
-.newtab{border:1px solid transparent; background:transparent; color:var(--dim); border-radius:4px 4px 0 0; padding:7px 12px; cursor:pointer}
+.newtab{border:1px solid transparent; background:transparent; color:var(--dim); border-radius:4px 4px 0 0; padding:7px 12px; cursor:pointer; flex:0 0 auto}
 .newtab:hover{color:#fff; background:#31363b}
 @keyframes pulse{50%{opacity:.25}}
 .tab.done{border-color:var(--green); box-shadow:inset 0 2px 0 var(--green)}

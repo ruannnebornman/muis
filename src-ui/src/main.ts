@@ -331,6 +331,18 @@ center.className = "center";
 const tabbar = document.createElement("div");
 tabbar.className = "tabbar";
 tabbar.id = "tabbar";
+const tabScroller = document.createElement("div");
+tabScroller.className = "tab-scroll";
+const newTabBtn = el("button", "newtab", "+");
+newTabBtn.title = "New terminal";
+newTabBtn.addEventListener("click", () => {
+  const ws = store.currentWorkspace();
+  if (ws) addShellTab(ws);
+});
+const gearBtn = el("button", "newtab settings", "⚙");
+gearBtn.title = "Settings (ctrl + ,)";
+gearBtn.addEventListener("click", () => openSettings());
+tabbar.append(tabScroller, newTabBtn, gearBtn);
 const termWrap = document.createElement("div");
 termWrap.className = "term-wrap";
 
@@ -1236,21 +1248,12 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
 }
 
 function renderTabs(): void {
-  tabbar.innerHTML = "";
+  tabScroller.innerHTML = "";
   const ws = store.currentWorkspace();
   if (!ws) return;
   ws.tabs.forEach((t, i) => {
-    tabbar.append(tabElement(ws, t, i === ws.active));
+    tabScroller.append(tabElement(ws, t, i === ws.active));
   });
-  const nb = el("button", "newtab", "+");
-  nb.title = "New terminal";
-  nb.addEventListener("click", () => addShellTab(ws));
-  tabbar.append(nb);
-  const gear = el("button", "newtab settings", "⚙");
-  gear.title = "Settings (ctrl + ,)";
-  gear.style.marginLeft = "auto";
-  gear.addEventListener("click", () => openSettings());
-  tabbar.append(gear);
 }
 
 function addShellTab(ws: Workspace): void {
