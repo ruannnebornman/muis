@@ -72,6 +72,15 @@ async function press(chord) {
   }, chord);
 }
 
+/** Wait for keyboard focus to land on the active terminal's input. */
+async function waitForTerminalFocus() {
+  await driver.wait(async () => {
+    const active = await driver.switchTo().activeElement();
+    return ((await active.getAttribute("class")) || "").includes("xterm-helper-textarea");
+  }, 3000);
+  return driver.switchTo().activeElement();
+}
+
 async function assertOneVisibleTerminal() {
   const state = await driver.executeScript(() => {
     const boxes = [...document.querySelectorAll(".term-wrap .tabbox")];
@@ -141,6 +150,20 @@ describe("muis chrome", () => {
     await driver.wait(async () => (await tabs()).length === 2, 5000);
     assert.equal(await activeTabIndex(), 1);
     await shot("02-two-tabs");
+  });
+
+  it("focuses a new tab so typing works without clicking", async () => {
+    const active = await waitForTerminalFocus();
+    await active.sendKeys("echo new-tab-focus");
+    await active.sendKeys(Key.ENTER);
+    await driver.wait(
+      async () =>
+        (await driver.findElement(By.css(".tabbox.active .xterm")).getText()).includes(
+          "echo new-tab-focus",
+        ),
+      5000,
+    );
+    await shot("02b-new-tab-focused");
   });
 
   it("switches tabs on click with a visible indicator", async () => {
@@ -271,8 +294,10 @@ describe("muis chrome", () => {
     const before = await activeSessionIndex();
     await press({ key: "PageDown", code: "PageDown", ctrlKey: true });
     await driver.wait(async () => (await activeSessionIndex()) !== before, 3000);
+    await waitForTerminalFocus();
     await press({ key: "PageUp", code: "PageUp", ctrlKey: true });
     await driver.wait(async () => (await activeSessionIndex()) === before, 3000);
+    await waitForTerminalFocus();
     await shot("12-ctrl-page-sessions");
   });
 
@@ -377,6 +402,15 @@ describe("muis chrome", () => {
     await createSession("e2e-noprompt");
     assert.equal(await driver.executeScript(() => window.__muisPrompted), false);
     assert.equal((await driver.findElements(By.css(".session"))).length, 2);
+    await waitForTerminalFocus();
     await shot("19-no-prompt");
+  });
+
+  it("opens a tab with ctrl+t and focuses it", async () => {
+    const before = (await tabs()).length;
+    await press({ key: "t", code: "KeyT", ctrlKey: true });
+    await driver.wait(async () => (await tabs()).length === before + 1, 5000);
+    await waitForTerminalFocus();
+    await shot("20-ctrl-t-focused");
   });
 });
