@@ -1,8 +1,3 @@
-#![cfg_attr(
-    all(not(debug_assertions), target_os = "windows"),
-    windows_subsystem = "windows"
-)]
-
 //! muis shell: the native window around the xterm.js frontend.
 //!
 //! The shell owns no terminal state. It spawns one `muis-worker` process
@@ -22,37 +17,14 @@ use bridge::{EventSink, WorkerLaunch, WorkerPool, WORKER_EVENT};
 use muis_core::notify::ClientRequest;
 use tauri::{Emitter, Manager};
 
-/// Hidden argument that runs the embedded pty worker in this same binary
-/// (Windows single-file build). See [`embedded_request`].
-#[cfg(windows)]
-const WORKER_ARG: &str = "--muis-worker";
-/// Hidden argument that runs the embedded notify CLI in this same binary.
-#[cfg(windows)]
-const NOTIFY_ARG: &str = "--muis-notify";
-/// Hidden argument that runs the embedded agent-session CLI in this binary.
-#[cfg(windows)]
-const AGENT_ARG: &str = "--muis-agent";
-
 /// Locate the worker binary in `dir`. Prefers the plain `muis-worker`
-/// sibling that the Arch package ships; falls back to the Tauri-style
-/// triple-suffixed sidecar name
-/// (`muis-worker-x86_64-unknown-linux-gnu`), which is how
-/// `bundle.externalBin` names it inside the AppImage.
-///
-/// Windows does not use this (it re-execs the shell itself); it stays for
-/// the tests that lock the naming contract.
-#[cfg(any(not(windows), test))]
+/// sibling that the Arch package ships; falls back to a triple-suffixed
+/// sidecar name (`muis-worker-x86_64-unknown-linux-gnu`).
 fn find_worker_in(dir: &Path) -> Option<PathBuf> {
-    let name = if cfg!(windows) {
-        "muis-worker.exe"
-    } else {
-        "muis-worker"
-    };
-    let plain = dir.join(name);
+    let plain = dir.join("muis-worker");
     if plain.is_file() {
         return Some(plain);
     }
-    let ext = if cfg!(windows) { ".exe" } else { "" };
     let mut matches: Vec<PathBuf> = std::fs::read_dir(dir)
         .ok()?
         .filter_map(|entry| entry.ok())
@@ -60,7 +32,7 @@ fn find_worker_in(dir: &Path) -> Option<PathBuf> {
         .filter(|path| {
             path.file_name()
                 .and_then(|n| n.to_str())
-                .map(|n| n.starts_with("muis-worker-") && n.ends_with(ext))
+                .map(|n| n.starts_with("muis-worker-"))
                 .unwrap_or(false)
         })
         .collect();
@@ -69,109 +41,15 @@ fn find_worker_in(dir: &Path) -> Option<PathBuf> {
 }
 
 /// Locate the sibling worker binary next to the shell executable, as the
-/// Linux packages ship it (`muis` + `muis-worker`).
-#[cfg(any(not(windows), test))]
+/// Linux package ships it (`muis` + `muis-worker`).
 fn worker_path() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     find_worker_in(exe.parent()?)
 }
 
-/// Copy this executable to a per-user app dir and return the copy.
-///
-/// A downloaded exe carries a Mark-of-the-Web, and Windows denies a
-/// program's `CreateProcess` on such a file ("Access is denied", os error 5)
-/// even though the user can force-launch it — which is exactly why spawning
-/// the worker out of `Downloads` fails. A file muis writes itself has no
-/// MOTW, so the worker can be started from it.
-#[cfg(windows)]
-fn staged_worker() -> Option<PathBuf> {
-    let src = std::env::current_exe().ok()?;
-    let meta = std::fs::metadata(&src).ok()?;
-    let stamp = format!(
-        "{}-{}",
-        meta.len(),
-        meta.modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    );
-    let dir = muis_core::paths::bin_dir();
-    std::fs::create_dir_all(&dir).ok()?;
-    let dst = dir.join(format!("muis-worker-{stamp}.exe"));
-    if !dst.exists() {
-        // Read + write rather than fs::copy: that copies only the default
-        // data stream, so no Zone.Identifier (MOTW) rides along.
-        let bytes = std::fs::read(&src).ok()?;
-        let tmp = dst.with_extension(format!("{}.tmp", std::process::id()));
-        std::fs::write(&tmp, &bytes).ok()?;
-        std::fs::rename(&tmp, &dst).ok()?;
-        prune_staged(&dir, &dst);
-    }
-    Some(dst)
-}
-
-/// Best effort: drop older staged copies. Ones still mapped by running
-/// workers can't be deleted on Windows and are skipped.
-#[cfg(windows)]
-fn prune_staged(dir: &Path, keep: &Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for path in entries.flatten().map(|entry| entry.path()) {
-        let old_worker = path != keep
-            && path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("muis-worker-") && name.ends_with(".exe"));
-        if old_worker {
-            let _ = std::fs::remove_file(&path);
-        }
-    }
-}
-
-/// How the shell starts a session worker. Linux packages spawn the sibling
-/// `muis-worker`; Windows stages a copy of this exe in a per-user dir and
-/// runs the worker from that (see [`staged_worker`]).
+/// How the shell starts a session worker: a sibling `muis-worker` process.
 fn worker_launch() -> Option<WorkerLaunch> {
-    #[cfg(windows)]
-    {
-        // Fall back to the running exe only if staging fails; that still
-        // works when muis was not downloaded (dev builds, no MOTW).
-        let exe = staged_worker().or_else(|| std::env::current_exe().ok())?;
-        Some(WorkerLaunch::SelfExe {
-            exe,
-            arg: WORKER_ARG.to_string(),
-        })
-    }
-    #[cfg(not(windows))]
-    {
-        worker_path().map(WorkerLaunch::Exe)
-    }
-}
-
-/// Windows single-file mode selector: `Some("worker")`/`Some("notify")` when
-/// this is a re-exec of ourselves, `None` for a normal shell launch.
-#[cfg(windows)]
-fn embedded_request() -> Option<&'static str> {
-    match std::env::args().nth(1).as_deref() {
-        Some(WORKER_ARG) => Some("worker"),
-        Some(NOTIFY_ARG) => Some("notify"),
-        Some(AGENT_ARG) => Some("agent"),
-        _ => None,
-    }
-}
-
-/// Run an embedded helper in this consoleless GUI process. The notify CLI
-/// gets the args after its `--muis-notify` mode flag.
-#[cfg(windows)]
-fn dispatch_embedded(mode: &str) -> i32 {
-    match mode {
-        "worker" => muis_worker::run(),
-        "notify" => muis_notify::run_with(std::env::args().skip(2)),
-        "agent" => muis_agent::run_with(std::env::args().skip(2)),
-        _ => 0,
-    }
+    worker_path().map(WorkerLaunch)
 }
 
 #[tauri::command]
@@ -193,7 +71,9 @@ fn is_test_mode() -> bool {
 
 #[tauri::command]
 fn default_shell() -> String {
-    muis_core::shell::default_shell().to_string_lossy().into_owned()
+    muis_core::shell::default_shell()
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[tauri::command]
@@ -520,14 +400,7 @@ fn open_url(url: String) -> Result<(), String> {
     if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
         return Err("only http(s) URLs can be opened".into());
     }
-    let opener = if cfg!(target_os = "macos") {
-        "open"
-    } else if cfg!(target_os = "windows") {
-        "explorer"
-    } else {
-        "xdg-open"
-    };
-    std::process::Command::new(opener)
+    std::process::Command::new("xdg-open")
         .arg(trimmed)
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -588,21 +461,8 @@ fn ensure_dmabuf_disabled() -> bool {
 }
 
 fn main() {
-    // First thing: release builds have no console on Windows, so without a
-    // file logger a start-up failure leaves nothing behind to diagnose.
     if let Some(path) = logging::init() {
         log::info!("muis shell starting; log file: {}", path.display());
-    }
-
-    // Windows single-file build: if we were re-exec'd as the embedded worker
-    // or notify CLI, run that and exit before Tauri starts. This process is
-    // windows-subsystem (no console), so no CLI window ever appears.
-    #[cfg(windows)]
-    {
-        if let Some(mode) = embedded_request() {
-            log::info!("embedded mode: {mode}");
-            std::process::exit(dispatch_embedded(mode));
-        }
     }
 
     ensure_dmabuf_disabled();
@@ -647,17 +507,9 @@ fn main() {
                     .unwrap_or_else(|_| "<unknown>".to_string()),
             );
 
-            // How session workers start: a sibling binary, or (Windows
-            // single-file) this same exe re-exec'd in `--muis-worker` mode.
             let launch = worker_launch();
             match &launch {
-                Some(WorkerLaunch::Exe(path)) => {
-                    log::info!("worker binary: {}", path.display())
-                }
-                #[cfg(windows)]
-                Some(WorkerLaunch::SelfExe { exe, arg }) => {
-                    log::info!("worker mode: {} {arg}", exe.display())
-                }
+                Some(launch) => log::info!("worker binary: {}", launch.0.display()),
                 None => log::error!(
                     "no muis-worker available next to {}",
                     std::env::current_exe()
@@ -667,8 +519,7 @@ fn main() {
             }
 
             let handle = app.handle().clone();
-            let sink: EventSink =
-                Arc::new(move |event| handle.emit(WORKER_EVENT, &event).is_ok());
+            let sink: EventSink = Arc::new(move |event| handle.emit(WORKER_EVENT, &event).is_ok());
             app.handle().manage(WorkerPool::new(sink, launch));
 
             // Notification endpoint for `muis-notify` clients. One per-user
@@ -770,12 +621,7 @@ mod tests {
         // worker_path() resolves against the test binary's directory.
         // No assertion on presence here (cargo test doesn't ship the
         // sidecar); this locks the naming contract instead.
-        let name = if cfg!(windows) {
-            "muis-worker.exe"
-        } else {
-            "muis-worker"
-        };
-        assert_eq!(name.strip_suffix(".exe").unwrap_or(name), "muis-worker");
+        assert_eq!("muis-worker", "muis-worker");
         let _ = worker_path();
     }
 
@@ -785,16 +631,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        let plain = dir.join(if cfg!(windows) {
-            "muis-worker.exe"
-        } else {
-            "muis-worker"
-        });
-        let sidecar = dir.join(if cfg!(windows) {
-            "muis-worker-x86_64-pc-windows-msvc.exe"
-        } else {
-            "muis-worker-x86_64-unknown-linux-gnu"
-        });
+        let plain = dir.join("muis-worker");
+        let sidecar = dir.join("muis-worker-x86_64-unknown-linux-gnu");
 
         // Sidecar only: fall back to the triple-suffixed name.
         std::fs::write(&sidecar, b"x").unwrap();
@@ -860,7 +698,10 @@ mod tests {
         };
         assert!(!arg_present(&args(&[]), "--testmode"));
         assert!(arg_present(&args(&["--testmode"]), "--testmode"));
-        assert!(arg_present(&args(&["--testmode", "--verbose"]), "--testmode"));
+        assert!(arg_present(
+            &args(&["--testmode", "--verbose"]),
+            "--testmode"
+        ));
         // Exact match only: an unrelated flag or a value is not test mode.
         assert!(!arg_present(&args(&["--test-mode"]), "--testmode"));
         assert!(!arg_present(&args(&["--testmode=1"]), "--testmode"));

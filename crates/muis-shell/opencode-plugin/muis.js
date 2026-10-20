@@ -7,21 +7,13 @@
 // .js/.ts file: opencode only auto-loads those extensions from its plugin
 // directory, not .mjs. It calls the `muis-notify` and `muis-agent` binaries,
 // which muis ships and routes back to the tab via MUIS_TAB_ID (injected into
-// every pty). On the Windows single-file build there is no helper on PATH;
-// muis sets MUIS_BIN to its own exe, which serves the same CLIs via
-// `--muis-notify` / `--muis-agent`. No-op when muis is not running. The
-// "muis-plugin" marker lets muis safely update its own file.
+// every pty). No-op when muis is not running. The "muis-plugin" marker lets
+// muis safely update its own file.
 export const MuisPlugin = async ({ $ }) => {
-  const bin = process.env.MUIS_BIN;
-  const notify = (args = []) =>
-    bin ? $`${bin} --muis-notify ${args}` : $`muis-notify ${args}`;
   const agentBin = process.env.MUIS_AGENT_BIN;
+  const notify = (args = []) => $`muis-notify ${args}`;
   const reportAgent = (args = []) =>
-    agentBin
-      ? $`${agentBin} ${args}`
-      : bin
-        ? $`${bin} --muis-agent ${args}`
-        : $`muis-agent ${args}`;
+    agentBin ? $`${agentBin} ${args}` : $`muis-agent ${args}`;
 
   // Session id -> { title, directory, parentID }, learned from
   // session.created/updated (session.idle itself only carries the id), so

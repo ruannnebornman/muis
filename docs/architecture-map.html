@@ -214,8 +214,8 @@
       <p class="lede">
         A terminal built as a Tauri&nbsp;2 window around an xterm.js frontend,
         with a Rust shell that supervises one PTY worker per session and a
-        signed, multi-platform release pipeline. This page is the visual map of
-        the runtime, protocol, build, tests, and delivery flow.
+        signed Linux release pipeline. This page is the visual map of the
+        runtime, protocol, build, tests, and delivery flow.
       </p>
       <div class="meta">
         <span class="tag"><b>source</b> origin/main @ 2a6eb09</span>
@@ -283,7 +283,7 @@
       </defs>
 
       <rect x="12" y="12" width="1216" height="876" rx="16" fill="none" stroke="#3a464e" stroke-dasharray="7 7"/>
-      <text x="30" y="36" class="t3">HOST OS  ·  Linux (WebKitGTK / X11 or Wayland)  or  Windows (WebView2)</text>
+      <text x="30" y="36" class="t3">HOST OS  ·  Linux (WebKitGTK / X11 or Wayland)</text>
 
       <rect x="36" y="54" width="760" height="350" rx="13" class="boxA"/>
       <text x="54" y="80" class="ta">muis shell process  ·  Tauri 2</text>
@@ -321,17 +321,13 @@
       <text x="874" y="128" class="t2">~/.local/share/muis/sessions.json</text>
       <text x="874" y="150" class="t2">~/.local/share/muis/sessions/</text>
       <text x="874" y="172" class="t3">tab-*.scrollback · logs/muis.log</text>
-      <text x="874" y="194" class="t3">Windows: %APPDATA%\muis · %LOCALAPPDATA%\muis</text>
-      <text x="874" y="216" class="t3">Flatpak: ~/.var/app/org.veldmuislinux.muis/</text>
-      <text x="874" y="240" class="t3">shell I/O · snapshots every 30 s</text>
+      <text x="874" y="194" class="t3">shell I/O · snapshots every 30 s</text>
 
       <rect x="856" y="282" width="348" height="142" rx="10" class="boxP"/>
       <text x="874" y="288" class="t" style="fill:#d3c0ee">Notification clients</text>
       <text x="874" y="314" class="t2">muis-notify  --body …  [--tab ID]</text>
       <text x="874" y="336" class="t2">opencode plugin  →  muis-notify</text>
       <text x="874" y="358" class="t3">MUIS_SOCKET + MUIS_TAB_ID in each PTY</text>
-      <text x="874" y="380" class="t3">Windows: MUIS_BIN → muis.exe --muis-notify</text>
-      <text x="874" y="400" class="t3">Flatpak: CLI intentionally absent</text>
 
       <rect x="36" y="500" width="330" height="200" rx="11" class="boxG"/>
       <text x="54" y="526" class="tg">muis-worker  ·  session “home” (w1)</text>
@@ -354,8 +350,7 @@
       <rect x="36" y="760" width="1168" height="104" rx="11" class="boxY"/>
       <text x="54" y="786" class="t" style="fill:#e8d493">Real processes inside the PTYs  ·  one child process per tab</text>
       <text x="54" y="814" class="t2">fish · bash · zsh · sh</text>
-      <text x="300" y="814" class="t2">pwsh · powershell · cmd  (Windows)</text>
-      <text x="590" y="814" class="t2">opencode · claude · codex · TUIs</text>
+      <text x="300" y="814" class="t2">opencode · claude · codex · TUIs</text>
       <text x="54" y="840" class="t3">cwd via OSC 7  ·  title via OSC 0/2  ·  command marks via OSC 133  ·  notifications via OSC 9/777/99</text>
       <text x="880" y="814" class="t3">256 KiB scrollback ring per PTY</text>
       <text x="880" y="838" class="t3">host env inherited from the worker</text>
@@ -433,8 +428,7 @@
         The <code>muis</code> binary. Hosts the WebView, exposes Tauri
         commands, supervises <code>WorkerPool</code>, serves the notification
         socket, samples CPU/RAM/GPU, writes diagnostics, and owns config,
-        session, and snapshot persistence. On Windows it also embeds the worker
-        and notify CLIs behind hidden flags.
+        session, and snapshot persistence.
       </p>
     </div>
     <div class="card">
@@ -444,8 +438,7 @@
         Sends one JSON request to the running shell over the per-user local
         socket. Defaults <code>--socket</code> and <code>--tab</code> from
         <code>MUIS_SOCKET</code> and <code>MUIS_TAB_ID</code>, which are
-        injected into every PTY. Exposed as a library so the Windows single-exe
-        build can re-exec it.
+        injected into every PTY.
       </p>
     </div>
   </div>
@@ -490,7 +483,6 @@
       <text x="532" y="166" class="rs">depends on</text>
       <text x="800" y="166" class="rs">depends on</text>
 
-      <text x="935" y="286" text-anchor="middle" class="rs" style="fill:#e8c15a">Windows-only: shell also links worker + notify</text>
     </svg>
     <figcaption>Figure 2 — Crate dependencies. <code>muis-core</code> is the bottom of the graph; nothing depends on a UI framework.</figcaption>
   </figure>
@@ -730,7 +722,6 @@
       <path class="arrG" d="M640 538 H890"/>
       <text x="654" y="531" class="msgG">openpty() + spawn shell</text>
       <text x="654" y="556" class="note">ECHO off · TERM / LANG / TERM_PROGRAM / MUIS_TAB_ID</text>
-      <text x="654" y="572" class="note">Flatpak → flatpak-spawn --host · AppImage → sanitize env</text>
       <path class="arrG" d="M640 608 H390"/>
       <text x="404" y="601" class="msgG">{"type":"spawned","pty_id":…}</text>
       <path class="arrA" d="M390 640 H140"/>
@@ -971,7 +962,6 @@
       <text x="38" y="374" class="nt">muis-notify / opencode plugin</text>
       <text x="38" y="394" class="ns">one JSON request per connection</text>
       <text x="38" y="410" class="ns">MUIS_SOCKET + MUIS_TAB_ID from the pty</text>
-      <text x="38" y="426" class="ns">Flatpak: CLI not shipped</text>
 
       <rect x="424" y="352" width="300" height="82" rx="8" class="nbA"/>
       <text x="438" y="374" class="nt">muis_core::notify::serve</text>
@@ -1015,18 +1005,6 @@
         <td><code>$XDG_CONFIG_HOME/muis/muis.json</code> (default <code>~/.config/muis</code>)</td>
         <td><code>$XDG_STATE_HOME/muis/</code> (default <code>~/.local/share/muis</code>): <code>sessions.json</code>, <code>sessions/tab-*.scrollback</code></td>
         <td><code>&lt;state&gt;/logs/muis.log</code></td>
-      </tr>
-      <tr>
-        <td>Windows</td>
-        <td><code>%APPDATA%\muis\muis.json</code></td>
-        <td><code>%APPDATA%\muis\</code>: sessions + snapshots</td>
-        <td><code>%LOCALAPPDATA%\muis\logs\muis.log</code>; staged worker copy under <code>%LOCALAPPDATA%\muis\bin</code></td>
-      </tr>
-      <tr>
-        <td>Flatpak</td>
-        <td><code>~/.var/app/org.veldmuislinux.muis/config/muis/</code></td>
-        <td>inside the app's XDG dirs under <code>~/.var/app/…</code></td>
-        <td>inside the app's state dir</td>
       </tr>
     </tbody>
   </table>
@@ -1091,7 +1069,7 @@
     <thead><tr><th>Feature</th><th>Behaviour</th></tr></thead>
     <tbody>
       <tr><td><code>MUIS_LOG</code></td><td><code>off|error|warn|info|debug|trace</code>; default debug in dev, info in release.</td></tr>
-      <tr><td>Log file</td><td>File logger plus panic hook; release Windows has no console, so the file is the only trace.</td></tr>
+      <tr><td>Log file</td><td>File logger plus panic hook, so a start-up failure still leaves a trace.</td></tr>
       <tr><td><code>debug_report</code></td><td>Frontend stages and errors are logged from the UI (which has no devtools in release).</td></tr>
       <tr><td><code>muis --testmode</code></td><td>Fresh session, distinct notification socket, never writes sessions/config/snapshots. Shows a “test mode” badge.</td></tr>
       <tr><td><code>muis --reset-sessions</code></td><td>Deletes saved sessions and snapshots, exits without opening a window.</td></tr>
@@ -1206,8 +1184,8 @@
 
       <rect x="40" y="530" width="450" height="100" rx="10" class="bbY"/>
       <text x="56" y="558" class="bt">Package / release outputs</text>
-      <text x="56" y="582" class="bs">Linux tarball · AppImage · Flatpak · Windows zip</text>
-      <text x="56" y="602" class="bs">AUR source build · Windows: one muis.exe</text>
+      <text x="56" y="582" class="bs">Linux tarball</text>
+      <text x="56" y="602" class="bs">Veldmuis repackages the signed tarball</text>
 
       <path class="baA" d="M1115 156 V492 H1000 V575 H980"/>
       <text x="1122" y="404" class="lb">ui-dist</text>
@@ -1239,11 +1217,7 @@ npm run build --prefix src-ui
 cargo build --locked \
   -p muis-shell -p muis-worker -p muis-notify
 npm ci --prefix tests/e2e
-npm run test:live:x11 --prefix tests/e2e
-
-# AppImage (manual)
-(cd crates/muis-shell && \
-  ../../src-ui/node_modules/.bin/tauri build --bundles appimage)</code></pre>
+npm run test:live:x11 --prefix tests/e2e</code></pre>
   </div>
 
   <div class="callout">
@@ -1257,9 +1231,8 @@ npm run test:live:x11 --prefix tests/e2e
 <section id="packaging">
   <h2><span class="n">09</span> Packaging matrix</h2>
   <p class="sub">
-    One codebase, different process layouts. The important difference is
-    whether the worker and notify CLI are siblings, embedded, or deliberately
-    absent.
+    The Veldmuis Linux tarball is the only supported artifact. The worker
+    and notify CLI ship as siblings of the shell binary.
   </p>
 
   <table>
@@ -1268,51 +1241,19 @@ npm run test:live:x11 --prefix tests/e2e
     </thead>
     <tbody>
       <tr>
-        <td><b>Arch / AUR</b><br><span class="pill info">source build</span></td>
-        <td><code>aur/PKGBUILD</code> (user machine)</td>
-        <td><code>muis</code>, <code>muis-worker</code>, <code>muis-notify</code>, desktop entry, hicolor icons</td>
-        <td>XDG paths; <code>fish</code> optional for the OSC 133 command bar. <code>pkgver</code> is currently <b>1.0.0</b> and is stale relative to <code>tauri.conf.json</code> 1.4.0.</td>
-      </tr>
-      <tr>
         <td><b>Linux tarball</b><br><span class="pill info">release job</span></td>
         <td><code>linux-tarball</code></td>
         <td><code>muis</code>, <code>muis-worker</code>, <code>muis-notify</code>, desktop file, 512 px icon, <code>.sha256</code></td>
         <td>Worker resolved as a sibling of the shell. XDG paths. Built on <code>ubuntu-latest</code>.</td>
       </tr>
-      <tr>
-        <td><b>AppImage</b><br><span class="pill info">release job</span></td>
-        <td><code>appimage</code> on <code>ubuntu-22.04</code></td>
-        <td><code>muis</code> plus <code>muis-worker</code> and <code>muis-notify</code> placed in <code>usr/bin</code> via <code>bundle.linux.appimage.files</code>; WebKitGTK et al. bundled</td>
-        <td>Low glibc floor. Worker strips AppImage-injected env (<code>APPIMAGE</code>, <code>APPDIR</code>, <code>LD_PRELOAD</code>, <code>PYTHON*</code>, GTK/GIO paths, <code>/.mount_*</code> entries) before spawning the user's shell.</td>
-      </tr>
-      <tr>
-        <td><b>Flatpak</b><br><span class="pill info">release job</span></td>
-        <td><code>flatpak</code> in the GNOME 49 container</td>
-        <td><code>muis</code> + <code>muis-worker</code>; frontend <code>dist</code> supplied by the <code>frontend</code> job; <b>no muis-notify</b></td>
-        <td>Worker detects <code>/.flatpak-info</code> and runs the shell on the host via <code>flatpak-spawn --host</code> with explicit <code>--env</code> forwarding. State under <code>~/.var/app/…</code>. CLI notifications unavailable by design.</td>
-      </tr>
-      <tr>
-        <td><b>Windows portable</b><br><span class="pill ok">single exe</span></td>
-        <td><code>windows-single-exe</code> / <code>windows</code></td>
-        <td>only <code>muis.exe</code> in a zip</td>
-        <td>Shell links worker + notify on Windows (<code>cfg(windows)</code> dependencies) and re-execs itself as <code>--muis-worker</code> or <code>--muis-notify</code> in hidden consoleless modes. On first run it stages a copy of itself to <code>%LOCALAPPDATA%\muis\bin</code> to drop Mark-of-the-Web, then starts the worker from that copy. Sets <code>MUIS_BIN</code> for hooks.</td>
-      </tr>
     </tbody>
   </table>
 
-  <h3>Platform-specific shell spawning</h3>
+  <h3>Shell spawning</h3>
   <div class="grid g3">
     <div class="card">
       <h4>Linux native</h4>
       <p><code>$SHELL</code> if executable, else fish → bash → sh. Fish gets <code>-C</code> init snippets: silence the greeting and emit OSC 133 C/D markers. <code>TERM=xterm-256color</code>, <code>LANG=C.UTF-8</code>, <code>TERM_PROGRAM=muis</code>, <code>MUIS_TAB_ID</code>.</p>
-    </div>
-    <div class="card">
-      <h4>Windows</h4>
-      <p>Probe <code>pwsh.exe</code> → <code>powershell.exe</code> → <code>cmd.exe</code>, then <code>%SystemRoot%\System32\cmd.exe</code>. The worker runs inside the same exe via re-exec. <code>CREATE_NO_WINDOW</code> prevents console flashes.</p>
-    </div>
-    <div class="card">
-      <h4>Flatpak</h4>
-      <p><code>flatpak-spawn --host --directory=&lt;cwd&gt; --env=KEY=VALUE … shell</code>. Only explicitly forwarded variables cross the sandbox boundary; the user gets their real host shell and tools.</p>
     </div>
   </div>
 
@@ -1450,8 +1391,7 @@ npm run test:live:x11 --prefix tests/e2e
       <text x="338" y="132" class="ct">changes</text>
       <text x="338" y="154" class="cs">dorny/paths-filter</text>
       <text x="338" y="176" class="cs">native: crates · src-ui · tests</text>
-      <text x="338" y="198" class="cs">windows: crates · aur · packaging</text>
-      <text x="338" y="220" class="cs">outputs: native, windows</text>
+      <text x="338" y="220" class="cs">outputs: native</text>
 
       <rect x="620" y="85" width="260" height="170" rx="9" class="cbG"/>
       <text x="638" y="112" class="ct">build-ui</text>
@@ -1479,27 +1419,18 @@ npm run test:live:x11 --prefix tests/e2e
       <text x="958" y="387" class="cs">npm ci --prefix tests/e2e</text>
       <text x="958" y="409" class="cs">http.server :4173 → npm test</text>
 
-      <rect x="940" y="480" width="260" height="170" rx="9" class="cbY"/>
-      <text x="958" y="507" class="ct">windows-single-exe</text>
-      <text x="958" y="531" class="cs">needs: build-ui, changes</text>
-      <text x="958" y="553" class="cs">if push or windows == true</text>
-      <text x="958" y="575" class="cs">windows-latest · rust-cache</text>
-      <text x="958" y="597" class="cs">cargo build --release -p muis-shell</text>
-      <text x="958" y="619" class="cs">Compress-Archive muis.exe</text>
-
       <path class="caA" d="M270 115 H320"/>
       <path class="caA" d="M270 235 H292 V175 H320"/>
       <path class="caA" d="M560 175 H620"/>
       <text x="574" y="166" class="lb">dist</text>
       <path class="caG" d="M880 120 H905 V100 H940"/>
       <path class="caG" d="M880 170 H910 V355 H940"/>
-      <path class="caY" d="M880 220 H915 V565 H940"/>
 
       <rect x="40" y="360" width="840" height="130" rx="9" class="cb"/>
       <text x="58" y="387" class="ct">Why this shape</text>
       <text x="58" y="411" class="cs">build-ui runs once; every heavier job downloads the same dist instead of reinstalling npm.</text>
       <text x="58" y="433" class="cs">rust tests always run; the expensive Xvfb smoke is skipped for UI-only PRs unless native paths changed.</text>
-      <text x="58" y="455" class="cs">windows packaging is skipped for UI-only PRs; on main it always runs.</text>
+      <text x="58" y="455" class="cs">packaging is not part of CI; the release workflow builds the Linux tarball on a tag.</text>
       <text x="58" y="477" class="cs">concurrency: cancel-in-progress on the same ref; artifacts upload even on failure.</text>
 
       <rect x="40" y="520" width="840" height="140" rx="9" class="cbG"/>
@@ -1511,7 +1442,7 @@ npm run test:live:x11 --prefix tests/e2e
 
       <rect x="40" y="680" width="1160" height="58" rx="9" class="cbA"/>
       <text x="58" y="704" class="ct">PR gate summary</text>
-      <text x="58" y="726" class="cs">Every non-doc PR: build-ui + rust + browser-e2e (+ windows if Rust/packaging changed). Docs-only PR: workflow does not run.</text>
+      <text x="58" y="726" class="cs">Every non-doc PR: build-ui + rust + browser-e2e. Docs-only PR: workflow does not run.</text>
     </svg>
     <figcaption>Figure 8 — CI job graph. Build once, fan out, and keep the heavy native smoke conditional.</figcaption>
   </figure>
@@ -1520,11 +1451,10 @@ npm run test:live:x11 --prefix tests/e2e
   <table>
     <thead><tr><th>Job</th><th>Depends on</th><th>Runs when</th><th>Produces</th></tr></thead>
     <tbody>
-      <tr><td><code>changes</code></td><td>—</td><td>always</td><td><code>native</code>, <code>windows</code> booleans from path filters</td></tr>
+      <tr><td><code>changes</code></td><td>—</td><td>always</td><td><code>native</code> boolean from path filters</td></tr>
       <tr><td><code>build-ui</code></td><td>—</td><td>always</td><td><code>ui-dist</code> artifact after <code>npm test</code> + <code>npm run build</code></td></tr>
       <tr><td><code>rust</code></td><td><code>build-ui</code>, <code>changes</code></td><td>always</td><td>Rust test result; Xvfb artifacts when native</td></tr>
       <tr><td><code>browser-e2e</code></td><td><code>build-ui</code></td><td>always</td><td>Selenium screenshot artifact</td></tr>
-      <tr><td><code>windows-single-exe</code></td><td><code>build-ui</code>, <code>changes</code></td><td>main push or Windows paths</td><td><code>muis-windows.zip</code></td></tr>
     </tbody>
   </table>
 </section>
@@ -1581,36 +1511,13 @@ npm run test:live:x11 --prefix tests/e2e
         <text x="336" y="98" class="rs">tag must equal v&lt;version&gt;</text>
 
         <rect x="40" y="150" width="640" height="300" rx="12" class="rb"/>
-        <text x="60" y="178" class="rt">Build matrix  ·  independent jobs</text>
-        <text x="60" y="200" class="rs">each job checks out the tag and builds from source</text>
+        <text x="60" y="178" class="rt">Release build</text>
+        <text x="60" y="200" class="rs">checks out the tag and builds from source</text>
 
-        <rect x="60" y="220" width="180" height="78" rx="8" class="rbG"/>
+        <rect x="60" y="220" width="220" height="78" rx="8" class="rbG"/>
         <text x="76" y="244" class="rt">linux-tarball</text>
         <text x="76" y="266" class="rs">3 binaries + desktop</text>
         <text x="76" y="286" class="rs">icon + .sha256</text>
-
-        <rect x="260" y="220" width="180" height="78" rx="8" class="rbG"/>
-        <text x="276" y="244" class="rt">appimage</text>
-        <text x="276" y="266" class="rs">ubuntu-22.04</text>
-        <text x="276" y="286" class="rs">tauri build</text>
-
-        <rect x="460" y="220" width="200" height="78" rx="8" class="rbG"/>
-        <text x="476" y="244" class="rt">windows</text>
-        <text x="476" y="266" class="rs">build -p muis-shell</text>
-        <text x="476" y="286" class="rs">one muis.exe in a zip</text>
-
-        <rect x="60" y="330" width="180" height="78" rx="8" class="rbG"/>
-        <text x="76" y="354" class="rt">frontend</text>
-        <text x="76" y="376" class="rs">npm ci + build</text>
-        <text x="76" y="396" class="rs">ui-dist.tgz</text>
-
-        <rect x="260" y="330" width="200" height="78" rx="8" class="rbY"/>
-        <text x="276" y="354" class="rt">flatpak</text>
-        <text x="276" y="376" class="rs">needs: frontend</text>
-        <text x="276" y="396" class="rs">GNOME 49 · no notify</text>
-
-        <path class="raP" d="M240 369 H260"/>
-        <text x="246" y="361" class="lb">dist</text>
 
         <rect x="140" y="500" width="440" height="100" rx="10" class="rbA"/>
         <text x="360" y="528" text-anchor="middle" class="rt">release  ·  aggregate &amp; publish</text>
@@ -1626,14 +1533,14 @@ npm run test:live:x11 --prefix tests/e2e
         <path class="raG" d="M360 450 V500"/>
         <path class="raP" d="M360 600 V640"/>
       </svg>
-      <figcaption>Figure 9 — Release graph. The tag is the switch; every platform build is independent, and the aggregate job is the only writer to GitHub Releases.</figcaption>
+      <figcaption>Figure 9 — Release graph. The tag is the switch; the Linux tarball build is independent, and the aggregate job is the only writer to GitHub Releases.</figcaption>
     </figure>
 
     <div class="card">
       <h4>Publishing steps</h4>
       <div class="steps">
-        <div class="step"><div class="num">1</div><div class="body"><b>Collect artifacts</b><span>Download every job's output into <code>dist/</code>.</span></div></div>
-        <div class="step"><div class="num">2</div><div class="body"><b>Write checksums</b><span>Find all <code>.AppImage</code>, <code>.tar.gz</code>, <code>.zip</code>, <code>.flatpak</code>; write a sorted aggregate <code>SHA256SUMS</code>.</span></div></div>
+        <div class="step"><div class="num">1</div><div class="body"><b>Collect artifacts</b><span>Download the build output into <code>dist/</code>.</span></div></div>
+        <div class="step"><div class="num">2</div><div class="body"><b>Write checksums</b><span>Find all <code>.tar.gz</code> artifacts; write a sorted aggregate <code>SHA256SUMS</code>.</span></div></div>
         <div class="step"><div class="num">3</div><div class="body"><b>Sign</b><span>Import the release subkey; detached-sign every artifact and <code>SHA256SUMS</code>.</span></div></div>
         <div class="step"><div class="num">4</div><div class="body"><b>Verify</b><span>Run <code>gpgv</code> with <code>packaging/keys/muis-release.gpg</code> against every signature.</span></div></div>
         <div class="step"><div class="num">5</div><div class="body"><b>Publish</b><span><code>gh release create</code> with binaries, checksums, signatures, and the armored public key.</span></div></div>
@@ -1648,11 +1555,7 @@ npm run test:live:x11 --prefix tests/e2e
     <tbody>
       <tr><td><code>version</code></td><td>ubuntu-latest</td><td>Read <code>tauri.conf.json</code> version; reject a mismatched tag.</td><td>output: <code>version</code></td></tr>
       <tr><td><code>linux-tarball</code></td><td>ubuntu-latest</td><td>npm build → cargo release → stage 3 binaries + desktop + icon → tar + sha256.</td><td><code>linux-tarball</code></td></tr>
-      <tr><td><code>appimage</code></td><td>ubuntu-22.04</td><td>build worker + notify → <code>tauri build --bundles appimage</code> → checksum.</td><td><code>appimage</code></td></tr>
-      <tr><td><code>windows</code></td><td>windows-latest</td><td>build <code>muis-shell</code> → zip the single exe.</td><td><code>windows</code></td></tr>
-      <tr><td><code>frontend</code></td><td>ubuntu-latest</td><td>npm build → <code>ui-dist.tgz</code> (not <code>.tar.gz</code>, so the release glob ignores it).</td><td><code>ui-dist</code></td></tr>
-      <tr><td><code>flatpak</code></td><td>GNOME 49 container</td><td>unpack ui-dist → flatpak-builder → versioned bundle + checksum.</td><td><code>flatpak</code></td></tr>
-      <tr><td><code>release</code></td><td>ubuntu-latest</td><td>download all → aggregate checksums → sign → verify → <code>gh release create</code>.</td><td>GitHub Release</td></tr>
+      <tr><td><code>release</code></td><td>ubuntu-latest</td><td>download tarball → aggregate checksums → sign → verify → <code>gh release create</code>.</td><td>GitHub Release</td></tr>
     </tbody>
   </table>
 </section>
@@ -1732,7 +1635,7 @@ npm run test:live:x11 --prefix tests/e2e
       <text x="20" y="222" class="gs">Docs-only changes (Markdown, docs/**) are ignored by the CI trigger. A docs-only PR therefore has no workflow run.</text>
       <text x="20" y="242" class="gs">A push to main runs the same CI again. The tag is the release switch; there is no separate “build release” button.</text>
       <text x="20" y="262" class="gs">The release workflow is the only job with contents: write, and it only runs for a tag push (workflow_dispatch builds but does not publish).</text>
-      <text x="20" y="282" class="gs">Downstream: AUR PKGBUILD points at the GitHub tag tarball; Veldmuis packages repackage the signed upstream release.</text>
+      <text x="20" y="282" class="gs">Downstream: Veldmuis packages repackage the signed upstream release tarball.</text>
     </svg>
     <figcaption>Figure 10 — GitHub flow. CI validates the PR; a version tag on main drives the release pipeline.</figcaption>
   </figure>
@@ -1754,8 +1657,7 @@ npm run test:live:x11 --prefix tests/e2e
         <li>Bump <code>crates/muis-shell/tauri.conf.json</code>.</li>
         <li>Tag <code>v&lt;version&gt;</code> on <code>main</code> and push the tag.</li>
         <li>Let <code>release.yml</code> build, sign, verify, and publish.</li>
-        <li>Bump <code>aur/PKGBUILD</code> and refresh <code>.SRCINFO</code> separately.</li>
-        <li>Optionally update the Veldmuis package that repackages the release.</li>
+        <li>Update the Veldmuis package that repackages the release.</li>
       </ul>
     </div>
   </div>
@@ -1774,19 +1676,17 @@ npm run test:live:x11 --prefix tests/e2e
         <li><b>Snapshot ids are sanitized.</b> A crafted tab id cannot escape the sessions directory.</li>
         <li><b>Config/session writes validate JSON</b> before touching disk.</li>
         <li><b>Test mode never writes</b> real sessions, config, or snapshots.</li>
-        <li><b>Windows never spawns the downloaded exe directly</b> as the worker; it stages a MOTW-free copy first.</li>
       </ul>
     </div>
     <div class="card">
       <h4>Known drift / stale docs</h4>
       <ul class="clean">
-        <li><b>Version sources disagree:</b> <code>tauri.conf.json</code> is 1.4.0; crates and <code>src-ui/package.json</code> are 0.1.0/1.0.0; <code>aur/PKGBUILD</code> is 1.0.0.</li>
-        <li><b>README still describes a three-exe Windows zip</b>; the current code and release build a single <code>muis.exe</code>.</li>
+        <li><b>Version sources disagree:</b> <code>tauri.conf.json</code> is 1.5.0; crates and <code>src-ui/package.json</code> are 0.1.0/1.0.0.</li>
+        <li><b>Windows, Flatpak, AppImage, and AUR packaging were removed.</b> Only the Veldmuis Linux tarball build remains; older platform notes in this page were pruned with them.</li>
         <li><b>Planning docs mention ACP/agent code that is not in this tree.</b> <code>crates/muis-shell/src/</code> contains only <code>bridge</code>, <code>logging</code>, <code>main</code>, and <code>persist</code>.</li>
         <li><b><code>muis-core</code> session/config structs are not wired into the live shell</b>; the TS store is authoritative for the running app, while the Rust types are exercised by unit tests.</li>
         <li><b>Worker reconnect is a hook, not a UX.</b> <code>onWorkerDead</code> exists but no caller surfaces it yet.</li>
         <li><b>Cross-session search scans open tabs' xterm buffers</b>; there is no historical index once a tab is closed.</li>
-        <li><b>Flatpak deliberately omits <code>muis-notify</code></b>, because the sandbox socket cannot be reached from the host shell.</li>
       </ul>
     </div>
   </div>
@@ -1796,9 +1696,9 @@ npm run test:live:x11 --prefix tests/e2e
     <thead><tr><th>Path</th><th>Why you would open it</th></tr></thead>
     <tbody>
       <tr><td><code>crates/muis-core/src/ipc.rs</code></td><td>The wire contract. Change this and the TS types + fixture together.</td></tr>
-      <tr><td><code>crates/muis-worker/src/lib.rs</code></td><td>PTY spawn, scrollback ring, shell argv, Flatpak/AppImage handling, worker loop.</td></tr>
+      <tr><td><code>crates/muis-worker/src/lib.rs</code></td><td>PTY spawn, scrollback ring, shell argv, worker loop.</td></tr>
       <tr><td><code>crates/muis-shell/src/bridge.rs</code></td><td>One-worker-per-session supervision, stdout pump, stderr capture, death event.</td></tr>
-      <tr><td><code>crates/muis-shell/src/main.rs</code></td><td>Tauri commands, notification server, stats sampler, logging, Windows embedded modes.</td></tr>
+      <tr><td><code>crates/muis-shell/src/main.rs</code></td><td>Tauri commands, notification server, stats sampler, logging.</td></tr>
       <tr><td><code>crates/muis-shell/src/persist.rs</code></td><td>Session/config writes and scrollback snapshot files.</td></tr>
       <tr><td><code>crates/muis-shell/opencode-plugin/muis.js</code></td><td>Auto-installed opencode completion notifier.</td></tr>
       <tr><td><code>src-ui/src/main.ts</code></td><td>Everything the user sees and every UI-side lifecycle path.</td></tr>
@@ -1808,10 +1708,8 @@ npm run test:live:x11 --prefix tests/e2e
       <tr><td><code>tests/fixtures/ipc-frames.jsonl</code></td><td>Cross-language contract fixture.</td></tr>
       <tr><td><code>tests/e2e/live-x11.sh</code></td><td>Real Tauri + WebKit + PTY smoke under Xvfb.</td></tr>
       <tr><td><code>.github/workflows/ci.yml</code></td><td>PR/main validation and conditional native smoke.</td></tr>
-      <tr><td><code>.github/workflows/release.yml</code></td><td>Tag → platform builds → sign → verify → publish.</td></tr>
-      <tr><td><code>crates/muis-shell/tauri.conf.json</code></td><td>Window, bundle, sidecar layout, and the release version authority.</td></tr>
-      <tr><td><code>packaging/flatpak/org.veldmuislinux.muis.yml</code></td><td>Flatpak runtime, permissions, host-shell integration.</td></tr>
-      <tr><td><code>aur/PKGBUILD</code></td><td>Arch source package; installs the three Linux binaries.</td></tr>
+      <tr><td><code>.github/workflows/release.yml</code></td><td>Tag → Linux tarball → sign → verify → publish.</td></tr>
+      <tr><td><code>crates/muis-shell/tauri.conf.json</code></td><td>Window, frontend dist, and the release version authority.</td></tr>
     </tbody>
   </table>
 
@@ -1819,17 +1717,16 @@ npm run test:live:x11 --prefix tests/e2e
     <b>Bottom line:</b> muis is a small Rust supervisor around a large xterm.js
     frontend, with a deliberately narrow JSON-lines boundary. The system is easy
     to reason about because the process model, the protocol, and the persistence
-    format are all explicit and independently tested. The risk areas are the
-    platform-specific packaging shims (Flatpak host spawn, AppImage env
-    sanitization, Windows MOTW staging) and documentation drift between the
-    code, planning docs, and version files.
+    format are all explicit and independently tested. The main risk area is
+    documentation drift between the code, planning docs, and version files.
   </div>
 </section>
 
 <footer>
-  Generated from origin/main @ 2a6eb09 (v1.4.0). File map, workflow steps, and
-  test counts reflect the tree at that commit. Update this page when the process
-  model, IPC, build, or release workflows change.
+  Generated from origin/main @ 2a6eb09 (v1.4.0), later updated for the
+  Linux-only target removal. File map, workflow steps, and test counts reflect
+  the tree at those commits. Update this page when the process model, IPC,
+  build, or release workflows change.
 </footer>
   </main>
 </div>

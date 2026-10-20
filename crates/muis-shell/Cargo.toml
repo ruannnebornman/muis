@@ -2,7 +2,7 @@
 name = "muis-shell"
 version = "0.1.0"
 edition = "2021"
-description = "muis native window shell (Tauri 2): Linux WebKitGTK, Windows WebView2"
+description = "muis native window shell (Tauri 2 + WebKitGTK)"
 
 [[bin]]
 name = "muis"
@@ -17,14 +17,6 @@ serde_json = "1"
 log = "0.4"
 simplelog = "0.12"
 muis-core = { path = "../muis-core" }
-
-# Windows ships a single exe: the shell re-execs itself in `--muis-worker`,
-# `--muis-notify`, and `--muis-agent` modes, so it links those crates. Other
-# platforms keep spawning the sibling binaries and do not pull these in.
-[target.'cfg(windows)'.dependencies]
-muis-worker = { path = "../muis-worker" }
-muis-notify = { path = "../muis-notify" }
-muis-agent = { path = "../muis-agent" }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

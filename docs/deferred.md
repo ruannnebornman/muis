@@ -13,14 +13,23 @@ solid and the project is otherwise quiet.
   muis/Veldmuis. muis already exports `TERM_PROGRAM=muis` for spawned
   shells (`crates/muis-worker/src/main.rs`).
 
+## Removed build paths
+
+Windows (portable exe and installer), Flatpak, AppImage, and the AUR package
+were removed to keep the build and release path focused on the Linux artifact
+Veldmuis repackages (`muis-<version>-x86_64-linux.tar.gz`). Their CI jobs,
+packaging files, docs, and platform-specific code are gone.
+
+Restore from git history if support is revisited: start with the tree before
+this removal, especially `.github/workflows/release.yml`, `packaging/flatpak/`,
+`aur/`, `crates/muis-shell/tauri.conf.json`, and the platform branches in
+`crates/muis-worker`.
+
 ## Deferred to later
 
-- **Windows installer and code signing.** Portable `muis-portable-*.zip`
-  stays the supported artifact; see `docs/windows.md`.
 - **Website** (rollout Phase 5): the download + showcase site.
-- **Auto-update story:** Flatpak via `flatpak update`, package managers
-  for Arch/Veldmuis, manual re-download for AppImage/Windows.
-- **Flatpak distribution:** self-hosted repo vs Flathub.
+- **Auto-update story:** package managers for Arch/Veldmuis; manual updates
+  otherwise.
 - **aarch64 package:** only if Veldmuis ever targets ARM.
 
 ## Abandoned

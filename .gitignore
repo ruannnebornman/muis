@@ -9,15 +9,6 @@ src-ui/dist/
 tests/e2e/node_modules/
 tests/e2e/artifacts/
 
-# Tauri bundles
-crates/muis-shell/target/
-*.AppImage
-*.deb
-*.msi
-*.nsis.zip
-*-setup.exe
-*-portable.zip
-
 # Editor / OS
 .vscode/
 .idea/
@@ -27,11 +18,6 @@ Thumbs.db
 
 # muis runtime state (never commit live sessions)
 *.scrollback
-
-# AUR build artifacts
-aur/*.tar.gz
-aur/pkg/
-aur/src/
 
 # Release signing secrets (public material lives in packaging/keys/)
 MUIS_GPG_PRIVATE_KEY.asc

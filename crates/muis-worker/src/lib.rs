@@ -4,13 +4,9 @@
 //! (WorkerToUi). Stdin EOF means the UI is gone: kill everything and exit.
 //! A crashing worker therefore only ever takes down its own session.
 //!
-//! Exposed as a library so the Windows single-exe build can run the worker
-//! from the shell binary's hidden `--muis-worker` mode; the standalone
-//! `muis-worker` binary is a thin wrapper around [`run`].
+//! The standalone `muis-worker` binary is a thin wrapper around [`run`].
 
-use muis_core::ipc::{
-    b64_decode, b64_encode, decode_ui, encode_line, UiToWorker, WorkerToUi,
-};
+use muis_core::ipc::{b64_decode, b64_encode, decode_ui, encode_line, UiToWorker, WorkerToUi};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -24,96 +20,9 @@ const FISH_INTEGRATION: &str = r"function __muis_preexec --on-event fish_preexec
 /// `fish_greeting` function/variable (there is no `--no-greeting` flag).
 const FISH_NO_GREETING: &str = "set -g fish_greeting ''";
 
-/// True when the worker is running inside a Flatpak sandbox.
-fn in_flatpak() -> bool {
-    std::path::Path::new("/.flatpak-info").exists()
-}
-
-/// True when the worker was started from an AppImage (`AppRun` exports these).
-fn in_appimage() -> bool {
-    std::env::var_os("APPIMAGE").is_some() || std::env::var_os("APPDIR").is_some()
-}
-
-/// Environment variables an AppImage's `AppRun` injects. Left alone they leak
-/// into the spawned shell, so host tools load the AppImage's bundled
-/// libraries: git warns about libpcre2, python3 fails to start, and GTK/Qt
-/// apps pick the wrong theme/modules. Removed from the child under AppImage.
-const APPIMAGE_ENV_REMOVE: &[&str] = &[
-    "APPIMAGE",
-    "APPDIR",
-    "ARGV0",
-    "OWD",
-    "LD_PRELOAD",
-    "PYTHONHOME",
-    "PYTHONPATH",
-    "PERLLIB",
-    "GTK_DATA_PREFIX",
-    "GTK_EXE_PREFIX",
-    "GTK_PATH",
-    "GTK_IM_MODULE_FILE",
-    "GDK_PIXBUF_MODULE_FILE",
-    "GIO_MODULE_DIR",
-    "GSETTINGS_SCHEMA_DIR",
-    "GI_TYPELIB_PATH",
-    "QT_PLUGIN_PATH",
-    "GST_PLUGIN_SYSTEM_PATH",
-    "GST_PLUGIN_SYSTEM_PATH_1_0",
-];
-
-/// Colon-separated variables that may mix AppImage and host entries; AppImage
-/// entries are dropped, the rest kept.
-const APPIMAGE_ENV_PATHLIKE: &[&str] =
-    &["PATH", "LD_LIBRARY_PATH", "XDG_DATA_DIRS", "XDG_CONFIG_DIRS"];
-
-/// Drop AppImage mount paths from a colon-separated list. AppImage mounts live
-/// under `/.mount_*`, which host paths never contain.
-fn drop_appimage_paths(value: &str) -> String {
-    value
-        .split(':')
-        .filter(|entry| !entry.contains("/.mount_"))
-        .collect::<Vec<_>>()
-        .join(":")
-}
-
-/// Strip AppImage-injected variables from the spawned shell's environment.
-fn sanitize_appimage_env(cmd: &mut CommandBuilder) {
-    for key in APPIMAGE_ENV_REMOVE {
-        cmd.env_remove(key);
-    }
-    for key in APPIMAGE_ENV_PATHLIKE {
-        if let Ok(value) = std::env::var(key) {
-            let cleaned = drop_appimage_paths(&value);
-            if cleaned.is_empty() {
-                cmd.env_remove(key);
-            } else {
-                cmd.env(key, cleaned);
-            }
-        }
-    }
-}
-
-/// Full argv used to spawn the shell. Inside a Flatpak sandbox the shell is
-/// run on the host via `flatpak-spawn --host` so the user gets their real
-/// environment and tools: the runtime has no fish and a sandboxed shell
-/// cannot run host binaries.
-fn shell_argv(
-    shell: &str,
-    cwd: &str,
-    flatpak: bool,
-    fish_integration: &str,
-    envs: &[(String, String)],
-) -> Vec<String> {
-    let mut argv: Vec<String> = Vec::new();
-    if flatpak {
-        argv.push("flatpak-spawn".to_string());
-        argv.push("--host".to_string());
-        argv.push(format!("--directory={cwd}"));
-        // `flatpak-spawn` only forwards env explicitly passed with --env.
-        for (key, value) in envs {
-            argv.push(format!("--env={key}={value}"));
-        }
-    }
-    argv.push(shell.to_string());
+/// Full argv used to spawn the shell.
+fn shell_argv(shell: &str, fish_integration: &str) -> Vec<String> {
+    let mut argv: Vec<String> = vec![shell.to_string()];
     // Fish: publish OSC 133 command markers so the UI can show the last
     // command, its exit code, and duration. Non-invasive event handlers,
     // added via -C (runs before config, keeps the session interactive).
@@ -133,7 +42,6 @@ fn shell_argv(
     }
     argv
 }
-
 
 /// Serializes stdout lines across the main loop and reader threads.
 #[derive(Debug, Default, Clone)]
@@ -203,9 +111,6 @@ fn spawn_session(
     #[cfg(unix)]
     disable_echo(&*pair.master);
 
-    let flatpak = in_flatpak();
-    // Env shared by both spawn paths. Inside Flatpak these go through
-    // `flatpak-spawn --env=...`; natively they are set on the command.
     let mut envs: Vec<(String, String)> = vec![
         ("TERM".to_string(), "xterm-256color".to_string()),
         // Long-running agents/tasks inherit a sane locale.
@@ -219,32 +124,20 @@ fn spawn_session(
     if let Ok(socket) = std::env::var("MUIS_SOCKET") {
         envs.push(("MUIS_SOCKET".to_string(), socket));
     }
-    // On the Windows single-exe build the shell points MUIS_BIN at itself so
-    // hooks can reach `muis.exe --muis-notify`; forward it to the pty too.
-    if let Ok(bin) = std::env::var("MUIS_BIN") {
-        envs.push(("MUIS_BIN".to_string(), bin));
-    }
-    // Sibling `muis-agent` path for Linux/dev/AppImage runs where the helper
-    // is not on PATH yet.
+    // Sibling `muis-agent` path for dev/tarball runs where the helper is
+    // not on PATH yet.
     if let Ok(bin) = std::env::var("MUIS_AGENT_BIN") {
         envs.push(("MUIS_AGENT_BIN".to_string(), bin));
     }
 
-    let argv = shell_argv(shell, cwd, flatpak, FISH_INTEGRATION, &envs);
+    let argv = shell_argv(shell, FISH_INTEGRATION);
     let mut cmd = CommandBuilder::new(&argv[0]);
     for arg in &argv[1..] {
         cmd.arg(arg);
     }
-    if !flatpak {
-        cmd.cwd(cwd);
-        for (key, value) in &envs {
-            cmd.env(key, value);
-        }
-        // From an AppImage the bundled libs leak into the shell; keep the
-        // child on the host environment.
-        if in_appimage() {
-            sanitize_appimage_env(&mut cmd);
-        }
+    cmd.cwd(cwd);
+    for (key, value) in &envs {
+        cmd.env(key, value);
     }
 
     let child = match pair.slave.spawn_command(cmd) {
@@ -279,9 +172,7 @@ fn spawn_session(
             child: Arc::clone(&child),
         },
     );
-    emitter.emit(&WorkerToUi::Spawned {
-        pty_id: id.clone(),
-    });
+    emitter.emit(&WorkerToUi::Spawned { pty_id: id.clone() });
 
     // Drain output until EOF, then report the exit. This thread owns no
     // session-map state, so Kill racing Exited is harmless.
@@ -308,10 +199,7 @@ fn spawn_session(
             .wait()
             .ok()
             .and_then(|s| i32::try_from(s.exit_code()).ok());
-        thread_emitter.emit(&WorkerToUi::Exited {
-            pty_id: id,
-            code,
-        });
+        thread_emitter.emit(&WorkerToUi::Exited { pty_id: id, code });
     });
 }
 
@@ -365,15 +253,7 @@ pub fn run() -> i32 {
                 cwd,
                 cols,
                 rows,
-            } => spawn_session(
-                &mut sessions,
-                &emitter,
-                &pty_id,
-                &shell,
-                &cwd,
-                cols,
-                rows,
-            ),
+            } => spawn_session(&mut sessions, &emitter, &pty_id, &shell, &cwd, cols, rows),
             UiToWorker::Write { pty_id, data_b64 } => {
                 let data = match b64_decode(&data_b64) {
                     Ok(data) => data,
@@ -402,11 +282,7 @@ pub fn run() -> i32 {
                     }),
                 }
             }
-            UiToWorker::Resize {
-                pty_id,
-                cols,
-                rows,
-            } => match sessions.get(&pty_id) {
+            UiToWorker::Resize { pty_id, cols, rows } => match sessions.get(&pty_id) {
                 Some(session) => {
                     if session
                         .master
@@ -454,71 +330,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn shell_argv_native_prefers_plain_command() {
-        assert_eq!(shell_argv("/bin/bash", "/tmp", false, "INT", &[]), vec!["/bin/bash"]);
+    fn shell_argv_prefers_plain_command() {
+        assert_eq!(shell_argv("/bin/bash", "INT"), vec!["/bin/bash"]);
     }
 
     #[test]
     fn shell_argv_adds_fish_integration() {
         assert_eq!(
-            shell_argv("/usr/bin/fish", "/home/x", false, "INT", &[]),
-            vec![
-                "/usr/bin/fish",
-                "-C",
-                FISH_NO_GREETING,
-                "-C",
-                "INT",
-            ]
-        );
-    }
-
-    #[test]
-    fn shell_argv_flatpak_wraps_with_flatpak_spawn() {
-        let envs = [
-            ("TERM".to_string(), "xterm-256color".to_string()),
-            ("LANG".to_string(), "C.UTF-8".to_string()),
-        ];
-        let argv = shell_argv("/usr/bin/fish", "/home/x", true, "INT", &envs);
-        assert_eq!(argv[0], "flatpak-spawn");
-        assert_eq!(argv[1], "--host");
-        assert_eq!(argv[2], "--directory=/home/x");
-        assert_eq!(argv[3], "--env=TERM=xterm-256color");
-        assert_eq!(argv[4], "--env=LANG=C.UTF-8");
-        assert_eq!(
-            &argv[5..],
-            &["/usr/bin/fish", "-C", FISH_NO_GREETING, "-C", "INT"]
-        );
-    }
-
-    #[test]
-    fn shell_argv_flatpak_forwards_muis_env() {
-        let envs = [
-            ("TERM_PROGRAM".to_string(), "muis".to_string()),
-            ("MUIS_TAB_ID".to_string(), "tab-7".to_string()),
-            ("MUIS_SOCKET".to_string(), "muis-notify-x".to_string()),
-            ("MUIS_AGENT_BIN".to_string(), "/opt/muis/muis-agent".to_string()),
-        ];
-        let argv = shell_argv("/bin/bash", "/home/x", true, "INT", &envs);
-        assert!(argv.contains(&"--env=TERM_PROGRAM=muis".to_string()));
-        assert!(argv.contains(&"--env=MUIS_TAB_ID=tab-7".to_string()));
-        assert!(argv.contains(&"--env=MUIS_SOCKET=muis-notify-x".to_string()));
-        assert!(argv.contains(&"--env=MUIS_AGENT_BIN=/opt/muis/muis-agent".to_string()));
-        // Env args must precede the shell command.
-        let shell_at = argv.iter().position(|a| a == "/bin/bash").unwrap();
-        let last_env = argv.iter().rposition(|a| a.starts_with("--env=")).unwrap();
-        assert!(last_env < shell_at);
-    }
-
-    #[test]
-    fn drop_appimage_paths_keeps_host_entries() {
-        assert_eq!(
-            drop_appimage_paths("/usr/bin:/tmp/.mount_muis_x/usr/bin:/bin"),
-            "/usr/bin:/bin"
-        );
-        assert_eq!(drop_appimage_paths("/usr/lib"), "/usr/lib");
-        assert_eq!(
-            drop_appimage_paths("/tmp/.mount_a/lib:/tmp/.mount_b/lib"),
-            ""
+            shell_argv("/usr/bin/fish", "INT"),
+            vec!["/usr/bin/fish", "-C", FISH_NO_GREETING, "-C", "INT"]
         );
     }
 }

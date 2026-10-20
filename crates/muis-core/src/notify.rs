@@ -10,8 +10,8 @@
 //! notification path. Requests without `kind` are notifications, so old
 //! `muis-notify` clients keep working unchanged.
 //!
-//! The socket is an abstract-namespace socket on Linux and a named pipe on
-//! Windows (via `interprocess`), so there is no stale file to clean up.
+//! The socket uses the abstract namespace via `interprocess`, so there is no
+//! stale file to clean up.
 
 use std::io::{self, BufRead, BufReader, Write};
 
@@ -75,11 +75,9 @@ pub fn valid_session_id(id: &str) -> bool {
     !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_alphanumeric())
 }
 
-/// Per-user socket name. Abstract namespace on Linux, named pipe on Windows.
+/// Per-user abstract-namespace socket name.
 pub fn socket_name() -> String {
-    let user = std::env::var("USER")
-        .or_else(|_| std::env::var("USERNAME"))
-        .unwrap_or_else(|_| "default".to_string());
+    let user = std::env::var("USER").unwrap_or_else(|_| "default".to_string());
     format!("muis-notify-{user}")
 }
 

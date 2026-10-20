@@ -7,10 +7,6 @@
 //! The target socket and tab default to the `MUIS_SOCKET` and `MUIS_TAB_ID`
 //! environment variables, which muis injects into every pty, so a plain
 //! `muis-notify --body "done"` from a shell inside muis just works.
-//!
-//! Exposed as a library so the Windows single-exe build can run notify from
-//! the shell binary's hidden `--muis-notify` mode; the standalone binary is
-//! a thin wrapper around [`run`].
 
 use muis_core::notify::{self, NotifyRequest};
 
@@ -61,16 +57,9 @@ fn parse_args(args: impl Iterator<Item = String>) -> Result<Cli, String> {
     Ok(cli)
 }
 
-/// Standalone entrypoint: parse `std::env::args()` without the program name.
+/// Entrypoint: parse `std::env::args()` without the program name.
 pub fn run() -> i32 {
-    run_with(std::env::args().skip(1))
-}
-
-/// Run with an explicit argument list (without the program name). The
-/// standalone binary passes `args().skip(1)`; the Windows shell passes the
-/// arguments after its `--muis-notify` mode flag.
-pub fn run_with(args: impl IntoIterator<Item = String>) -> i32 {
-    let args: Vec<String> = args.into_iter().collect();
+    let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{USAGE}");
         return 0;
@@ -113,13 +102,25 @@ mod tests {
     use super::*;
 
     fn args(list: &[&str]) -> std::vec::IntoIter<String> {
-        list.iter().map(|s| s.to_string()).collect::<Vec<_>>().into_iter()
+        list.iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     #[test]
     fn parses_all_flags() {
         let cli = parse_args(args(&[
-            "--title", "Build", "--body", "done", "--tab", "t1", "--urgency", "2", "--socket", "s",
+            "--title",
+            "Build",
+            "--body",
+            "done",
+            "--tab",
+            "t1",
+            "--urgency",
+            "2",
+            "--socket",
+            "s",
         ]))
         .unwrap();
         assert_eq!(
@@ -143,7 +144,10 @@ mod tests {
 
     #[test]
     fn body_only_is_enough() {
-        assert_eq!(parse_args(args(&["--body", "hi"])).unwrap().body.as_deref(), Some("hi"));
+        assert_eq!(
+            parse_args(args(&["--body", "hi"])).unwrap().body.as_deref(),
+            Some("hi")
+        );
     }
 
     #[test]

@@ -36,7 +36,9 @@ export MUIS_SOCKET_NAME="muis-notify-live-${RANDOM}${RANDOM}"
 # Write the marker to a file (proves the command reached the real shell),
 # then emit each notification protocol so the frontend's OSC observer
 # exercises the real notify path (OSC 9, OSC 777, OSC 99), then drive the
-# real `muis-notify` CLI against the visible tab.
+# real `muis-notify` CLI against the visible tab. The CLI takes the tab
+# from `MUIS_TAB_ID`, which the worker injects into the pty, so the smoke
+# does not depend on the store's id counter.
 export MUIS_TEST_COMMAND="printf %s $MARKER > $MARKER_FILE; printf '\033]9;muis-osc9\007\033]777;notify;muis-osc777;body777\007\033]99;i=1:d=1;muis-osc99\007'; $INSTALL_DIR/muis-notify --title muis-live --body cli-notify"
 export GDK_BACKEND=x11
 export LIBGL_ALWAYS_SOFTWARE=1

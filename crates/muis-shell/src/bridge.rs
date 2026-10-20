@@ -29,14 +29,9 @@ pub struct SessionEvent {
 /// keeps the pool testable without a Tauri runtime.
 pub type EventSink = Arc<dyn Fn(SessionEvent) -> bool + Send + Sync + 'static>;
 
-/// `MUIS_AGENT_BIN` for the pty env when a sibling helper exists.
+/// `MUIS_AGENT_BIN` for the pty env when the sibling helper exists.
 fn agent_bin_env() -> Option<(&'static str, PathBuf)> {
-    let name = if cfg!(windows) {
-        "muis-agent.exe"
-    } else {
-        "muis-agent"
-    };
-    let path = std::env::current_exe().ok()?.parent()?.join(name);
+    let path = std::env::current_exe().ok()?.parent()?.join("muis-agent");
     path.is_file().then_some(("MUIS_AGENT_BIN", path))
 }
 
@@ -56,30 +51,10 @@ struct Running {
     child: Mutex<Child>,
 }
 
-/// How to start a session worker: a separate `muis-worker` executable, or
-/// the shell's own binary re-exec'd in its hidden worker mode (Windows
-/// single-file build). Either way a worker is its own process, one per
-/// session.
+/// Path to the `muis-worker` executable that serves each session. A worker
+/// is always its own process, one per session.
 #[derive(Clone, Debug)]
-pub enum WorkerLaunch {
-    /// Non-Windows: spawn a sibling `muis-worker` (constructed only there).
-    #[allow(dead_code)]
-    Exe(PathBuf),
-    /// Windows: run a staged copy of the shell binary in worker mode.
-    #[cfg(windows)]
-    SelfExe { exe: PathBuf, arg: String },
-}
-
-impl WorkerLaunch {
-    /// Human-readable "program + args" for logs.
-    fn describe(&self) -> String {
-        match self {
-            WorkerLaunch::Exe(path) => path.display().to_string(),
-            #[cfg(windows)]
-            WorkerLaunch::SelfExe { exe, arg } => format!("{} {arg}", exe.display()),
-        }
-    }
-}
+pub struct WorkerLaunch(pub PathBuf);
 
 pub struct WorkerPool {
     sink: EventSink,
@@ -116,21 +91,16 @@ impl WorkerPool {
             "muis-worker not found next to the muis binary".to_string()
         })?;
 
-        let mut command = match &launch {
-            WorkerLaunch::Exe(path) => Command::new(path),
-            #[cfg(windows)]
-            WorkerLaunch::SelfExe { exe, arg } => {
-                let mut c = Command::new(exe);
-                c.arg(arg);
-                c
-            }
-        };
-        log::info!("starting worker for session {session_id}: {}", launch.describe());
+        let mut command = Command::new(&launch.0);
+        log::info!(
+            "starting worker for session {session_id}: {}",
+            launch.0.display()
+        );
         command
             // The worker forwards this to each pty so `muis-notify` can find
             // the shell's notification socket.
             .env("MUIS_SOCKET", crate::notify_socket_name())
-            // A dev/AppImage run may not have the helper on PATH; point the
+            // A dev/tarball run may not have the helper on PATH; point the
             // agent plugin at the sibling binary explicitly.
             .envs(agent_bin_env())
             .stdin(Stdio::piped())
@@ -138,20 +108,8 @@ impl WorkerPool {
             // Captured (not null) so worker panics land in the log instead of
             // vanishing; the worker speaks JSON on stdout, so stderr is free.
             .stderr(Stdio::piped());
-        // Never flash a console for the worker, even from a console-subsystem
-        // debug build, and point hooks at this exe so `muis.exe --muis-notify`
-        // works without a separate notify binary.
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            command.creation_flags(CREATE_NO_WINDOW);
-            if let WorkerLaunch::SelfExe { exe, .. } = &launch {
-                command.env("MUIS_BIN", exe);
-            }
-        }
         let mut child = command.spawn().map_err(|e| {
-            log::error!("failed to start worker ({}): {e}", launch.describe());
+            log::error!("failed to start worker ({}): {e}", launch.0.display());
             format!("failed to start muis-worker: {e}")
         })?;
         let stdin = child.stdin.take().ok_or("worker stdin unavailable")?;
@@ -299,7 +257,7 @@ mod tests {
 
         let (tx, rx) = channel::<SessionEvent>();
         let sink: EventSink = Arc::new(move |event| tx.send(event).is_ok());
-        let pool = WorkerPool::new(sink, Some(WorkerLaunch::Exe(worker)));
+        let pool = WorkerPool::new(sink, Some(WorkerLaunch(worker)));
 
         // Two sessions, one double-spawn to prove idempotency.
         pool.spawn_session("s1").unwrap();
@@ -313,7 +271,9 @@ mod tests {
         // Exactly one `spawned` frame per session, not two for s1.
         let mut spawned: HashMap<String, usize> = HashMap::new();
         while spawned.values().sum::<usize>() < 2 {
-            let event = rx.recv_timeout(Duration::from_secs(5)).expect("worker event");
+            let event = rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("worker event");
             if matches!(event.frame, WorkerToUi::Spawned { .. }) {
                 *spawned.entry(event.session_id).or_insert(0) += 1;
             }
@@ -327,7 +287,9 @@ mod tests {
         pool.send_line("s2", write).unwrap();
         let mut s2_alive = false;
         while !s2_alive {
-            let event = rx.recv_timeout(Duration::from_secs(5)).expect("s2 still alive");
+            let event = rx
+                .recv_timeout(Duration::from_secs(5))
+                .expect("s2 still alive");
             if event.session_id == "s2" && matches!(event.frame, WorkerToUi::Spawned { .. }) {
                 s2_alive = true;
             }
