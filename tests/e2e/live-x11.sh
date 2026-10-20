@@ -27,6 +27,7 @@ mkdir -p "$INSTALL_DIR"
 cp "$ROOT/target/debug/muis" "$INSTALL_DIR/muis"
 cp "$ROOT/target/debug/muis-worker" "$INSTALL_DIR/muis-worker"
 cp "$ROOT/target/debug/muis-notify" "$INSTALL_DIR/muis-notify"
+cp "$ROOT/target/debug/muis-agent" "$INSTALL_DIR/muis-agent"
 
 export ROOT STATE_HOME CONFIG_HOME MARKER MARKER_FILE SCREENSHOT LOG RUN_DIR INSTALL_DIR
 # Use a distinct per-run socket so the smoke never fights a real muis for the

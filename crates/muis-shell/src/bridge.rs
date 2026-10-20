@@ -29,6 +29,12 @@ pub struct SessionEvent {
 /// keeps the pool testable without a Tauri runtime.
 pub type EventSink = Arc<dyn Fn(SessionEvent) -> bool + Send + Sync + 'static>;
 
+/// `MUIS_AGENT_BIN` for the pty env when the sibling helper exists.
+fn agent_bin_env() -> Option<(&'static str, PathBuf)> {
+    let path = std::env::current_exe().ok()?.parent()?.join("muis-agent");
+    path.is_file().then_some(("MUIS_AGENT_BIN", path))
+}
+
 /// Pure parse step: worker stdout line -> frontend event payload.
 /// Unit-tested without a Tauri runtime.
 pub fn parse_worker_line(session_id: &str, line: &str) -> Result<SessionEvent, String> {
@@ -94,6 +100,9 @@ impl WorkerPool {
             // The worker forwards this to each pty so `muis-notify` can find
             // the shell's notification socket.
             .env("MUIS_SOCKET", crate::notify_socket_name())
+            // A dev/tarball run may not have the helper on PATH; point the
+            // agent plugin at the sibling binary explicitly.
+            .envs(agent_bin_env())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Captured (not null) so worker panics land in the log instead of

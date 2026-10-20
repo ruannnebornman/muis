@@ -14,6 +14,7 @@ mod logging;
 mod persist;
 
 use bridge::{EventSink, WorkerLaunch, WorkerPool, WORKER_EVENT};
+use muis_core::notify::ClientRequest;
 use tauri::{Emitter, Manager};
 
 /// Locate the worker binary in `dir`. Prefers the plain `muis-worker`
@@ -126,6 +127,23 @@ fn config_save(json: String) -> Result<(), String> {
     persist::write_json(&muis_core::paths::config_file(), &json)
 }
 
+#[tauri::command]
+fn sessions_load() -> Result<String, String> {
+    // Test mode starts fresh so a smoke run never resurrects real tabs.
+    if test_mode() {
+        return Ok(String::new());
+    }
+    persist::read_text(&muis_core::paths::sessions_file())
+}
+
+#[tauri::command]
+fn sessions_save(json: String) -> Result<(), String> {
+    if test_mode() {
+        return Ok(());
+    }
+    persist::write_json(&muis_core::paths::sessions_file(), &json)
+}
+
 /// Current git branch for a cwd; empty string when not a repo (or git
 /// missing/slow — the caller treats empty as "no pill data").
 #[tauri::command]
@@ -175,6 +193,101 @@ fn arg_present(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
 }
 
+/// One agent session from `opencode session list --format json`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct AgentSession {
+    pub id: String,
+    pub title: String,
+    pub directory: String,
+}
+
+/// Parse the JSON emitted by `opencode session list --format json`. Unknown
+/// fields are ignored; a missing title/directory defaults to empty.
+fn parse_agent_sessions(json: &str) -> Result<Vec<AgentSession>, String> {
+    #[derive(serde::Deserialize)]
+    struct Raw {
+        id: String,
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        directory: String,
+    }
+    let raw: Vec<Raw> = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    Ok(raw
+        .into_iter()
+        .map(|r| AgentSession {
+            id: r.id,
+            title: r.title,
+            directory: r.directory,
+        })
+        .collect())
+}
+
+/// List opencode sessions for one tab's directory. `opencode session list`
+/// is scoped to the project of its working directory, so the command must
+/// run from the tab's cwd to see that project's sessions. Bounded by a
+/// timeout, so a stuck opencode can never freeze the window. Empty when
+/// opencode is missing or errors.
+#[tauri::command]
+async fn opencode_sessions(cwd: String) -> Vec<AgentSession> {
+    tauri::async_runtime::spawn_blocking(move || list_opencode_sessions(&cwd))
+        .await
+        .unwrap_or_default()
+}
+
+fn list_opencode_sessions(cwd: &str) -> Vec<AgentSession> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let mut cmd = Command::new("opencode");
+    cmd.args(["session", "list", "--format", "json", "--max-count", "1000"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let dir = cwd.trim();
+    if !dir.is_empty() && Path::new(dir).is_dir() {
+        cmd.current_dir(dir);
+    }
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        return Vec::new();
+    };
+    let reader = std::thread::spawn(move || {
+        let mut buf = String::new();
+        let mut stdout = stdout;
+        let _ = stdout.read_to_string(&mut buf);
+        buf
+    });
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return Vec::new();
+                }
+                break;
+            }
+            Ok(None) => {}
+            Err(_) => {
+                let _ = child.kill();
+                return Vec::new();
+            }
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Vec::new();
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    parse_agent_sessions(&reader.join().unwrap_or_default()).unwrap_or_default()
+}
+
 /// Directory opencode loads global plugins from.
 fn opencode_plugins_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -191,9 +304,17 @@ const OPENCODE_PLUGIN_LEGACY: &str = "muis.mjs";
 const OPENCODE_PLUGIN_MARKER: &str = "muis-plugin";
 const OPENCODE_PLUGIN_SRC: &str = include_str!("../opencode-plugin/muis.js");
 
-/// Install/update the muis opencode plugin. Writes it when missing, and
-/// updates it when the existing file is ours (carries the "muis-plugin"
-/// marker); never touches a foreign file. Returns the path.
+/// TUI plugin: exact route tracking. Unlike server plugins, opencode only
+/// loads TUI entrypoints listed in `tui.json(c)`, so the installer also
+/// maintains one entry in `tui.json` (leaving `tui.jsonc` untouched).
+const OPENCODE_TUI_FILE: &str = "muis-tui.mjs";
+const OPENCODE_TUI_MARKER: &str = "muis-tui-plugin";
+const OPENCODE_TUI_SRC: &str = include_str!("../opencode-plugin/muis-tui.mjs");
+
+/// Install/update the muis opencode plugins. Writes a file when missing and
+/// updates it when the existing file is ours (carries the matching marker);
+/// never touches a foreign file. The TUI entry is registered in `tui.json`
+/// without editing the user's `tui.jsonc`. Returns the server plugin path.
 #[tauri::command]
 fn install_opencode_plugin() -> Result<String, String> {
     let dir = opencode_plugins_dir().ok_or("no config directory")?;
@@ -210,7 +331,65 @@ fn install_opencode_plugin() -> Result<String, String> {
     if std::fs::read_to_string(&legacy).is_ok_and(|s| s.contains(OPENCODE_PLUGIN_MARKER)) {
         let _ = std::fs::remove_file(&legacy);
     }
+
+    // The TUI plugin is a separate entrypoint (opencode forbids one module
+    // exporting both). Its file lives beside the server plugin and is
+    // referenced from the global `tui.json`.
+    let tui_path = dir.join(OPENCODE_TUI_FILE);
+    let tui_ours = match std::fs::read_to_string(&tui_path) {
+        Ok(existing) => existing.contains(OPENCODE_TUI_MARKER),
+        Err(_) => true,
+    };
+    if tui_ours {
+        if let Err(e) = std::fs::write(&tui_path, OPENCODE_TUI_SRC) {
+            log::warn!("could not write TUI plugin: {e}");
+        } else if let Err(e) = register_tui_plugin(&tui_path) {
+            log::warn!("could not register TUI plugin: {e}");
+        }
+    }
     Ok(path.display().to_string())
+}
+
+/// Add (or refresh) the TUI plugin entry in the global `tui.json`, leaving
+/// every other key and the user's `tui.jsonc` alone. A malformed or
+/// non-object file is reported and left untouched.
+fn register_tui_plugin(path: &Path) -> Result<(), String> {
+    let config = path
+        .parent()
+        .and_then(Path::parent)
+        .map(|dir| dir.join("tui.json"))
+        .ok_or("no config directory")?;
+    let wanted = path
+        .canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+    let mut root: serde_json::Value = match std::fs::read_to_string(&config) {
+        Ok(text) if !text.trim().is_empty() => serde_json::from_str(&text)
+            .map_err(|e| format!("{} is not JSON: {e}", config.display()))?,
+        _ => serde_json::json!({}),
+    };
+    let object = root
+        .as_object_mut()
+        .ok_or_else(|| format!("{} is not a JSON object", config.display()))?;
+    let entry = object
+        .entry("plugin")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    let list = entry
+        .as_array_mut()
+        .ok_or_else(|| format!("{}: plugin is not an array", config.display()))?;
+    let before = list.clone();
+    list.retain(|item| {
+        item.as_str()
+            .map(|s| !s.ends_with(OPENCODE_TUI_FILE) && s != wanted)
+            .unwrap_or(true)
+    });
+    list.push(serde_json::Value::String(wanted));
+    if *list == before {
+        return Ok(());
+    }
+    let json = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    persist::write_json(&config, &json)
 }
 
 /// Open an http(s) URL in the user's browser (OSC 8 hyperlinks). Only
@@ -306,8 +485,11 @@ fn main() {
             log_path,
             config_load,
             config_save,
+            sessions_load,
+            sessions_save,
             git_branch,
             install_opencode_plugin,
+            opencode_sessions,
             list_subdirs,
             open_url,
             worker_spawn,
@@ -347,8 +529,13 @@ fn main() {
             // socket so it never steals notifications from a running muis.
             let socket = notify_socket_name();
             let handle = app.handle().clone();
-            if let Err(e) = muis_core::notify::serve(&socket, move |req| {
-                let _ = handle.emit("muis-notify", &req);
+            if let Err(e) = muis_core::notify::serve(&socket, move |req| match req {
+                ClientRequest::Notify(req) => {
+                    let _ = handle.emit("muis-notify", &req);
+                }
+                ClientRequest::AgentSession(req) => {
+                    let _ = handle.emit("muis-agent-session", &req);
+                }
             }) {
                 log::warn!("notification endpoint unavailable ({socket}): {e}");
             }
@@ -370,6 +557,63 @@ mod tests {
         assert!(OPENCODE_PLUGIN_FILE.ends_with(".js") || OPENCODE_PLUGIN_FILE.ends_with(".ts"));
         assert_ne!(OPENCODE_PLUGIN_FILE, OPENCODE_PLUGIN_LEGACY);
         assert!(OPENCODE_PLUGIN_SRC.contains(OPENCODE_PLUGIN_MARKER));
+    }
+
+    #[test]
+    fn tui_plugin_is_marked_and_installed_separately() {
+        assert!(OPENCODE_TUI_FILE.ends_with(".mjs"));
+        assert_ne!(OPENCODE_TUI_FILE, OPENCODE_PLUGIN_FILE);
+        assert!(OPENCODE_TUI_SRC.contains(OPENCODE_TUI_MARKER));
+        assert!(OPENCODE_TUI_SRC.contains("muis-agent"));
+    }
+
+    #[test]
+    fn parses_opencode_session_list_json() {
+        let parsed = parse_agent_sessions(
+            r#"[{"id":"ses_a1","title":"Fix it","directory":"/p","extra":1}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed,
+            vec![AgentSession {
+                id: "ses_a1".into(),
+                title: "Fix it".into(),
+                directory: "/p".into(),
+            }]
+        );
+        assert!(parse_agent_sessions("not json").is_err());
+    }
+
+    #[test]
+    fn tui_config_registration_merges_and_is_idempotent() {
+        let root = std::env::temp_dir().join(format!("muis-tui-config-{}", std::process::id()));
+        let plugins = root.join("opencode").join("plugins");
+        std::fs::create_dir_all(&plugins).unwrap();
+        let plugin = plugins.join(OPENCODE_TUI_FILE);
+        std::fs::write(&plugin, OPENCODE_TUI_SRC).unwrap();
+
+        let config = root.join("opencode").join("tui.json");
+        std::fs::write(&config, r#"{"theme":"x","plugin":["someone-else"]}"#).unwrap();
+        register_tui_plugin(&plugin).unwrap();
+        register_tui_plugin(&plugin).unwrap();
+
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        assert_eq!(value["theme"], "x");
+        let list = value["plugin"].as_array().unwrap();
+        assert_eq!(
+            list.iter()
+                .filter(|v| v.as_str() == Some("someone-else"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            list.iter()
+                .filter(|v| v.as_str().is_some_and(|s| s.ends_with(OPENCODE_TUI_FILE)))
+                .count(),
+            1
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

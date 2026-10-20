@@ -39,6 +39,11 @@ pub fn config_file() -> PathBuf {
     config_dir().join("muis.json")
 }
 
+/// Workspaces, tabs, and per-tab agent resume state.
+pub fn sessions_file() -> PathBuf {
+    state_dir().join("sessions.json")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,5 +53,6 @@ mod tests {
         assert!(config_dir().ends_with("muis"));
         assert!(log_dir().ends_with("logs"));
         assert_eq!(config_file(), config_dir().join("muis.json"));
+        assert_eq!(sessions_file(), state_dir().join("sessions.json"));
     }
 }

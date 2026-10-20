@@ -470,3 +470,29 @@ Real PTY per session, OSC 7/0/2 cwd+title tracking, git branch in the
 statusbar, settings dialog, busy/quit confirmations, and the side-panel
 slot. Full list in
 `docs/archive/missing-features.md` → "muis has beyond the mock".
+
+## Session and opencode restore
+
+Implemented on `feature/restore-opencode-sessions`.
+
+- Workspaces, tab order, tab titles/cwds, the active tab, and the current
+  workspace are saved to `~/.local/share/muis/sessions.json` (or `$XDG_STATE_HOME/muis/sessions.json`) and restored
+  on the next launch. A tab closed before quitting is removed immediately
+  and never comes back as a shell.
+- Tabs that were running opencode are relaunched with the session that was
+  on screen, including after `/new` and `/resume`. At most three agent
+  tabs start at once (300 ms apart); the visible tab goes first.
+- Exact tracking comes from the `muis-tui` opencode TUI plugin, which
+  watches the TUI route. The server plugin (`chat.message` /
+  `session.created`) and opencode's `OC | <title>` terminal title are
+  fallbacks.
+- opencode quitting back to a shell clears the tab's saved session, so the
+  next launch restores a plain shell. This relies on OSC 133 command
+  markers, which muis injects only for **fish**. Fish is therefore
+  required for this specific behavior; other shells may still restore the
+  last opencode session after the user quit it.
+- Scrollback is not saved. opencode repaints its own session; plain shells
+  start clean.
+- The helpers are `muis-agent` (session reports, separate from
+  `muis-notify`) and the `muis-tui.mjs` plugin registered from
+  `~/.config/opencode/tui.json` (the user's `tui.jsonc` is not edited).

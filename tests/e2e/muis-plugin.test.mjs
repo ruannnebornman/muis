@@ -49,3 +49,65 @@ test("session.idle without known info still avoids the placeholder", async () =>
   assert.match(joined, /--body opencode has finished/);
   assert.doesNotMatch(joined, /turn finished/);
 });
+
+test("chat.message reports the exact session for resume tracking", async () => {
+  const { calls, $ } = fakeShell();
+  const hooks = await MuisPlugin({ $ });
+  await hooks["chat.message"]({ sessionID: "ses_exact1", agent: "build" });
+  const joined = calls.join("\n");
+  assert.match(joined, /muis-agent session ses_exact1/);
+  assert.doesNotMatch(joined, /--title/);
+});
+
+test("session.created reports a new top-level session but not a subagent", async () => {
+  const { calls, $ } = fakeShell();
+  const hooks = await MuisPlugin({ $ });
+  await hooks.event({
+    event: {
+      type: "session.created",
+      properties: { info: { id: "ses_root", title: "", directory: "/p", parentID: "" } },
+    },
+  });
+  assert.match(calls.join("\n"), /muis-agent session ses_root/);
+
+  calls.length = 0;
+  await hooks.event({
+    event: {
+      type: "session.created",
+      properties: { info: { id: "ses_child", title: "", directory: "/p", parentID: "ses_root" } },
+    },
+  });
+  assert.doesNotMatch(calls.join("\n"), /muis-agent/);
+});
+
+test("agent reports dedupe repeated session ids", async () => {
+  const { calls, $ } = fakeShell();
+  const hooks = await MuisPlugin({ $ });
+  await hooks["chat.message"]({ sessionID: "ses_same" });
+  await hooks["chat.message"]({ sessionID: "ses_same" });
+  const agentCalls = calls.filter((c) => c.includes("muis-agent"));
+  assert.equal(agentCalls.length, 1);
+});
+
+test("session.idle notifies without overriding the TUI route", async () => {
+  const { calls, $ } = fakeShell();
+  const hooks = await MuisPlugin({ $ });
+  await hooks.event({
+    event: {
+      type: "session.updated",
+      properties: { info: { id: "ses_idle", title: "Fix it", directory: "/p" } },
+    },
+  });
+  calls.length = 0;
+  await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_idle" } } });
+  const joined = calls.join("\n");
+  assert.doesNotMatch(joined, /muis-agent/);
+  assert.match(joined, /muis-notify .*--title p/);
+});
+
+test("invalid session ids are never reported", async () => {
+  const { calls, $ } = fakeShell();
+  const hooks = await MuisPlugin({ $ });
+  await hooks["chat.message"]({ sessionID: "not-a-session" });
+  assert.doesNotMatch(calls.join("\n"), /muis-agent/);
+});

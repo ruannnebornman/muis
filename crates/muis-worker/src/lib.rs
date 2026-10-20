@@ -124,6 +124,11 @@ fn spawn_session(
     if let Ok(socket) = std::env::var("MUIS_SOCKET") {
         envs.push(("MUIS_SOCKET".to_string(), socket));
     }
+    // Sibling `muis-agent` path for dev/tarball runs where the helper is
+    // not on PATH yet.
+    if let Ok(bin) = std::env::var("MUIS_AGENT_BIN") {
+        envs.push(("MUIS_AGENT_BIN".to_string(), bin));
+    }
 
     let argv = shell_argv(shell, FISH_INTEGRATION);
     let mut cmd = CommandBuilder::new(&argv[0]);

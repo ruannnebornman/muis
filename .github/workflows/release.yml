@@ -54,7 +54,7 @@ jobs:
         working-directory: src-ui
       - run: npm run build
         working-directory: src-ui
-      - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify
+      - run: cargo build --release --locked -p muis-shell -p muis-worker -p muis-notify -p muis-agent
       - name: Assemble tarball
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -62,7 +62,7 @@ jobs:
           set -euo pipefail
           staging="muis-${VERSION}-x86_64-linux"
           mkdir -p "${staging}/icons"
-          cp target/release/muis target/release/muis-worker target/release/muis-notify "${staging}/"
+          cp target/release/muis target/release/muis-worker target/release/muis-notify target/release/muis-agent "${staging}/"
           cp data/muis.desktop "${staging}/"
           cp data/icons/hicolor/512x512/apps/muis.png "${staging}/icons/muis.png"
           tar -czf "${staging}.tar.gz" "${staging}"
