@@ -1521,22 +1521,29 @@ function renderPanelSlot(): void {
 
 if (IN_TAURI) {
   // Flush the layout before the window closes, not just on the 400 ms
-  // debounce. beforeunload alone may not let an async invoke finish.
+  // debounce, then confirm if a process is still running. The busy check
+  // lives here rather than in beforeunload: WebKitGTK cancels a close
+  // whenever a beforeunload listener exists, and Tauri windows have no
+  // native beforeunload dialog to accept it.
   void getCurrentWindow()
-    .onCloseRequested(async () => {
+    .onCloseRequested(async (event) => {
       await saveNow();
+      const ids = store.workspaces.flatMap((w) => w.tabs.map((t) => t.id));
+      if (!anyTabBusy(activity, ids, Date.now())) return;
+      try {
+        const { confirm } = await import("@tauri-apps/plugin-dialog");
+        const close = await confirm("A process is still running. Close muis anyway?", {
+          title: "Close muis",
+          kind: "warning",
+        });
+        if (!close) event.preventDefault();
+      } catch {
+        // No dialog available: keep the window open rather than kill a run.
+        event.preventDefault();
+      }
     })
     .catch(() => {});
 }
-
-window.addEventListener("beforeunload", (e) => {
-  void saveNow();
-  const ids = store.workspaces.flatMap((w) => w.tabs.map((t) => t.id));
-  if (anyTabBusy(activity, ids, Date.now())) {
-    // WebKit shows its own confirmation dialog.
-    e.preventDefault();
-  }
-});
 
 window.addEventListener("resize", () => {
   const ws = store.currentWorkspace();
