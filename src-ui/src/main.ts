@@ -397,7 +397,7 @@ newTabBtn.addEventListener("click", () => {
 const gearBtn = el("button", "newtab settings", "⚙");
 gearBtn.title = "Settings (ctrl + ,)";
 gearBtn.addEventListener("click", () => openSettings());
-tabbar.append(tabScroller, newTabBtn, gearBtn);
+tabbar.append(newTabBtn, tabScroller, gearBtn);
 const termWrap = document.createElement("div");
 termWrap.className = "term-wrap";
 
