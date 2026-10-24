@@ -14,8 +14,10 @@ covers the architecture, a phased build, and the decisions still open.
   ready, the engine is not.
 - The slot exists: `SidePanelRegistry` (`src-ui/src/panels.ts`) with the
   docked right-side host in `src-ui/src/main.ts` (panel slot at
-  `main.ts:1055`, `panelContent`/`renderPanelSlot` at `main.ts:2304`).
-  Nothing is registered yet.
+  `main.ts:409`, `panelContent`/`renderPanelSlot` at `main.ts:1496`).
+  Nothing is registered yet. The slot is still appended to the column
+  container; it must move into the `.main` row before it can dock on the
+  right.
 - `docs/agent-integration.md` Phase 5 decided that a future Snor would
   run as a **side-panel ACP engine** behind the same pane surface as
   external agents.
@@ -127,6 +129,41 @@ Suggested tier rules:
   memory and prefill time.
 - Store the source URL, file size, and sha256 for each preset so the
   downloader can verify; a custom GGUF skips this path.
+
+## Quality evaluation
+
+Spot check (2026-10-24): all three tiers were asked a recent, obscure
+question ("the new Wakfu class") plus basic facts about the game. Every
+tier got the basic facts wrong (genre and release year) and answered
+with confident specifics instead of admitting ignorance. The correct
+answer (Bellaphone, announced July 2026) is outside their 2024 cutoff;
+the lower tiers fabricate rather than abstain.
+
+| Task | low | medium | high |
+| --- | --- | --- | --- |
+| Explain a Rust E0308 error | correct, one fix | correct, both fixes | correct, both fixes |
+| Summarize a failed test log | correct | correct, concise | correct, concise |
+| Recent world knowledge | fabricated | partly, invented details | confidently wrong |
+| Knows its cutoff | no | says 2024 | says 2024 |
+
+Do not evaluate Snor on world knowledge. It has no internet in v1 and a
+2024 cutoff. Evaluate the tasks it exists for:
+
+1. explain an error;
+2. summarize terminal output;
+3. suggest a command;
+4. answer from explicitly supplied context;
+5. say "unknown" when the context does not contain the answer.
+
+Score each prompt correct / partly / wrong, flag invented facts, and
+record TTFT and tokens/s. A 20-30 prompt fixture is enough; keep it
+opt-in and out of normal CI. `medium` is the minimum for context-heavy
+answers; `low` is fine for short error explanations but tends to give a
+single fix and to invent elsewhere.
+
+System prompt rule to test: "Answer only from the supplied context. If
+it is not there, say you do not know." This is the difference between a
+usable investigation tool and a confident liar.
 
 ## Distribution: optional, like whisper.cpp
 
