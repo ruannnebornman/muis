@@ -1,5 +1,13 @@
 # AI-terminal features: implementation plan
 
+> Archived 2026-10-24. Written against `117c6e8`, when muis still had the
+> ACP agent pane. ACP/agent support was removed in `d925c28` and session
+> restore in `c81f2a8`, so F6–F10, F17–F20 and the ACP parts of F1/F3/F11
+> no longer have a data source. Still-viable ACP-independent ideas
+> (attention status/queue, palette registry, snippets, historical search,
+> worktree sessions, project profiles) should be tracked in
+> `docs/features.md`; this plan is kept for historical context only.
+
 Source: an external design review of what AI terminals, TUIs, and ACP
 clients are adding (2026-10), mapped onto muis and expanded into a
 buildable plan. This is a **planning document, not a commitment**. It is
