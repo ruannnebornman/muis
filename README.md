@@ -53,8 +53,11 @@ cargo run -p muis-shell
 
 - Ctrl+T new tab, × button closes (confirms when a process is busy),
   Ctrl+Shift+F12 focuses the terminal, Ctrl+Shift+F search, Ctrl+, settings.
-- Sessions and tabs are in-memory: quitting closes them. Settings persist in
-  `~/.config/muis/muis.json`.
+- Sessions and tabs are restored on the next launch from
+  `$XDG_STATE_HOME/muis/sessions.json` (default `~/.local/share/muis`).
+  Settings persist in `~/.config/muis/muis.json`. Tabs that were running
+  opencode reopen with the saved session; plain shells start clean because
+  scrollback is not saved.
 - Tabs track `cd` via OSC 7; fish on Veldmuis needs no setup.
 - Quitting with busy tabs asks first.
 - `muis --testmode` opens a throwaway window: it starts from a fresh

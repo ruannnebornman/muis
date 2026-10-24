@@ -59,10 +59,14 @@ Legend: `[x]` settled+locked · `[~]` decided, needs test · `[ ]` open.
   docs, and platform code remain in git history; see `docs/deferred.md`
   before restoring any of them.
 
+## Abandoned
+
+- Making muis the Veldmuis default terminal. Veldmuis ships Konsole; muis
+  is an optional `veldmuis-muis` package. See `docs/deferred.md`.
+
 ## Deferred
 
 Parked until the terminal itself is polished. See `docs/deferred.md`:
 
 - Snor engine (slot API is ready)
-- Make muis the default terminal on Veldmuis
 - neofetch/fastfetch branding

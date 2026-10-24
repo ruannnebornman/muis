@@ -202,8 +202,9 @@
     </nav>
     <div class="side-meta">
       <b>Build</b>
-      v1.4.0 · origin/main<br>
-      2a6eb09 · 2026-10-19
+      v1.6.1 · origin/main<br>
+      463b078 · 2026-10-24<br>
+      content baseline v1.4.0
     </div>
   </aside>
 
@@ -218,10 +219,17 @@
         runtime, protocol, build, tests, and delivery flow.
       </p>
       <div class="meta">
-        <span class="tag"><b>source</b> origin/main @ 2a6eb09</span>
-        <span class="tag"><b>release</b> v1.4.0</span>
-        <span class="tag"><b>updated</b> 2026-10-19</span>
+        <span class="tag"><b>source</b> origin/main @ 463b078</span>
+        <span class="tag"><b>release</b> v1.6.1</span>
+        <span class="tag"><b>updated</b> 2026-10-24</span>
+        <span class="tag"><b>content baseline</b> v1.4.0</span>
         <span class="tag"><b>stack</b> Rust · Tauri 2 · TypeScript · xterm.js</span>
+      </div>
+      <div class="callout warn">
+        <b>Content baseline:</b> generated at v1.4.0, then updated for the
+        Linux-only tree, session restore, the trimmed statusbar, and the
+        removed snapshot/command paths. Test counts and some diagram labels
+        may still lag; verify version-specific details against the code.
       </div>
     </header>
 
@@ -306,22 +314,22 @@
       <text x="414" y="146" class="t2">invoke()  →  #[tauri::command]</text>
       <text x="414" y="168" class="t2">emit()    →  frontend listen()</text>
       <rect x="414" y="182" width="346" height="30" rx="5" class="box"/>
-      <text x="426" y="202" class="t3">worker_* · sessions_* · config_* · snapshot_*</text>
+      <text x="426" y="202" class="t3">worker_* · sessions_* · config_*</text>
 
       <rect x="396" y="246" width="382" height="134" rx="10" class="box2"/>
       <text x="414" y="272" class="t">Shell services</text>
       <text x="414" y="296" class="t2">WorkerPool  ·  one child per session</text>
       <text x="414" y="318" class="t2">notify server  ·  per-user local socket</text>
-      <text x="414" y="340" class="t2">stats sampler  ·  file logging</text>
-      <text x="414" y="362" class="t3">persist.rs  ·  snapshot store/read/remove</text>
+      <text x="414" y="340" class="t2">logging  ·  panic hook</text>
+      <text x="414" y="362" class="t3">persist.rs  ·  config + sessions writes</text>
 
       <rect x="856" y="54" width="348" height="200" rx="10" class="box2"/>
       <text x="874" y="80" class="t">Disk / OS state</text>
       <text x="874" y="106" class="t2">~/.config/muis/muis.json</text>
       <text x="874" y="128" class="t2">~/.local/share/muis/sessions.json</text>
-      <text x="874" y="150" class="t2">~/.local/share/muis/sessions/</text>
-      <text x="874" y="172" class="t3">tab-*.scrollback · logs/muis.log</text>
-      <text x="874" y="194" class="t3">shell I/O · snapshots every 30 s</text>
+      <text x="874" y="150" class="t2">~/.local/share/muis/logs/</text>
+      <text x="874" y="172" class="t3">sessions.json · muis.log</text>
+      <text x="874" y="194" class="t3">sessions saved on change (400 ms)</text>
 
       <rect x="856" y="282" width="348" height="142" rx="10" class="boxP"/>
       <text x="874" y="288" class="t" style="fill:#d3c0ee">Notification clients</text>
@@ -352,7 +360,7 @@
       <text x="54" y="814" class="t2">fish · bash · zsh · sh</text>
       <text x="300" y="814" class="t2">opencode · claude · codex · TUIs</text>
       <text x="54" y="840" class="t3">cwd via OSC 7  ·  title via OSC 0/2  ·  command marks via OSC 133  ·  notifications via OSC 9/777/99</text>
-      <text x="880" y="814" class="t3">256 KiB scrollback ring per PTY</text>
+      <text x="880" y="814" class="t3">base64 output streamed to the UI</text>
       <text x="880" y="838" class="t3">host env inherited from the worker</text>
 
       <path class="lineA" d="M360 150 H396"/>
@@ -375,16 +383,16 @@
       <path class="line" d="M856 144 H796"/>
 
       <path class="dash" d="M300 700 V730 H820 V742"/>
-      <text x="470" y="724" class="t3" style="paint-order:stroke;stroke:#12181c;stroke-width:3px;stroke-linejoin:round">snapshot_store → tab-&lt;id&gt;.scrollback</text>
+      <text x="470" y="724" class="t3" style="paint-order:stroke;stroke:#12181c;stroke-width:3px;stroke-linejoin:round">sessions_save → sessions.json (400 ms debounce)</text>
     </svg>
     <figcaption>Figure 1 — Runtime topology. The UI renders; the shell supervises; workers own PTYs. A worker crash is contained to one session.</figcaption>
   </figure>
 
   <div class="grid g4">
     <div class="stat"><b>4</b><span>Rust crates</span></div>
-    <div class="stat"><b>20</b><span>TS unit-test files</span></div>
+    <div class="stat"><b>22</b><span>TS unit-test files</span></div>
     <div class="stat"><b>5</b><span>CI jobs</span></div>
-    <div class="stat"><b>7</b><span>release jobs</span></div>
+    <div class="stat"><b>3</b><span>release jobs</span></div>
   </div>
 
   <div class="callout">
@@ -416,9 +424,8 @@
       <h4>PTY owner</h4>
       <p>
         One process per session. Opens PTYs with <code>portable-pty</code>,
-        spawns the shell, forwards base64 output, keeps a 256 KiB scrollback
-        ring per PTY, handles resize/kill/snapshot, and exits when stdin reaches
-        EOF so no orphan shells are left behind.
+        spawns the shell, forwards base64 output, handles resize/kill, and
+        exits when stdin reaches EOF so no orphan shells are left behind.
       </p>
     </div>
     <div class="card">
@@ -427,8 +434,7 @@
       <p>
         The <code>muis</code> binary. Hosts the WebView, exposes Tauri
         commands, supervises <code>WorkerPool</code>, serves the notification
-        socket, samples CPU/RAM/GPU, writes diagnostics, and owns config,
-        session, and snapshot persistence.
+        socket, writes diagnostics, and owns config and session persistence.
       </p>
     </div>
     <div class="card">
@@ -491,8 +497,8 @@
   <table>
     <thead><tr><th>Module</th><th>Responsibility</th><th>Notable tests</th></tr></thead>
     <tbody>
-      <tr><td><code>main.ts</code></td><td>Orchestration hub: DOM chrome, xterm surfaces, Tauri transport, settings/palette/context menu, session commands, snapshot loop.</td><td>exercised by browser &amp; native E2E</td></tr>
-      <tr><td><code>worker.ts</code></td><td>Routes frames to per-PTY output/exit/snapshot handlers; dead-session detection.</td><td><code>worker.test.ts</code></td></tr>
+      <tr><td><code>main.ts</code></td><td>Orchestration hub: DOM chrome, xterm surfaces, Tauri transport, settings/palette/context menu, session commands.</td><td>exercised by browser &amp; native E2E</td></tr>
+      <tr><td><code>worker.ts</code></td><td>Routes frames to per-PTY output/exit handlers; dead-session detection.</td><td><code>worker.test.ts</code></td></tr>
       <tr><td><code>ipc.ts</code></td><td>Wire types, base64, line encode/decode; must mirror Rust.</td><td><code>ipc.test.ts</code> + fixture</td></tr>
       <tr><td><code>sessions.ts</code></td><td>SessionStore in the UI: workspaces, tabs, reorder, move tab across sessions, restore.</td><td><code>sessions.test.ts</code></td></tr>
       <tr><td><code>config.ts</code></td><td>AppConfig parsing, per-field fallback, scrollback clamp, theme selection.</td><td><code>config.test.ts</code></td></tr>
@@ -548,11 +554,9 @@
       <tr><td>command</td><td><code>worker_stop</code></td><td>UI → shell</td><td>Kill the session worker and forget it.</td></tr>
       <tr><td>event</td><td><code>muis-worker-event</code></td><td>shell → UI</td><td><code>{ session_id, frame: WorkerToUi }</code> from any worker.</td></tr>
       <tr><td>event</td><td><code>muis-notify</code></td><td>shell → UI</td><td>Notification request received on the local socket.</td></tr>
-      <tr><td>event</td><td><code>system-stats</code></td><td>shell → UI</td><td>CPU / RAM / optional GPU sample every 2 s.</td></tr>
       <tr><td>commands</td><td><code>sessions_load/save</code>, <code>config_load/save</code></td><td>UI ↔ shell</td><td>Raw JSON read/write; the shell validates JSON before writing.</td></tr>
-      <tr><td>commands</td><td><code>snapshot_store/read/remove</code></td><td>UI ↔ shell</td><td>Per-tab scrollback files under the state dir.</td></tr>
-      <tr><td>commands</td><td><code>default_shell</code>, <code>default_cwd</code>, <code>git_branch</code>, <code>sys_info</code>, <code>list_subdirs</code>, <code>command_available</code></td><td>UI → shell</td><td>Host discovery for tabs, statusbar, and the session dialog.</td></tr>
-      <tr><td>commands</td><td><code>open_url</code>, <code>install_opencode_plugin</code>, <code>reset_sessions_and_restart</code>, <code>is_test_mode</code>, <code>log_path</code></td><td>UI → shell</td><td>OSC 8 links, plugin install, danger zone, test mode, diagnostics.</td></tr>
+      <tr><td>commands</td><td><code>default_shell</code>, <code>default_cwd</code>, <code>git_branch</code>, <code>list_subdirs</code></td><td>UI → shell</td><td>Host discovery for tabs, statusbar, and the session dialog.</td></tr>
+      <tr><td>commands</td><td><code>open_url</code>, <code>install_opencode_plugin</code>, <code>opencode_sessions</code>, <code>worker_available</code>, <code>is_test_mode</code>, <code>log_path</code>, <code>debug_report</code></td><td>UI → shell</td><td>OSC 8 links, agent plugin/session lookup, worker probe, test mode, diagnostics.</td></tr>
       <tr><td>command</td><td><code>live_test_command</code></td><td>UI → shell</td><td>Debug-build-only test hook; returns <code>MUIS_TEST_COMMAND</code>.</td></tr>
     </tbody>
   </table>
@@ -577,7 +581,6 @@
           <tr><td><code>spawn</code></td><td><code>pty_id</code>, <code>shell</code>, <code>cwd</code>, <code>cols</code>, <code>rows</code></td></tr>
           <tr><td><code>write</code></td><td><code>pty_id</code>, <code>data_b64</code></td></tr>
           <tr><td><code>resize</code></td><td><code>pty_id</code>, <code>cols</code>, <code>rows</code></td></tr>
-          <tr><td><code>snapshot</code></td><td><code>pty_id</code></td></tr>
           <tr><td><code>kill</code></td><td><code>pty_id</code></td></tr>
         </tbody>
       </table>
@@ -590,7 +593,6 @@
           <tr><td><code>spawned</code></td><td><code>pty_id</code></td></tr>
           <tr><td><code>output</code></td><td><code>pty_id</code>, <code>data_b64</code></td></tr>
           <tr><td><code>exited</code></td><td><code>pty_id</code>, <code>code: number | null</code></td></tr>
-          <tr><td><code>snapshot_data</code></td><td><code>pty_id</code>, <code>data_b64</code></td></tr>
           <tr><td><code>error</code></td><td><code>pty_id</code>, <code>message</code></td></tr>
         </tbody>
       </table>
@@ -695,7 +697,7 @@
 
       <text x="14" y="100" class="grp">01 INIT</text>
       <path class="arrA" d="M140 116 H390"/>
-      <text x="154" y="109" class="msgA">init(): is_test_mode · default_cwd · sys_info</text>
+      <text x="154" y="109" class="msgA">init(): is_test_mode · default_cwd</text>
       <text x="154" y="132" class="note">best-effort; defaults on failure</text>
 
       <text x="14" y="172" class="grp">02 LOAD</text>
@@ -732,7 +734,7 @@
       <text x="654" y="703" class="msgG">PTY output bytes</text>
       <path class="arr" d="M640 742 H390"/>
       <text x="404" y="735" class="msg">{"type":"output","data_b64":…}</text>
-      <text x="404" y="760" class="note">reader thread also appends to the 256 KiB scrollback ring</text>
+      <text x="404" y="760" class="note">reader thread streams base64 output to the UI</text>
       <path class="arrA" d="M390 790 H140"/>
       <text x="154" y="783" class="msgA">muis-worker-event(frame=output)</text>
       <text x="154" y="813" class="note">term.write → OscParser → cwd / title / notify / command state</text>
@@ -753,18 +755,16 @@
       <path class="arrG" d="M640 1078 H890"/>
       <text x="654" y="1071" class="msgG">master.resize(PtySize)</text>
 
-      <text x="14" y="1130" class="grp">08 SNAPSHOT</text>
+      <text x="14" y="1130" class="grp">08 SAVE</text>
       <path class="arrA" d="M140 1146 H390"/>
-      <text x="154" y="1139" class="msgA">snapshot per live tab (every 30 s)</text>
-      <path class="arr" d="M390 1178 H640"/>
-      <text x="404" y="1171" class="msg">{"type":"snapshot"}</text>
-      <path class="arrG" d="M640 1210 H390"/>
-      <text x="404" y="1203" class="msgG">snapshot_data</text>
-      <path class="arr" d="M390 1244 H1135"/>
-      <text x="404" y="1237" class="msg">snapshot_store → sessions/tab-&lt;id&gt;.scrollback</text>
-      <text x="154" y="1278" class="note">read once on restore; replay before live output is trusted</text>
+      <text x="154" y="1139" class="msgA">sessions_save after changes (400 ms debounce)</text>
+      <path class="arr" d="M390 1178 H1135"/>
+      <text x="404" y="1171" class="msg">sessions_save(json)</text>
+      <path class="arrG" d="M1135 1210 H390"/>
+      <text x="404" y="1203" class="msgG">write sessions.json (validated JSON)</text>
+      <text x="154" y="1244" class="note">read once on launch; tabs respawn in their saved cwd</text>
     </svg>
-    <figcaption>Figure 3 — Production startup, steady-state I/O, and the periodic snapshot loop. Restored tabs replay their snapshot before live output is trusted.</figcaption>
+    <figcaption>Figure 3 — Production startup, steady-state I/O, and debounced session saving. Restored tabs respawn in their saved cwd; scrollback is not replayed.</figcaption>
   </figure>
 
   <h3>Lifecycle rules</h3>
@@ -772,13 +772,13 @@
     <thead><tr><th>Event</th><th>What happens</th><th>Where</th></tr></thead>
     <tbody>
       <tr><td>New tab</td><td><code>store.newTab()</code> mints a tab id; <code>ensureView()</code> creates an xterm; <code>spawnTab()</code> ensures the session worker exists and sends <code>spawn</code>.</td><td><code>main.ts</code>, <code>worker.ts</code></td></tr>
-      <tr><td>Restore</td><td>Sessions load from disk. Each tab reads its snapshot once per launch (<code>replayedTabs</code>), spawns a new PTY in the saved cwd, then replays. Input emitted by xterm during replay is dropped.</td><td><code>main.ts</code>, <code>persist.rs</code></td></tr>
-      <tr><td>Output</td><td>Worker reader thread appends to the ring and emits base64. UI writes to xterm, updates activity, feeds the OSC parser, and arms the idle fallback.</td><td><code>muis-worker/src/lib.rs</code>, <code>main.ts</code></td></tr>
+      <tr><td>Restore</td><td>Sessions load from <code>sessions.json</code>. Each tab spawns a new PTY in the saved cwd; opencode tabs relaunch their saved agent session. Scrollback is not saved or replayed.</td><td><code>main.ts</code>, <code>persist.rs</code></td></tr>
+      <tr><td>Output</td><td>Worker reader thread emits base64. UI writes to xterm, updates activity, feeds the OSC parser, and arms the idle fallback.</td><td><code>muis-worker/src/lib.rs</code>, <code>main.ts</code></td></tr>
       <tr><td>Resize</td><td>FitAddon proposes dimensions; UI resizes xterm and sends <code>resize</code>. A per-surface <code>ResizeObserver</code> refits after layout changes (hidden → shown, sidebar, window).</td><td><code>main.ts</code></td></tr>
       <tr><td>Command finished</td><td>OSC 133;D sets exit + duration. Without OSC 133, 500 ms of quiet output is the fallback. The tab label becomes the last command unless the user pinned a title.</td><td><code>commandbar.ts</code>, <code>main.ts</code></td></tr>
       <tr><td>Process exits</td><td>Worker reports <code>exited</code>; UI prints <code>[process exited (code)]</code>. If it was the session's only tab, the session is removed immediately.</td><td><code>main.ts</code> <code>dropSessionIfLastTab</code></td></tr>
-      <tr><td>Close tab</td><td>Busy check (output in the last 60 s, or tab younger than 60 s) asks first. UI kills the PTY, removes the snapshot, disposes xterm, closes the tab. Closing the last tab keeps the session open with zero tabs.</td><td><code>activity.ts</code>, <code>main.ts</code></td></tr>
-      <tr><td>Close session</td><td>Busy check, kill every tab's PTY, remove snapshots, stop the session worker, remove the workspace.</td><td><code>main.ts</code>, <code>bridge.rs</code></td></tr>
+      <tr><td>Close tab</td><td>Busy check (output in the last 60 s, or tab younger than 60 s) asks first. UI kills the PTY, disposes xterm, closes the tab. Closing the last tab keeps the session open with zero tabs.</td><td><code>activity.ts</code>, <code>main.ts</code></td></tr>
+      <tr><td>Close session</td><td>Busy check, kill every tab's PTY, stop the session worker, remove the workspace.</td><td><code>main.ts</code>, <code>bridge.rs</code></td></tr>
       <tr><td>Quit</td><td><code>beforeunload</code> asks if any tab is busy. On shell exit, workers receive stdin EOF and kill their children.</td><td><code>main.ts</code>, <code>muis-worker</code></td></tr>
     </tbody>
   </table>
@@ -866,7 +866,7 @@
     <div class="card"><h4>Sessions sidebar</h4><p>One tile per workspace with color/glyph, tab count, cwd, done badge, reorder drag, context menu, new-session dialog with folder picker and subfolder quick picks.</p></div>
     <div class="card"><h4>Tabbar</h4><p>One tab per PTY, active state, done state, last-command label, close/middle-click, reorder, drag into another session, new-tab and settings buttons.</p></div>
     <div class="card"><h4>Terminal column</h4><p>One xterm surface per tab, a last-command head, WebGL with canvas fallback, FitAddon, SearchAddon, OSC 8 links, bell modes, clipboard modes.</p></div>
-    <div class="card"><h4>Statusbar</h4><p>cwd, git branch, session·tab, user@host, CPU/RAM/GPU, shell, version, clock. Every segment is individually toggleable.</p></div>
+    <div class="card"><h4>Statusbar</h4><p>cwd, git branch, and clock. The config still accepts segment visibility flags, but only these three are rendered.</p></div>
     <div class="card"><h4>Overlays / slots</h4><p>Settings dialog, command palette, session dialog, context menu, search results, and a reserved right-side panel slot (no panel registered yet).</p></div>
   </div>
 
@@ -998,12 +998,12 @@
 
   <h3>State locations</h3>
   <table>
-    <thead><tr><th>Platform</th><th>Config</th><th>State / snapshots</th><th>Logs</th></tr></thead>
+    <thead><tr><th>Platform</th><th>Config</th><th>State</th><th>Logs</th></tr></thead>
     <tbody>
       <tr>
         <td>Linux</td>
         <td><code>$XDG_CONFIG_HOME/muis/muis.json</code> (default <code>~/.config/muis</code>)</td>
-        <td><code>$XDG_STATE_HOME/muis/</code> (default <code>~/.local/share/muis</code>): <code>sessions.json</code>, <code>sessions/tab-*.scrollback</code></td>
+        <td><code>$XDG_STATE_HOME/muis/sessions.json</code> (default <code>~/.local/share/muis</code>)</td>
         <td><code>&lt;state&gt;/logs/muis.log</code></td>
       </tr>
     </tbody>
@@ -1012,6 +1012,7 @@
   <h3>Session JSON</h3>
   <div class="cols">
     <pre><code>{
+  "version": 1,
   "workspaces": [
     {
       "id": "w1",
@@ -1020,7 +1021,8 @@
       "active": 0,
       "tabs": [
         { "id": "t1", "title": "Terminal 1",
-          "cwd": "/home/user", "manual": false }
+          "cwd": "/home/user", "manual": false,
+          "agentSession": "ses_abc123" }
       ]
     }
   ],
@@ -1033,8 +1035,8 @@
         <li><b>IDs are never reused.</b> <code>next_id</code> survives restore and is clamped past every ID found in the file.</li>
         <li><b>Closing the last tab keeps the session.</b> The workspace survives with zero tabs and shows only the <code>+</code> button.</li>
         <li><b>Process exit removes the session</b> when it was the last tab's PTY; manual close does not.</li>
-        <li><b>Restored tabs replay once</b> from their own scrollback file; the tab id is the join key.</li>
-        <li><b>Snapshots are periodic</b> every 30 s for every tab with a live view, plus removal on close.</li>
+        <li><b>Sessions save on change</b> with a 400 ms debounce; the shell validates JSON before writing.</li>
+        <li><b>Scrollback is not saved.</b> Tabs respawn in their saved cwd; opencode tabs relaunch their saved session.</li>
       </ul>
     </div>
   </div>
@@ -1071,8 +1073,7 @@
       <tr><td><code>MUIS_LOG</code></td><td><code>off|error|warn|info|debug|trace</code>; default debug in dev, info in release.</td></tr>
       <tr><td>Log file</td><td>File logger plus panic hook, so a start-up failure still leaves a trace.</td></tr>
       <tr><td><code>debug_report</code></td><td>Frontend stages and errors are logged from the UI (which has no devtools in release).</td></tr>
-      <tr><td><code>muis --testmode</code></td><td>Fresh session, distinct notification socket, never writes sessions/config/snapshots. Shows a “test mode” badge.</td></tr>
-      <tr><td><code>muis --reset-sessions</code></td><td>Deletes saved sessions and snapshots, exits without opening a window.</td></tr>
+      <tr><td><code>muis --testmode</code></td><td>Fresh session, distinct notification socket, never writes sessions/config. Shows a “test mode” badge.</td></tr>
     </tbody>
   </table>
 </section>
@@ -1282,7 +1283,7 @@ npm run test:live:x11 --prefix tests/e2e</code></pre>
       <div class="idx">01</div>
       <div>
         <h4>Rust unit + integration</h4>
-        <p>58 <code>#[test]</code> functions across core, shell, notify, and a real worker roundtrip. Covers session/config/shell rules, all IPC frames and the shared fixture, real PTY echo, snapshot contents, exit-code propagation, and worker isolation.</p>
+        <p>Rust unit and integration tests across core, shell, notify, and a real worker roundtrip. Covers session/config/shell rules, all IPC frames and the shared fixture, real PTY echo, session JSON roundtrips, exit-code propagation, and worker isolation.</p>
       </div>
       <div class="where"><b>Where</b><code>cargo test --workspace --locked</code><br>ubuntu-latest</div>
     </article>
@@ -1314,7 +1315,7 @@ npm run test:live:x11 --prefix tests/e2e</code></pre>
       <div class="idx">05</div>
       <div>
         <h4>Manual / plugin</h4>
-        <p><code>node --test</code> validates the opencode plugin's notification payload with a fake shell. Optionally, <code>live.mjs</code> types into a real KDE Wayland window via ydotool and checks the resulting scrollback snapshot.</p>
+        <p><code>node --test</code> validates the opencode plugin's notification payload with a fake shell. Optionally, <code>live.mjs</code> types into a real KDE Wayland window via ydotool and checks the resulting scrollback output.</p>
       </div>
       <div class="where"><b>Where</b><code>tests/e2e/muis-plugin.test.mjs</code><br><code>npm run test:live --prefix tests/e2e</code><br>KDE Wayland · qdbus6 · spectacle</div>
     </article>
@@ -1673,15 +1674,18 @@ npm run test:live:x11 --prefix tests/e2e</code></pre>
       <ul class="clean">
         <li><b>Session ID = workspace ID.</b> <code>WorkerPool</code> is keyed by it; tabs are <code>pty_id</code>s inside that worker.</li>
         <li><b>Worker spawn is idempotent.</b> Selecting a tab again does not start a second worker.</li>
-        <li><b>Snapshot ids are sanitized.</b> A crafted tab id cannot escape the sessions directory.</li>
+        <li><b>Session and tab ids are never reused.</b> <code>next_id</code> survives restore and is clamped past every id found in the file.</li>
         <li><b>Config/session writes validate JSON</b> before touching disk.</li>
-        <li><b>Test mode never writes</b> real sessions, config, or snapshots.</li>
+        <li><b>Test mode never writes</b> real sessions or config.</li>
       </ul>
     </div>
     <div class="card">
       <h4>Known drift / stale docs</h4>
       <ul class="clean">
-        <li><b>Version sources disagree:</b> <code>tauri.conf.json</code> is 1.5.0; crates and <code>src-ui/package.json</code> are 0.1.0/1.0.0.</li>
+        <li><b>Version sources disagree:</b> <code>tauri.conf.json</code> is 1.6.1; crates and <code>src-ui/package.json</code> are 0.1.0/1.0.0.</li>
+        <li><b>Scrollback snapshots are gone.</b> Sessions persist as <code>sessions.json</code> only; there is no 30 s snapshot loop and no per-tab scrollback file.</li>
+        <li><b>The statusbar is cwd, git branch, and clock.</b> CPU/RAM/GPU and the <code>system-stats</code> event were removed; the config still accepts segment flags for the remaining segments.</li>
+        <li><b>Some counts drift.</b> Test-file and job counts are approximate; the workflows and test directories are authoritative.</li>
         <li><b>Windows, Flatpak, AppImage, and AUR packaging were removed.</b> Only the Veldmuis Linux tarball build remains; older platform notes in this page were pruned with them.</li>
         <li><b>Planning docs mention ACP/agent code that is not in this tree.</b> <code>crates/muis-shell/src/</code> contains only <code>bridge</code>, <code>logging</code>, <code>main</code>, and <code>persist</code>.</li>
         <li><b><code>muis-core</code> session/config structs are not wired into the live shell</b>; the TS store is authoritative for the running app, while the Rust types are exercised by unit tests.</li>
@@ -1696,10 +1700,10 @@ npm run test:live:x11 --prefix tests/e2e</code></pre>
     <thead><tr><th>Path</th><th>Why you would open it</th></tr></thead>
     <tbody>
       <tr><td><code>crates/muis-core/src/ipc.rs</code></td><td>The wire contract. Change this and the TS types + fixture together.</td></tr>
-      <tr><td><code>crates/muis-worker/src/lib.rs</code></td><td>PTY spawn, scrollback ring, shell argv, worker loop.</td></tr>
+      <tr><td><code>crates/muis-worker/src/lib.rs</code></td><td>PTY spawn, shell argv, output pump, worker loop.</td></tr>
       <tr><td><code>crates/muis-shell/src/bridge.rs</code></td><td>One-worker-per-session supervision, stdout pump, stderr capture, death event.</td></tr>
       <tr><td><code>crates/muis-shell/src/main.rs</code></td><td>Tauri commands, notification server, stats sampler, logging.</td></tr>
-      <tr><td><code>crates/muis-shell/src/persist.rs</code></td><td>Session/config writes and scrollback snapshot files.</td></tr>
+      <tr><td><code>crates/muis-shell/src/persist.rs</code></td><td>Session/config writes with JSON validation.</td></tr>
       <tr><td><code>crates/muis-shell/opencode-plugin/muis.js</code></td><td>Auto-installed opencode completion notifier.</td></tr>
       <tr><td><code>src-ui/src/main.ts</code></td><td>Everything the user sees and every UI-side lifecycle path.</td></tr>
       <tr><td><code>src-ui/src/worker.ts</code></td><td>Frame routing and per-PTY callback maps.</td></tr>
@@ -1724,8 +1728,9 @@ npm run test:live:x11 --prefix tests/e2e</code></pre>
 
 <footer>
   Generated from origin/main @ 2a6eb09 (v1.4.0), later updated for the
-  Linux-only target removal. File map, workflow steps, and test counts reflect
-  the tree at those commits. Update this page when the process model, IPC,
+  Linux-only target removal, session restore, and the trimmed statusbar and
+  snapshot/command removals. Some diagram labels and counts may still lag;
+  see the drift list above. Update this page when the process model, IPC,
   build, or release workflows change.
 </footer>
   </main>
