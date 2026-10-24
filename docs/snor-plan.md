@@ -1,7 +1,7 @@
 # Snor: local AI plan
 
 Status: **proposed / research**. Planning document, not a commitment.
-Checked against `main` at `60515eb` (2026-10-19).
+Checked against `main` at `463b078` (v1.6.1, 2026-10-24).
 
 Snor is muis's own local AI: a user-supplied GGUF model loaded by
 llama.cpp and surfaced in the reserved right side panel. This document
@@ -12,19 +12,18 @@ covers the architecture, a phased build, and the decisions still open.
 - `docs/deferred.md` parks the **Snor engine**: the side-panel slot is
   ready, the engine is not.
 - The slot exists: `SidePanelRegistry` (`src-ui/src/panels.ts`) with the
-  docked right-side host in `src-ui/src/main.ts` (panel slot at
-  `main.ts:1055`, `panelContent`/`renderPanelSlot` at `main.ts:2304`).
+  docked right-side host in `src-ui/src/main.ts` (`panelSlot` at
+  `main.ts:409`, `panelContent`/`renderPanelSlot` at `main.ts:1496-1517`).
   Nothing is registered yet.
-- `docs/agent-integration.md` Phase 5 decided that a future Snor would
-  run as a **side-panel ACP engine** behind the same pane surface as
-  external agents.
-- The ACP pane for external agents (opencode) is implemented separately;
-  it is not local inference.
+- An earlier agent-integration plan (since removed from the tree) decided
+  that a future Snor would run as a **side-panel ACP engine**. The ACP
+  pane itself was also removed; muis now integrates external agents only
+  through their terminal TUIs and the notification/restore hooks.
 - There is **no** existing plan for llama.cpp, GGUF loading, model
   download, GPU offload, or local inference anywhere in the docs.
 
 So Snor is a new workstream. It should refine the deferred Snor line, not
-replace the external-agent work.
+replace the terminal-agent work.
 
 ## Goal
 
@@ -41,7 +40,7 @@ the terminal's process model.
 
 ## Non-goals (for v1)
 
-- Replacing external agents or the ACP pane.
+- Replacing terminal agents (opencode and friends).
 - Running a shell command or editing files automatically.
 - Shipping model weights with muis.
 - Making the model part of `muis-worker` or the UI process.
@@ -201,23 +200,23 @@ v1 is read-only. Then, in order:
 2. approval-gated tools (read file, run command, edit);
 3. only then a real ACP adapter or a second tool/permission UI.
 
-If Snor must act on files or commands, prefer implementing ACP and
-reusing the existing ACP pane over building a parallel tool surface.
+If Snor must act on files or commands, prefer reintroducing ACP and
+reusing a shared agent surface over building a parallel tool UI.
 
 ## ACP fork
 
-`docs/agent-integration.md` already decided that Snor would be a
-side-panel ACP engine. That is the right surface **if Snor is an agent**.
-For a read-only chat assistant it adds session/tool/permission semantics
-that are not needed.
+An earlier agent-integration plan (removed from the tree) decided Snor
+would be a side-panel ACP engine. The ACP pane is no longer present, so
+that decision would have to be re-made. ACP is the right surface **if
+Snor is an agent**; for a read-only chat assistant it adds
+session/tool/permission semantics that are not needed.
 
 Recommendation:
 
 - **v1:** custom side-panel chat with a small streaming API.
-- **If Snor must act:** implement ACP and reuse the existing pane.
+- **If Snor must act:** reintroduce ACP and reuse one shared agent surface.
 
-Revise the Phase 5 decision if v1 is chat-only; keep it if the goal is a
-local coding agent.
+Treat the old Phase 5 decision as historical; it no longer constrains v1.
 
 ## Questions and concerns
 
@@ -225,9 +224,9 @@ local coding agent.
    "summarize this output"), or a real agent that can read files, edit,
    and run commands? This decides custom chat vs ACP and changes the
    effort from days to weeks.
-2. **ACP conflict.** `docs/agent-integration.md` says Snor is a
-   side-panel ACP engine. Custom chat revises that decision. Is that
-   acceptable, or should ACP stay the target surface?
+2. **ACP surface.** The old plan targeted a side-panel ACP engine, but ACP
+   was removed with the rest of the agent pane. Is a custom chat the v1
+   surface, or should ACP be reintroduced first?
 3. **Embedded vs external.** "From extra" is Arch-only and keeps GPU
    builds out of muis. Embedding gives portability but brings
    C++/CUDA/Vulkan build and packaging complexity. Is the first target
@@ -261,5 +260,5 @@ local coding agent.
 12. **Testing.** No GPU or large model in CI. Tests need a fake backend
     and, if needed, a tiny GGUF fixture. Keep inference tests opt-in.
 13. **Docs ownership.** This plan should become the canonical Snor
-    document. The deferred entry and the Phase 5 ACP decision should link
-    here once the open decisions are resolved.
+    document. The deferred entry should link here once the open decisions
+    are resolved.
