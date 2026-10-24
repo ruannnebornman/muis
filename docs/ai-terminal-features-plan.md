@@ -4,7 +4,7 @@ Source: an external design review of what AI terminals, TUIs, and ACP
 clients are adding (2026-10), mapped onto muis and expanded into a
 buildable plan. This is a **planning document, not a commitment**. It is
 the "what if we did all of it" version; the decisions still live in
-`docs/features.md`, `ROADMAP.md`, and `docs/deferred.md`, and nothing here
+`docs/archive/features.md`, `ROADMAP.md`, and `docs/deferred.md`, and nothing here
 overrides them.
 
 Scope note: the review contained ~20 distinct ideas. Most overlap heavily

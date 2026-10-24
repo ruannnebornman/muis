@@ -1,7 +1,7 @@
 # muis bugfixes
 
 Reported bugs and small fixes. Documentation only — the implementation
-agent fixes these. Feature requests live in `docs/features.md`, parked
+agent fixes these. Feature requests live in `docs/archive/features.md`, parked
 work in `docs/deferred.md`, and the settled state in `ROADMAP.md`.
 
 ## Date/time in the status bar needs refinement
@@ -71,7 +71,7 @@ sidebar — survives for later even when there is no active work.
 - Persistence: `SessionStore.toJSON`/`fromJSON` already round-trip an
   empty-tab workspace, so a kept session must survive restart.
 - Distinguish from process exit: the decided behavior in
-  `docs/features.md` ("Kill the session when its last tab dies") still
+  `docs/archive/features.md` ("Kill the session when its last tab dies") still
   tears a session down when its last tab's *process exits*
   (`dropSessionIfLastTab`, `src-ui/src/main.ts:685-706`). This request
   is about the user closing the tab. Whether a pty exit should also
@@ -96,7 +96,7 @@ right (most right).
   logic changes. The `marginLeft:auto` spacer (index 4,
   `src-ui/src/main.ts:1052`) stays unless the left group changes.
 - Complements the bottom-left reorder already decided in
-  `docs/features.md`.
+  `docs/archive/features.md`.
 
 ## Middle-click a tab should close it
 
@@ -227,7 +227,7 @@ quick-pick locations, instead of any `window.prompt`.
 - Keep a typed-path fallback behind the `IN_TAURI` guard so the browser
   preview and the Selenium suite still work without the native picker.
 - This is the visual/UX half of "Native folder picker for new sessions"
-  in `docs/features.md`; the button colour is tracked separately there.
+  in `docs/archive/features.md`; the button colour is tracked separately there.
 
 ## Agent-finished desktop notification says only "turn finished"
 
