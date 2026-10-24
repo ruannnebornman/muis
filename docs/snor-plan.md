@@ -1,7 +1,8 @@
 # Snor: local AI plan
 
 Status: **proposed / research**. Planning document, not a commitment.
-Checked against `main` at `60515eb` (2026-10-19).
+Checked against `main` at `463b078` (2026-10-24); the Phase 0 spike in
+this document ran on that commit.
 
 Snor is muis's own local AI: a user-supplied GGUF model loaded by
 llama.cpp and surfaced in the reserved right side panel. This document
@@ -43,7 +44,8 @@ the terminal's process model.
 
 - Replacing external agents or the ACP pane.
 - Running a shell command or editing files automatically.
-- Shipping model weights with muis.
+- Giving the model internet access or network tools in v1.
+- Shipping the engine, its GPU backend, or model weights with muis.
 - Making the model part of `muis-worker` or the UI process.
 - Supporting every GPU/runtime combination on day one.
 
@@ -93,6 +95,91 @@ can replace it later without changing the panel or the request protocol.
 Long-term embedding keeps the install self-contained (single artifact),
 but it is the harder build problem and should not block v1.
 
+## Model tiers (v1)
+
+Three presets, all GGUF Q4_K_M and Apache-2.0, with **`low` as the
+default**. A tier only supplies defaults; `snor.modelPath` always wins.
+
+| Tier | Model | File | Params | VRAM @ 8k | pp512 | gen | Role |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| low (default) | Qwen2.5-1.5B-Instruct | 1.04 GiB | 1.78B | 1.2 GB | 1018 t/s | 112-124 t/s | fast, CPU fallback |
+| medium | Qwen3-4B-Instruct-2507 | 2.32 GiB | 4.02B | 3.6 GB | 476 t/s | 62 t/s | best quality/speed |
+| high | Qwen3-8B | 4.68 GiB | 8.19B | 5.7 GB | 221 t/s | 32 t/s | hard errors, opt-in |
+
+Measured on the GTX 1080 Ti with Vulkan; see the spike results for
+method. CPU-only is only viable for `low` (about 10 t/s). `medium` is
+the quality sweet spot, while `low` is the default because it is small,
+fast, and usable without a GPU. Qwen3-8B is a hybrid thinking model:
+disable thinking by default and expose a toggle later.
+
+Why these files are larger than whisper's: whisper's `small` model is a
+244M-parameter audio encoder/decoder (about 466 MB) built for one narrow
+task. A chat model needs world knowledge and instruction following, so
+even the 1.78B low tier is about 1 GiB. The Arch `whisper-cpp` package
+itself is only 3.42 MiB because it contains binaries and libraries, not
+weights.
+
+Suggested tier rules:
+
+- Auto-pick from **free** VRAM on first run: under 4 GB `low`, 4-8 GB
+  `medium`, over 8 GB `high`; CPU-only forces `low`.
+- Keep `ctx-size` at 8192 for all tiers; a larger context costs KV
+  memory and prefill time.
+- Store the source URL, file size, and sha256 for each preset so the
+  downloader can verify; a custom GGUF skips this path.
+
+## Distribution: optional, like whisper.cpp
+
+Verified precedent: the Arch `whisper-cpp` package is 3.42 MiB and ships
+binaries, headers, and libraries only, with no GGML weights. Backends
+are separate `ggml-*` packages, and models are fetched at runtime by
+upstream's `models/download-ggml-model.sh` or by the frontend's model
+manager.
+
+Snor follows the same split:
+
+- The engine is an optional runtime dependency: `llama-cpp` for the
+  server and `ggml-vulkan` (or `ggml-cuda`) for GPU offload. The base
+  muis install and startup do not change.
+- Weights are never bundled or shipped in the repo or package. Settings
+  provides an explicit **Download** for the selected tier with size,
+  progress, resume, sha256 verification, and **Delete**. A **Browse**
+  action accepts any user GGUF. No implicit downloads at launch or on
+  first prompt.
+- If the engine is missing, the panel shows a disabled state with the
+  exact install hint. The app does not run `pacman` or escalate with
+  sudo.
+- The existing dialog plugin handles the file picker. The default model
+  directory is `~/.local/share/muis/models/`, configurable in settings.
+- Flatpak bundles the server and its shared libraries in an extension
+  and must not assume a host `llama-server`. Windows stays deferred.
+- CI uses the fake backend. Normal CI downloads no models; the tiny-GGUF
+  smoke test is manual and opt-in.
+
+## Network and internet access
+
+The model has no network agency. `llama-server` serves tokens and makes
+no outbound requests; v1 is offline, loopback-only, and read-only. The
+process can reach the network at the OS level, but nothing in the design
+uses it.
+
+If internet access is wanted later, add it as an explicit capability,
+not a model setting:
+
+1. **Context injection first.** An "add URL" or "search result" action
+   in the panel: `muis-shell` fetches with an allowlist, strips HTML,
+   shows a context chip, and the user approves. The model never emits a
+   URL that is fetched automatically.
+2. **Approval-gated tools later (Phase 5).** The model requests
+   search/fetch; the shell executes with per-call approval, an egress
+   allowlist, size/time limits, no credentials, and redaction.
+
+Design for prompt injection in fetched pages, SSRF (the fetcher must
+block private, loopback, and metadata ranges), data exfiltration through
+URLs or query strings, and secrets already present in terminal context.
+Never execute commands suggested by fetched content. Prefer ACP if Snor
+becomes fully agentic.
+
 ## Phases
 
 ### Phase 0 - spike
@@ -110,6 +197,52 @@ but it is the harder build problem and should not block v1.
 Deliverable: a short spike note appended to this document, plus a
 recommendation on the ACP question below.
 
+### Phase 0 spike results (2026-10-24)
+
+Environment: Arch, `llama-cpp` 0.6.0-1 (build b11429), `ggml-vulkan`
+0.26.0-1, GTX 1080 Ti (11 GiB) with the Vulkan backend, i7-8700K, 31 GiB
+RAM. Models were downloaded from Hugging Face and their sha256 checked
+against the hub metadata.
+
+| Model | File | Params | VRAM @ 8k | pp512 | tg |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Qwen2.5-1.5B-Instruct Q4_K_M | 1.04 GiB | 1.78B | 1.2 GB | 1018 t/s | 112-124 t/s |
+| Qwen3-4B-Instruct-2507 Q4_K_M | 2.32 GiB | 4.02B | 3.6 GB | 476 t/s | 62 t/s |
+| Qwen3-8B Q4_K_M | 4.68 GiB | 8.19B | 5.7 GB | 221 t/s | 32 t/s |
+
+- CPU fallback (i7-8700K): the 1.5B generates about 9.6 t/s; 4B and 8B
+  are not usable interactively. `low` is therefore also the CPU tier.
+- Cold start with warm shader cache: 1.6 s / 8 s / 7.5 s. The first run
+  can add shader compilation time. A missing model path exits nonzero
+  with a clear error.
+- Prefill dominates the UX on large scrollback. At 8k context a
+  ~2k-token prompt costs roughly 1.5 s (1.5B), 5 s (4B), and 11 s (8B)
+  before the first token.
+- Streaming on `/v1/chat/completions` works; first token is 65-95 ms on
+  short prompts. `/health` is the readiness check. Consecutive requests
+  reuse the server and prefix cache.
+- `--api-key` returns 401 without the key and the bind is loopback-only.
+  This build serves its web UI on `/` but only with gzip, which browsers
+  send; there is no `--no-webui` flag, so rely on loopback + key and
+  revisit when llama.cpp exposes a disable switch.
+- Cancellation: closing the stream aborts the task immediately (the log
+  records `cancel task`); the next request was served in 44 ms.
+- `-c` is **per slot**. The default `--parallel 4` allocates four
+  contexts and splits VRAM and attention; `--parallel 1` is the right
+  default for Snor.
+- Streaming chat throughput is a little below `llama-bench`: about
+  90 / 48 / 27 t/s for low / medium / high.
+- Router mode (`--models-dir`, `--models-max 1`) can expose several
+  models from one server and load them on demand. Useful for comparing
+  tiers while testing, not required for v1.
+
+Reproduction shape:
+`llama-server --host 127.0.0.1 --port <p> --api-key <k> -m <gguf>
+-c 8192 --parallel 1 -ngl 99`.
+
+Not tested: out-of-VRAM model load, 7B/14B alternatives, tool calling
+(out of scope for v1), long idle memory behaviour, and Flatpak/Windows.
+
 ### Phase 1 - process supervisor
 
 New `crates/muis-shell/src/snor.rs` (or a `snor` module beside the
@@ -117,12 +250,17 @@ existing bridge):
 
 - lazy start on first Snor use, not at app launch;
 - allocate a free loopback port, then spawn `llama-server` with
-  `--host 127.0.0.1`, `--port`, `--api-key`, `--model`, `--ctx-size`,
-  `--n-gpu-layers`, and the package-supported flags for the web UI;
-- health check before the first prompt;
+  `--host 127.0.0.1`, `--port`, `--api-key`, `--model`, `--ctx-size`
+  (per slot), `--n-gpu-layers`, and `--parallel 1`;
+- health check (`/health`) before the first prompt;
 - reap the child on natural exit, restart on crash, kill on app exit;
-- one prompt at a time initially, with a visible queue; later allow
-  `--parallel` if the memory budget supports it;
+- one prompt at a time (`--parallel 1`) with a visible queue; later
+  allow `--parallel N` only if the extra KV fits in free VRAM;
+- cancel by closing the streaming connection; the spike confirmed the
+  task aborts immediately and the next request is served;
+- this build serves a web UI on `/` and has no `--no-webui` flag, so
+  keep the loopback bind and per-launch key; revisit when llama.cpp
+  exposes a disable switch;
 - requests stay stateless: send the conversation history on each turn.
   llama-server slots are an implementation detail, not the source of
   truth.
@@ -149,7 +287,9 @@ Proposed fields (group under one `snor` object, or keep flat `snor*`
 keys if the config format stays flat):
 
 - `snor.enabled` (default `false`);
-- `snor.modelPath` (user-selected GGUF; empty means unconfigured);
+- `snor.modelTier` (`low` | `medium` | `high`; default `low`);
+- `snor.modelPath` (user-selected GGUF; overrides the tier; empty means
+  unconfigured);
 - `snor.serverPath` (optional override; otherwise probe `llama-server`);
 - `snor.contextSize`;
 - `snor.gpuLayers` (default from a small hardware probe, with CPU
@@ -162,7 +302,9 @@ Model and server path validation belongs in the shell, not only the
 settings dialog. Use the existing dialog plugin for the file picker.
 Model files live wherever the user puts them; a default under
 `~/.local/share/muis/models/` is fine but must be configurable. Do not
-download models implicitly.
+download models implicitly. Download is an explicit settings action with
+the source URL, size, and sha256 stored in app metadata; a custom
+`modelPath` bypasses the downloader.
 
 ### Phase 3 - side-panel UI
 
@@ -193,6 +335,10 @@ contains secrets.
 - CI: fake backend for unit tests; no model downloads in normal CI; an
   optional manual tiny-GGUF smoke job.
 
+Packaging follows the whisper.cpp split: the engine is optional and
+weights are never bundled; the settings dialog owns an explicit
+download. See "Distribution: optional, like whisper.cpp".
+
 ### Phase 5 - actions (only if wanted)
 
 v1 is read-only. Then, in order:
@@ -218,6 +364,27 @@ Recommendation:
 
 Revise the Phase 5 decision if v1 is chat-only; keep it if the goal is a
 local coding agent.
+
+## Decisions (2026-10-24)
+
+The Phase 0 spike settles the v1 surface, backend, and distribution:
+
+- **Surface:** custom side-panel chat. No ACP session, tool, or
+  permission semantics in v1. Revisit ACP only if Snor must read, edit,
+  or run things.
+- **Backend:** supervised `llama-server` child from Arch `llama-cpp`
+  with the Vulkan backend, started lazily on first use.
+- **Default tier:** `low` (Qwen2.5-1.5B-Instruct Q4_K_M). `medium` and
+  `high` are opt-in; `snor.modelPath` overrides every tier.
+- **Concurrency:** one prompt at a time (`--parallel 1`) with a visible
+  queue. Cancel by closing the stream.
+- **Privacy:** no tools, no shell, and no network in v1. Context is
+  explicit, token-budgeted, and visible.
+- **Distribution:** engine and weights stay out of the base install; the
+  settings menu performs an explicit download and never bundles or
+  fetches implicitly.
+- **Lifecycle:** one shared server per app, lazy start. The unload
+  policy (close panel, idle timeout, or keep resident) is still open.
 
 ## Questions and concerns
 
@@ -263,3 +430,10 @@ local coding agent.
 13. **Docs ownership.** This plan should become the canonical Snor
     document. The deferred entry and the Phase 5 ACP decision should link
     here once the open decisions are resolved.
+14. **Internet access.** Should the model be able to search or fetch at
+    all? v1 says no: the engine has no egress and the model cannot emit
+    a URL that is fetched automatically. Later, prefer explicit context
+    injection over tool calling. See "Network and internet access".
+
+Questions 1-5, 7, 10, and 11 are settled for v1 by the decisions above;
+6 (unload policy), 8, 9, 12, and 13 remain open implementation work.
