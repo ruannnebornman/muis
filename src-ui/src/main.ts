@@ -1270,15 +1270,24 @@ function focusActiveTerminalOnSelect(): void {
 
 function sessionElement(w: Workspace, selected: boolean): HTMLElement {
   const idx = store.workspaces.indexOf(w);
-  const d = el("div", "session" + (selected ? " active" : ""));
+  // A session with no tabs has no work open; grey it out so the active
+  // sessions stand out.
+  const empty = w.tabs.length === 0;
+  const d = el("div", "session" + (selected ? " active" : "") + (empty ? " empty" : ""));
   d.dataset.i = String(idx);
   const col = colorFor(w.name);
   // Finished background tabs in hidden sessions surface as a badge.
   const doneN = selected ? 0 : w.tabs.filter((t) => isTabDone(t.id)).length;
   const icon = el("div", "s-icon", sessionGlyph(w.name));
-  icon.style.background = `${col}22`;
-  icon.style.color = col;
-  icon.style.border = `1px solid ${col}55`;
+  if (empty) {
+    icon.style.background = "#2d3237";
+    icon.style.color = "var(--dim)";
+    icon.style.border = "1px solid #3a4147";
+  } else {
+    icon.style.background = `${col}22`;
+    icon.style.color = col;
+    icon.style.border = `1px solid ${col}55`;
+  }
   const meta = el("div", "s-meta");
   meta.append(
     el("div", "s-name", w.name),
