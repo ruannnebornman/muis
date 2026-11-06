@@ -1,9 +1,11 @@
 # muis rollout plan
 
-> Archived 2026-10-04. Rollout executed: Arch/Veldmuis package, AppImage,
-> Flatpak, AUR, and Windows zip all ship. Remaining items (website, code
-> signing, aarch64, auto-update, Flatpak distribution) are recorded in
-> `docs/deferred.md`.
+> Archived 2026-10-04. Superseded 2026-10-20: Windows, Flatpak, AppImage,
+> and AUR packaging were removed, and making muis the Veldmuis default
+> terminal was abandoned. Only the Veldmuis Linux tarball ships now. The
+> status, phases, and artifact sections below describe the earlier
+> multi-channel plan and are historical; see `docs/deferred.md` for the
+> current state.
 
 Goal: ship muis through these artifacts and one future channel.
 
