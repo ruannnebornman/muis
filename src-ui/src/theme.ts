@@ -25,14 +25,21 @@ export const MUIS_THEME = {
 
 /** Stable color per name — rename something and its color follows (mock). */
 const PALETTE = [
-  "#7aa2f7",
-  "#9ece6a",
-  "#e0af68",
-  "#bb9af7",
-  "#7dcfff",
-  "#f7768e",
-  "#56b6c2",
-  "#c678dd",
+  "#7aa2f7", // blue
+  "#9ece6a", // green
+  "#e0af68", // yellow
+  "#bb9af7", // purple
+  "#7dcfff", // cyan
+  "#f7768e", // pink
+  "#56b6c2", // teal
+  "#c678dd", // magenta
+  "#ff9e64", // orange
+  "#f75f5f", // red
+  "#b9f27c", // lime
+  "#5eead4", // aquamarine
+  "#818cf8", // indigo
+  "#e879f9", // fuchsia
+  "#fda4af", // rose
 ];
 
 function paletteIndex(name: string): number {

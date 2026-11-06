@@ -31,6 +31,13 @@ describe("muis theme", () => {
     for (const name of names) expect(reordered.get(name)).toBe(colors.get(name));
   });
 
+  it("has 15 palette slots and can color 15 sessions distinctly", () => {
+    const names = Array.from({ length: 15 }, (_, i) => `session-${i}`);
+    const colors = sessionColorMap(names);
+    expect(new Set(colors.values()).size).toBe(15);
+    expect(colorFor("")).toBe("#7aa2f7");
+  });
+
   it("ships the mock themes plus the default", () => {
     expect(themeNames()).toEqual([
       "default",
