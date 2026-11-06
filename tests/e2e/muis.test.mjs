@@ -413,4 +413,25 @@ describe("muis chrome", () => {
     await waitForTerminalFocus();
     await shot("20-ctrl-t-focused");
   });
+
+  it("only shows the attention dot for unseen background work", async () => {
+    // A fresh session has no finished work, so its row stays quiet.
+    await createSession("e2e-attention-a");
+    const sessions = await driver.findElements(By.css(".session"));
+    const fresh = sessions[sessions.length - 1];
+    assert.equal((await fresh.findElements(By.css(".s-dot"))).length, 0);
+    assert.equal((await fresh.findElements(By.css(".s-badge"))).length, 0);
+
+    // Backgrounding that idle session must not invent an indicator either.
+    await createSession("e2e-attention-b");
+    await driver.wait(
+      async () => (await driver.findElements(By.css(".session"))).length >= 2,
+      5000,
+    );
+    const all = await driver.findElements(By.css(".session"));
+    const backgrounded = all[all.length - 2];
+    assert.equal((await backgrounded.findElements(By.css(".s-dot"))).length, 0);
+    assert.equal((await backgrounded.findElements(By.css(".s-badge"))).length, 0);
+    await shot("21-idle-session-no-dot");
+  });
 });

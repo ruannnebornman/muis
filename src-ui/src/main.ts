@@ -1285,11 +1285,12 @@ function sessionElement(w: Workspace, selected: boolean): HTMLElement {
     el("div", "s-sub", `${w.tabs.length} tab${w.tabs.length === 1 ? "" : "s"} · ${shortPath(w.dir)}`),
   );
   d.append(icon, meta);
-  if (doneN > 0) d.append(el("span", "s-badge", String(doneN)));
-  const dot = el("div", "s-dot" + (doneN > 0 ? " notify" : ""));
-  dot.style.background = col;
-  dot.style.boxShadow = `0 0 8px ${col}`;
-  d.append(dot);
+  // Only unfinished work the user has not seen gets the count + dot. An
+  // idle session has no indicator so the sidebar stays quiet.
+  if (doneN > 0) {
+    d.append(el("span", "s-badge", String(doneN)));
+    d.append(el("div", "s-dot notify"));
+  }
   d.addEventListener("click", () => {
     store.switch(idx);
     renderAll();
