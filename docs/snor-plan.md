@@ -216,6 +216,112 @@ URLs or query strings, and secrets already present in terminal context.
 Never execute commands suggested by fetched content. Prefer ACP if Snor
 becomes fully agentic.
 
+## Panel UX (v1)
+
+The dock exists but is not wired: `panelSlot` is appended to `#app` (a
+column), so it renders under the terminal. Move it into `.main` after
+`center`, make it resizable (default 360-420 px), remember the width per
+workspace, and add a toggle shortcut plus a statusbar button.
+`SidePanelRegistry` needs a render callback or event so a registered
+panel can own its body.
+
+Layout:
+
+- header: Snor title, model/tier, server status, context scope, close;
+- context row: removable chips for everything attached to the request
+  (`tab`, `workspace`, `opencode`, `docs`, `scrollback`);
+- transcript: streaming output, stop, clear, retry, copy;
+- composer: send, shortcut, queue indicator (one prompt at a time);
+- sources: clickable file paths and session titles used for the answer;
+- unconfigured state: "local AI is not installed or configured" with
+  settings and install hints.
+
+One Snor agent and one conversation per workspace in v1. No ACP, no
+multi-agent thread sidebar. Closing the panel does not stop the
+terminal.
+
+Keep `low` as the global default. Workspace and session questions are
+context-heavy: the panel offers a one-click switch to `medium` (and
+remembers it for that workspace) when a context chip is added.
+
+## Workspace and opencode context
+
+Snor should answer questions like:
+
+- "How far is the opencode task `Remaining tasks in snor-plan.md`?"
+- "Summarize what we are doing in that session."
+- "Across the opencode sessions in this muis session, which feature doc
+  is not being built on?"
+
+The model cannot look any of this up. `muis-shell` must resolve the
+state and pass a compact card; the model only synthesizes and explains.
+Do not let it perform the join, filtering, or arithmetic.
+
+### Context providers
+
+Add a `ContextProvider` interface in `muis-shell`. Each provider returns
+a small typed card with a title, items, token estimate, and redactions:
+
+- `terminal`: active tab, cwd, selection, optionally the last N
+  scrollback lines;
+- `workspace`: repo root, branch, worktrees, git status/diff summary,
+  open PRs;
+- `docs`: docs files, last edit, related worktree/branch/PR;
+- `opencode`: sessions, todos, recent prompts, assistant summaries,
+  files edited.
+
+The UI attaches cards as chips. Providers run in the shell; the UI does
+not read files or use the network.
+
+### opencode data
+
+Prefer the muis opencode plugin as the source. It already reports the
+session id, title, and directory; extend it to push a compact index on
+`session.created`, `session.idle`, and todo changes. That gives live
+session and todo state without reading private storage.
+
+Fallback: read `~/.local/share/opencode/opencode.db` read-only, behind a
+provider and a schema/version check. Never write. Use a read-only
+connection and tolerate WAL. The DB is large (about 2 GB here); query by
+session and time, not full scans. A prototype over the last 7 days found
+23 muis sessions and the Snor session at 93 messages / 381 parts.
+
+### Deterministic commands
+
+The shell resolves these; the model never chooses the query:
+
+- `/task <name>`: find the session, list todos (done/total), last
+  activity, files edited, and the recent assistant summary;
+- `/todos`: todo progress for the current session;
+- `/sessions`: recent sessions in this workspace with title, dir,
+  status, and last activity;
+- `/docs`: docs edited recently vs docs with no recent edit and no open
+  worktree, branch, or PR;
+- `/diff`, `/worktrees`: git state;
+- `/summarize`: current session or selected scrollback.
+
+For "which doc is not being built on", compute the join in code: a doc
+is idle when no recent session edited it **and** no worktree, branch, or
+PR references it. References alone are not enough; in the prototype
+every non-archive doc was merely referenced within 7 days.
+
+### Budget and privacy
+
+- Default to a 1-2k-token card; 4B prefill is about 5 s at 2k tokens.
+  For long sessions use last-N turns plus files and todos, or map-reduce.
+- Exclude raw tool output by default; include it only on request.
+- Scope to the current workspace by default; global sessions need an
+  explicit chip.
+- Show every attached item, redact secrets before sending, and keep the
+  conversation local.
+
+### Scope
+
+v1 ships curated providers and the commands above: no free-form
+retrieval and no tools. The first tool slice is read-only and
+approval-gated (`opencode_sessions`, `opencode_todos`, `read_doc`,
+`git_status`). Writes and command execution stay in Phase 5.
+
 ## Phases
 
 ### Phase 0 - spike
@@ -344,21 +450,26 @@ the source URL, size, and sha256 stored in app metadata; a custom
 
 ### Phase 3 - side-panel UI
 
-Register a `snor` panel through `SidePanelRegistry` and render it in the
-existing slot:
+Register a `snor` panel through `SidePanelRegistry`. First fix the dock:
+`panelSlot` currently sits below the main row; move it into `.main`,
+make it resizable, and add a toggle. See "Panel UX (v1)".
 
 - chat input, streaming output, stop, clear, model/status header;
 - a visible "not configured" state with a link to settings;
 - context chips showing exactly what is attached to the request;
+- quick actions and slash commands (`/task`, `/todos`, `/sessions`,
+  `/docs`, `/diff`, `/worktrees`, `/summarize`);
 - a shortcut and a statusbar/server indicator;
 - per-workspace conversation persistence, restored on reopen.
 
-Context builder:
+Context builder (see "Workspace and opencode context"):
 
 - current workspace directory and git branch;
 - active tab title and cwd;
 - selected text;
-- optionally the last N lines of scrollback, with an explicit toggle.
+- optionally the last N lines of scrollback, with an explicit toggle;
+- the opencode session index and todo progress;
+- docs edited recently vs idle docs.
 
 Send a token-budgeted subset, never the whole buffer silently. Show what
 was included so the user can remove it. Terminal output routinely
@@ -380,8 +491,11 @@ download. See "Distribution: optional, like whisper.cpp".
 v1 is read-only. Then, in order:
 
 1. "insert this command into the prompt" with an explicit user action;
-2. approval-gated tools (read file, run command, edit);
-3. only then a real ACP adapter or a second tool/permission UI.
+2. approval-gated **read-only** tools first (`opencode_sessions`,
+   `opencode_todos`, `read_doc`, `git_status`) so follow-up questions
+   do not need a pre-attached card;
+3. approval-gated write/execute tools (edit, run command);
+4. only then a real ACP adapter or a second tool/permission UI.
 
 If Snor must act on files or commands, prefer reintroducing ACP and
 reusing a shared agent surface over building a parallel tool UI.
@@ -421,6 +535,17 @@ The Phase 0 spike settles the v1 surface, backend, and distribution:
   fetches implicitly.
 - **Lifecycle:** one shared server per app, lazy start. The unload
   policy (close panel, idle timeout, or keep resident) is still open.
+- **Panel:** right dock, resizable (360-420 px), toggle + statusbar
+  button. The reserved slot must move from the column container into
+  the `.main` row first.
+- **Workspace context:** curated `ContextProvider` cards and
+  deterministic slash commands in v1. Read-only tools come next; no
+  free-form retrieval or model-chosen queries.
+- **opencode source:** the muis plugin pushes a compact session/todo
+  index. Fall back to a read-only, schema-checked query of
+  `opencode.db`; never write to it.
+- **Tier in context mode:** `low` stays the global default; `medium` is
+  offered and remembered per workspace when context is attached.
 
 ## Questions and concerns
 
@@ -470,6 +595,10 @@ The Phase 0 spike settles the v1 surface, backend, and distribution:
     all? v1 says no: the engine has no egress and the model cannot emit
     a URL that is fetched automatically. Later, prefer explicit context
     injection over tool calling. See "Network and internet access".
+15. **opencode coupling.** Plugin-pushed index vs direct database
+    access. Prefer the plugin; the database fallback needs a
+    schema/version check and must stay read-only.
 
-Questions 1-5, 7, 10, and 11 are settled for v1 by the decisions above;
-6 (unload policy), 8, 9, 12, and 13 remain open implementation work.
+Questions 1-5, 7, 10, 11, and 14 are settled for v1 by the decisions
+above; 6 (unload policy), 8 (redaction details), 9, 12, 13, and 15
+remain open implementation work.
