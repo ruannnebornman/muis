@@ -25,20 +25,57 @@ export const MUIS_THEME = {
 
 /** Stable color per name — rename something and its color follows (mock). */
 const PALETTE = [
-  "#7aa2f7",
-  "#9ece6a",
-  "#e0af68",
-  "#bb9af7",
-  "#7dcfff",
-  "#f7768e",
-  "#56b6c2",
-  "#c678dd",
+  "#7aa2f7", // blue
+  "#9ece6a", // green
+  "#e0af68", // yellow
+  "#bb9af7", // purple
+  "#7dcfff", // cyan
+  "#f7768e", // pink
+  "#56b6c2", // teal
+  "#c678dd", // magenta
+  "#ff9e64", // orange
+  "#f75f5f", // red
+  "#b9f27c", // lime
+  "#5eead4", // aquamarine
+  "#818cf8", // indigo
+  "#e879f9", // fuchsia
+  "#fda4af", // rose
 ];
 
-export function colorFor(name: string): string {
+function paletteIndex(name: string): number {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return PALETTE[h % PALETTE.length];
+  return h % PALETTE.length;
+}
+
+export function colorFor(name: string): string {
+  return PALETTE[paletteIndex(name)];
+}
+
+/**
+ * Colors for the open sessions. Each name keeps its stable hash color where
+ * possible, but colliding names are nudged to the next free palette slot so
+ * every session is visually distinct. Assignment is order-independent (names
+ * are sorted) so reordering sessions does not recolor them.
+ */
+export function sessionColorMap(names: readonly string[]): Map<string, string> {
+  const unique = [...new Set(names)].sort();
+  const taken = new Set<string>();
+  const map = new Map<string, string>();
+  for (const name of unique) {
+    const start = paletteIndex(name);
+    let col = PALETTE[start];
+    for (let step = 0; step < PALETTE.length; step++) {
+      const candidate = PALETTE[(start + step) % PALETTE.length];
+      if (!taken.has(candidate)) {
+        col = candidate;
+        break;
+      }
+    }
+    taken.add(col);
+    map.set(name, col);
+  }
+  return map;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MUIS_THEME, colorFor, xtermTheme, themeNames, THEMES } from "./theme";
+import { MUIS_THEME, colorFor, sessionColorMap, xtermTheme, themeNames, THEMES } from "./theme";
 
 /**
  * Locks the look to ../wezterm-web/index.html. Restyle there first,
@@ -20,6 +20,21 @@ describe("muis theme", () => {
   it("colors names stably (rename follows color)", () => {
     expect(colorFor("veldmuis")).toBe(colorFor("veldmuis"));
     expect(colorFor("a")).not.toBe(colorFor("b"));
+    expect(colorFor("")).toBe("#7aa2f7");
+  });
+
+  it("keeps session colors distinct and reorder-stable", () => {
+    const names = ["muis", "ratopia-seed-seeker", "the-far-side", "veldmuis"];
+    const colors = sessionColorMap(names);
+    expect(new Set(colors.values()).size).toBe(names.length);
+    const reordered = sessionColorMap([...names].reverse());
+    for (const name of names) expect(reordered.get(name)).toBe(colors.get(name));
+  });
+
+  it("has 15 palette slots and can color 15 sessions distinctly", () => {
+    const names = Array.from({ length: 15 }, (_, i) => `session-${i}`);
+    const colors = sessionColorMap(names);
+    expect(new Set(colors.values()).size).toBe(15);
     expect(colorFor("")).toBe("#7aa2f7");
   });
 

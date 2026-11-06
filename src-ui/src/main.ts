@@ -7,7 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { SessionStore, newTabCwd, type Tab, type Workspace } from "./sessions";
-import { xtermTheme, colorFor, applyTheme, themeNames, MUIS_THEME } from "./theme";
+import { xtermTheme, colorFor, sessionColorMap, applyTheme, themeNames, MUIS_THEME } from "./theme";
 import { defaultConfig, configFromJSON, clampScrollback, bellAction, effectiveFontSize, segmentVisible, themeForWorkspace, type AppConfig } from "./config";
 import { clampIndex, filterCommands, type Command } from "./commands";
 import { QueryHistory } from "./history";
@@ -921,8 +921,9 @@ function renderSessions(): void {
   list.style.flexDirection = "column";
   list.style.gap = "6px";
   list.style.overflowY = "auto";
+  const colors = sessionColorMap(store.workspaces.map((w) => w.name));
   store.workspaces.forEach((w, i) => {
-    list.append(sessionElement(w, i === store.current));
+    list.append(sessionElement(w, i === store.current, colors.get(w.name) ?? colorFor(w.name)));
   });
   sidebar.append(list);
   const footer = el("div", "side-footer");
@@ -1268,17 +1269,25 @@ function focusActiveTerminalOnSelect(): void {
   }
 }
 
-function sessionElement(w: Workspace, selected: boolean): HTMLElement {
+function sessionElement(w: Workspace, selected: boolean, col: string): HTMLElement {
   const idx = store.workspaces.indexOf(w);
-  const d = el("div", "session" + (selected ? " active" : ""));
+  // A session with no tabs has no work open; grey it out so the active
+  // sessions stand out.
+  const empty = w.tabs.length === 0;
+  const d = el("div", "session" + (selected ? " active" : "") + (empty ? " empty" : ""));
   d.dataset.i = String(idx);
-  const col = colorFor(w.name);
   // Finished background tabs in hidden sessions surface as a badge.
   const doneN = selected ? 0 : w.tabs.filter((t) => isTabDone(t.id)).length;
   const icon = el("div", "s-icon", sessionGlyph(w.name));
-  icon.style.background = `${col}22`;
-  icon.style.color = col;
-  icon.style.border = `1px solid ${col}55`;
+  if (empty) {
+    icon.style.background = "#2d3237";
+    icon.style.color = "var(--dim)";
+    icon.style.border = "1px solid #3a4147";
+  } else {
+    icon.style.background = `${col}22`;
+    icon.style.color = col;
+    icon.style.border = `1px solid ${col}55`;
+  }
   const meta = el("div", "s-meta");
   meta.append(
     el("div", "s-name", w.name),

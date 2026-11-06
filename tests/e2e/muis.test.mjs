@@ -321,6 +321,8 @@ describe("muis chrome", () => {
     assert.equal(sessions.length, 2);
     const sub = await sessions[1].findElement(By.css(".s-sub")).getText();
     assert.match(sub, /0 tabs/);
+    // An empty session is greyed out so sessions with work stand out.
+    assert.ok((await sessions[1].getAttribute("class")).split(" ").includes("empty"));
     // No terminal surface is left behind for the emptied session.
     const visible = await driver.executeScript(() => {
       const boxes = [...document.querySelectorAll(".term-wrap .tabbox")];
@@ -338,6 +340,8 @@ describe("muis chrome", () => {
     await driver.findElement(By.css("#tabbar .newtab")).click();
     await driver.wait(async () => (await tabs()).length === 1, 5000);
     await assertOneVisibleTerminal();
+    const sessions = await driver.findElements(By.css(".session"));
+    assert.ok(!(await sessions[1].getAttribute("class")).split(" ").includes("empty"));
     await shot("14-empty-session-recovers");
   });
 

@@ -14,7 +14,14 @@ function deferredStart() {
   return { started, releases, start };
 }
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+/** Wait for a condition instead of assuming timer turns fit in a fixed delay. */
+async function waitFor(cond: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error("timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 
 describe("RestorePump", () => {
   it("starts at most the limit, then fills freed slots", async () => {
@@ -26,21 +33,20 @@ describe("RestorePump", () => {
       schedule: (fn) => void setTimeout(fn, 0),
     });
     pump.push(["a", "b", "c", "d", "e"].map(entry));
-    await tick();
+    await waitFor(() => started.length === 3);
     expect(started).toEqual(["a", "b", "c"]);
     expect(pump.inFlight).toBe(3);
     expect(pump.pending).toBe(2);
 
     releases[0]();
-    await tick();
+    await waitFor(() => started.length === 4);
     expect(started).toEqual(["a", "b", "c", "d"]);
     expect(pump.inFlight).toBe(3);
 
     releases[1]();
     releases[2]();
     releases[3]();
-    await tick();
-    expect(started).toContain("e");
+    await waitFor(() => started.includes("e"));
     expect(pump.inFlight).toBeLessThanOrEqual(3);
   });
 
@@ -55,9 +61,8 @@ describe("RestorePump", () => {
       schedule: (fn) => void setTimeout(fn, 0),
     });
     pump.push(["a", "b", "c", "d"].map(entry));
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitFor(() => started.length === 4 && pump.inFlight === 0);
     expect(started.sort()).toEqual(["a", "b", "c", "d"]);
-    expect(pump.inFlight).toBe(0);
   });
 
   it("frees a slot when a start rejects", async () => {
@@ -72,8 +77,7 @@ describe("RestorePump", () => {
       schedule: (fn) => void setTimeout(fn, 0),
     });
     pump.push([entry("a"), entry("b")]);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await waitFor(() => calls === 2 && pump.inFlight === 0);
     expect(calls).toBe(2);
-    expect(pump.inFlight).toBe(0);
   });
 });
