@@ -5,8 +5,8 @@
 > restore in `c81f2a8`, so F6–F10, F17–F20 and the ACP parts of F1/F3/F11
 > no longer have a data source. Still-viable ACP-independent ideas
 > (attention status/queue, palette registry, snippets, historical search,
-> worktree sessions, project profiles) should be tracked in
-> `docs/features.md`; this plan is kept for historical context only.
+> worktree sessions, project profiles) are listed in
+> `docs/archive/features.md`; this plan is kept for historical context only.
 
 Source: an external design review of what AI terminals, TUIs, and ACP
 clients are adding (2026-10), mapped onto muis and expanded into a
@@ -48,8 +48,9 @@ Grounding for every feature below. Do not re-plan what is done.
   `crates/muis-shell/src/agent.rs`), `AcpClient` with
   initialize/new/load/prompt/cancel/close/setConfigOption + permission
   handling, model picker, tool-call cards, colored diffs, plan/steps,
-  attachments, stop. Per-tab resume via `acpSessionId`.
-  `docs/agent-integration.md`, `docs/acp-shared-backend-plan.md`.
+  attachments, stop. Per-tab resume via `acpSessionId`. The earlier
+  `agent-integration` and `acp-shared-backend` plans were removed with
+  ACP support.
 - **Terminal agents:** opencode session-id capture via an auto-installed
   plugin (`muis-notify --agent-session`), silent agent-tab marking, and
   `opencode --continue`/`-s <id>` resume. Claude/Codex are deferred
