@@ -35,10 +35,40 @@ const PALETTE = [
   "#c678dd",
 ];
 
-export function colorFor(name: string): string {
+function paletteIndex(name: string): number {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return PALETTE[h % PALETTE.length];
+  return h % PALETTE.length;
+}
+
+export function colorFor(name: string): string {
+  return PALETTE[paletteIndex(name)];
+}
+
+/**
+ * Colors for the open sessions. Each name keeps its stable hash color where
+ * possible, but colliding names are nudged to the next free palette slot so
+ * every session is visually distinct. Assignment is order-independent (names
+ * are sorted) so reordering sessions does not recolor them.
+ */
+export function sessionColorMap(names: readonly string[]): Map<string, string> {
+  const unique = [...new Set(names)].sort();
+  const taken = new Set<string>();
+  const map = new Map<string, string>();
+  for (const name of unique) {
+    const start = paletteIndex(name);
+    let col = PALETTE[start];
+    for (let step = 0; step < PALETTE.length; step++) {
+      const candidate = PALETTE[(start + step) % PALETTE.length];
+      if (!taken.has(candidate)) {
+        col = candidate;
+        break;
+      }
+    }
+    taken.add(col);
+    map.set(name, col);
+  }
+  return map;
 }
 
 /**
